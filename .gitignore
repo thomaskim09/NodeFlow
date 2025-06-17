@@ -1,0 +1,19 @@
+# Virtual Environment
+venv/
+
+# Database file
+data.db
+nodeflow.db
+
+# Python cache
+__pycache__/
+*.pyc
+
+# IDE/Editor specific files
+.vscode/
+.idea/
+
+# PyInstaller build files
+dist/
+build/
+*.spec
