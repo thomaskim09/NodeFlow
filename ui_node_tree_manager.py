@@ -1,13 +1,13 @@
 from PySide6.QtWidgets import (
     QWidget,
     QVBoxLayout,
-    QHBoxLayout,
     QPushButton,
     QGroupBox,
     QTreeWidget,
     QTreeWidgetItem,
     QMessageBox,
     QInputDialog,
+    QGridLayout,
 )
 import database
 
@@ -17,124 +17,88 @@ class NodeTreeManager(QWidget):
         super().__init__()
         self.project_id = project_id
 
-        # --- Layouts and Main GroupBox ---
         group_box = QGroupBox("Nodes & Codes")
         main_layout = QVBoxLayout(self)
         group_box_layout = QVBoxLayout(group_box)
         main_layout.addWidget(group_box)
 
-        # --- Widgets ---
         self.tree_widget = QTreeWidget()
-        self.tree_widget.setHeaderHidden(True)  # Hide the column header
+        self.tree_widget.setHeaderHidden(True)
+        self.tree_widget.setIndentation(20)
 
-        button_layout = QHBoxLayout()
-        add_node_button = QPushButton("Add Node")
-        add_child_button = QPushButton("Add Child")
+        # --- New 4-way Button Layout ---
+        button_layout = QGridLayout()
+        add_button = QPushButton("Add Node")
         rename_button = QPushButton("Rename")
         delete_button = QPushButton("Delete")
 
-        reorder_layout = QHBoxLayout()
-        move_up_button = QPushButton("Move Up ↑")
-        move_down_button = QPushButton("Move Down ↓")
+        up_button = QPushButton("↑")
+        down_button = QPushButton("↓")
+        left_button = QPushButton("← Promote")
+        right_button = QPushButton("Demote →")
 
-        # --- Assemble Layout ---
-        button_layout.addWidget(add_node_button)
-        button_layout.addWidget(add_child_button)
-        button_layout.addWidget(rename_button)
-        button_layout.addWidget(delete_button)
-
-        reorder_layout.addWidget(move_up_button)
-        reorder_layout.addWidget(move_down_button)
+        button_layout.addWidget(add_button, 0, 0, 1, 2)
+        button_layout.addWidget(up_button, 1, 0)
+        button_layout.addWidget(down_button, 1, 1)
+        button_layout.addWidget(left_button, 2, 0)
+        button_layout.addWidget(right_button, 2, 1)
+        button_layout.addWidget(rename_button, 3, 0)
+        button_layout.addWidget(delete_button, 3, 1)
 
         group_box_layout.addWidget(self.tree_widget)
         group_box_layout.addLayout(button_layout)
-        group_box_layout.addLayout(reorder_layout)
 
-        # --- Connect Signals to Slots ---
-        add_node_button.clicked.connect(self.add_node)
-        add_child_button.clicked.connect(self.add_child_node)
+        # --- Connect Signals ---
+        add_button.clicked.connect(self.add_node_or_child)
         rename_button.clicked.connect(self.rename_node)
         delete_button.clicked.connect(self.delete_node)
-        move_up_button.clicked.connect(lambda: self.move_node(-1))
-        move_down_button.clicked.connect(lambda: self.move_node(1))
+        up_button.clicked.connect(lambda: self.move_node_up_down(-1))
+        down_button.clicked.connect(lambda: self.move_node_up_down(1))
+        left_button.clicked.connect(self.promote_node)
+        right_button.clicked.connect(self.demote_node)
 
-        # --- Load Initial Data ---
         self.load_nodes()
 
+    # --- Load Nodes and Rename Node remain the same ---
     def load_nodes(self):
-        """Loads all nodes for the project and recursively builds the tree."""
         self.tree_widget.clear()
         nodes = database.get_nodes_for_project(self.project_id)
-
-        node_map = {
-            node["id"]: {"data": node, "item": None, "children": []} for node in nodes
-        }
-        root_items = []
-
+        node_map = {node["id"]: {"data": node, "children": []} for node in nodes}
+        root_nodes = []
         for node_id, item_data in node_map.items():
             parent_id = item_data["data"]["parent_id"]
             if parent_id is None:
-                root_items.append(item_data)
+                root_nodes.append(item_data)
             else:
                 if parent_id in node_map:
                     node_map[parent_id]["children"].append(item_data)
 
-        # Sort by position before inserting
-        root_items.sort(key=lambda x: x["data"]["position"])
+        root_nodes.sort(key=lambda x: x["data"]["position"])
         for item in node_map.values():
             item["children"].sort(key=lambda x: x["data"]["position"])
 
-        def add_items_recursively(parent_widget, items):
-            for item in items:
+        def add_items_recursively(parent_widget, items, prefix=""):
+            for i, item in enumerate(items):
                 node_data = item["data"]
-                tree_item = QTreeWidgetItem(parent_widget, [node_data["name"]])
-                tree_item.setData(0, 1, node_data["id"])  # Store node ID in item's data
-                item["item"] = tree_item  # Store the item for lookup
-
+                current_prefix = f"{prefix}{i + 1}."
+                display_text = f"{current_prefix} {node_data['name']}"
+                tree_item = QTreeWidgetItem(parent_widget, [display_text])
+                tree_item.setData(0, 1, node_data["id"])
                 if item["children"]:
-                    add_items_recursively(tree_item, item["children"])
+                    add_items_recursively(
+                        tree_item, item["children"], prefix=current_prefix
+                    )
 
-        add_items_recursively(self.tree_widget, root_items)
+        add_items_recursively(self.tree_widget, root_nodes)
         self.tree_widget.expandAll()
 
-    def add_node(self):
-        """Adds a new top-level node."""
-        name, ok = QInputDialog.getText(
-            self, "Add Node", "Enter name for the new node:"
-        )
-        if ok and name:
-            database.add_node(self.project_id, name)
-            self.load_nodes()
-
-    def add_child_node(self):
-        """Adds a new child node to the selected node."""
-        selected_item = self.tree_widget.currentItem()
-        if not selected_item:
-            QMessageBox.warning(
-                self, "No Selection", "Please select a parent node first."
-            )
-            return
-
-        parent_id = selected_item.data(0, 1)
-        name, ok = QInputDialog.getText(
-            self,
-            "Add Child Node",
-            f"Enter name for the child of '{selected_item.text(0)}':",
-        )
-        if ok and name:
-            database.add_node(self.project_id, name, parent_id)
-            self.load_nodes()
-
     def rename_node(self):
-        """Renames the selected node."""
         selected_item = self.tree_widget.currentItem()
         if not selected_item:
-            QMessageBox.warning(self, "No Selection", "Please select a node to rename.")
             return
-
         node_id = selected_item.data(0, 1)
-        current_name = selected_item.text(0)
-
+        full_text = selected_item.text(0)
+        current_name = full_text.split(" ", 1)[-1]
         new_name, ok = QInputDialog.getText(
             self, "Rename Node", "Enter new name:", text=current_name
         )
@@ -142,16 +106,96 @@ class NodeTreeManager(QWidget):
             database.update_node_name(node_id, new_name)
             self.load_nodes()
 
-    def delete_node(self):
-        """Deletes the selected node and its children."""
+    # --- NEW AND UPDATED METHODS ---
+    def add_node_or_child(self):
+        """Adds a child if a node is selected, otherwise adds a root node."""
+        selected_item = self.tree_widget.currentItem()
+        parent_id = selected_item.data(0, 1) if selected_item else None
+
+        name, ok = QInputDialog.getText(
+            self, "Add Node", "Enter name for the new node:"
+        )
+        if ok and name:
+            database.add_node(self.project_id, name, parent_id)
+            self.load_nodes()
+
+    def promote_node(self):
+        """Promotes (outdents) the selected node."""
         selected_item = self.tree_widget.currentItem()
         if not selected_item:
-            QMessageBox.warning(self, "No Selection", "Please select a node to delete.")
             return
 
+        parent = selected_item.parent()
+        if not parent:
+            return  # Already a top-level node
+
+        node_id = selected_item.data(0, 1)
+        grandparent = parent.parent()
+        new_parent_id = grandparent.data(0, 1) if grandparent else None
+
+        database.update_node_parent(node_id, new_parent_id)
+        self.load_nodes()
+
+    def demote_node(self):
+        """Demotes (indents) the selected node, making it a child of the sibling above it."""
+        selected_item = self.tree_widget.currentItem()
+        if not selected_item:
+            return
+
+        parent = selected_item.parent()
+        if parent:
+            index = parent.indexOfChild(selected_item)
+            if index == 0:
+                return  # No sibling above to become a child of
+            new_parent_item = parent.child(index - 1)
+        else:  # Top-level item
+            index = self.tree_widget.indexOfTopLevelItem(selected_item)
+            if index == 0:
+                return
+            new_parent_item = self.tree_widget.topLevelItem(index - 1)
+
+        node_id = selected_item.data(0, 1)
+        new_parent_id = new_parent_item.data(0, 1)
+
+        database.update_node_parent(node_id, new_parent_id)
+        self.load_nodes()
+
+    def move_node_up_down(self, direction):
+        """Moves the selected node up (-1) or down (1) among its siblings."""
+        selected_item = self.tree_widget.currentItem()
+        if not selected_item:
+            return
+
+        parent = selected_item.parent()
+        if parent:
+            index = parent.indexOfChild(selected_item)
+            parent.takeChild(index)
+            parent.insertChild(index + direction, selected_item)
+        else:
+            index = self.tree_widget.indexOfTopLevelItem(selected_item)
+            self.tree_widget.takeTopLevelItem(index)
+            self.tree_widget.insertTopLevelItem(index + direction, selected_item)
+
+        self.tree_widget.setCurrentItem(selected_item)
+
+        all_siblings = []
+        if parent:
+            for i in range(parent.childCount()):
+                all_siblings.append(parent.child(i))
+        else:
+            for i in range(self.tree_widget.topLevelItemCount()):
+                all_siblings.append(self.tree_widget.topLevelItem(i))
+
+        db_updates = [(i, item.data(0, 1)) for i, item in enumerate(all_siblings)]
+        database.update_node_order(db_updates)
+        self.load_nodes()  # Reload to fix numbering
+
+    def delete_node(self):
+        selected_item = self.tree_widget.currentItem()
+        if not selected_item:
+            return
         node_id = selected_item.data(0, 1)
         node_name = selected_item.text(0)
-
         reply = QMessageBox.question(
             self,
             "Confirm Delete",
@@ -159,41 +203,6 @@ class NodeTreeManager(QWidget):
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
         )
-
         if reply == QMessageBox.StandardButton.Yes:
             database.delete_node(node_id)
             self.load_nodes()
-
-    def move_node(self, direction):
-        """Moves the selected node up (-1) or down (1) among its siblings."""
-        selected_item = self.tree_widget.currentItem()
-        if not selected_item:
-            QMessageBox.warning(self, "No Selection", "Please select a node to move.")
-            return
-
-        parent = selected_item.parent()
-        if parent:
-            index = parent.indexOfChild(selected_item)
-            parent.removeChild(selected_item)
-            parent.insertChild(index + direction, selected_item)
-        else:  # Top-level item
-            index = self.tree_widget.indexOfTopLevelItem(selected_item)
-            self.tree_widget.takeTopLevelItem(index)
-            self.tree_widget.insertTopLevelItem(index + direction, selected_item)
-
-        self.tree_widget.setCurrentItem(selected_item)
-
-        # Now update the database positions for all siblings
-        db_updates = []
-        if parent:
-            for i in range(parent.childCount()):
-                child_item = parent.child(i)
-                node_id = child_item.data(0, 1)
-                db_updates.append((i, node_id))
-        else:  # Top-level items
-            for i in range(self.tree_widget.topLevelItemCount()):
-                item = self.tree_widget.topLevelItem(i)
-                node_id = item.data(0, 1)
-                db_updates.append((i, node_id))
-
-        database.update_node_order(db_updates)

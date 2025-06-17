@@ -7,8 +7,8 @@ DB_FILE = "nodeflow.db"
 def get_db_connection():
     """Establishes a connection to the database."""
     conn = sqlite3.connect(DB_FILE)
-    conn.row_factory = sqlite3.Row  # This allows accessing columns by name
-    conn.execute("PRAGMA foreign_keys = ON;")  # Enforce foreign key constraints
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON;")
     return conn
 
 
@@ -17,8 +17,6 @@ def create_tables():
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    # --- Projects Table ---
-    # Stores the top-level projects.
     cursor.execute(
         """
         CREATE TABLE IF NOT EXISTS projects (
@@ -30,8 +28,6 @@ def create_tables():
     """
     )
 
-    # --- Participants Table ---
-    # Stores participant info, linked to a project.
     cursor.execute(
         """
         CREATE TABLE IF NOT EXISTS participants (
@@ -44,22 +40,20 @@ def create_tables():
     """
     )
 
-    # --- Documents Table ---
-    # Stores the actual text content for analysis, linked to a project.
     cursor.execute(
         """
         CREATE TABLE IF NOT EXISTS documents (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             project_id INTEGER NOT NULL,
+            participant_id INTEGER,
             title TEXT NOT NULL,
             content TEXT NOT NULL,
-            FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE CASCADE
+            FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE CASCADE,
+            FOREIGN KEY (participant_id) REFERENCES participants (id) ON DELETE SET NULL
         );
     """
     )
 
-    # --- Nodes Table ---
-    # Stores the hierarchical codes/labels.
     cursor.execute(
         """
         CREATE TABLE IF NOT EXISTS nodes (
@@ -74,8 +68,6 @@ def create_tables():
     """
     )
 
-    # --- Coded Segments Table ---
-    # This is the crucial table linking text to nodes.
     cursor.execute(
         """
         CREATE TABLE IF NOT EXISTS coded_segments (
@@ -98,11 +90,8 @@ def create_tables():
     print("Database tables created or verified successfully.")
 
 
-# Add these functions to the end of database.py
-
-
+# --- Project Functions ---
 def add_project(name, description=""):
-    """Adds a new project to the database."""
     conn = get_db_connection()
     try:
         conn.execute(
@@ -110,24 +99,21 @@ def add_project(name, description=""):
             (name, description),
         )
         conn.commit()
-        print(f"Project '{name}' added successfully.")
     except sqlite3.IntegrityError:
-        # This error occurs if the project name already exists (due to UNIQUE constraint)
         print(f"Error: A project with the name '{name}' already exists.")
     finally:
         conn.close()
 
 
 def get_all_projects():
-    """Retrieves all projects from the database, ordered by name."""
     conn = get_db_connection()
     projects = conn.execute("SELECT * FROM projects ORDER BY name;").fetchall()
     conn.close()
     return projects
 
 
+# --- Participant Functions ---
 def add_participant(project_id, name, details=""):
-    """Adds a new participant to a specific project."""
     conn = get_db_connection()
     conn.execute(
         "INSERT INTO participants (project_id, name, details) VALUES (?, ?, ?)",
@@ -138,7 +124,6 @@ def add_participant(project_id, name, details=""):
 
 
 def get_participants_for_project(project_id):
-    """Retrieves all participants for a given project ID."""
     conn = get_db_connection()
     participants = conn.execute(
         "SELECT * FROM participants WHERE project_id = ? ORDER BY name", (project_id,)
@@ -148,7 +133,6 @@ def get_participants_for_project(project_id):
 
 
 def update_participant(participant_id, name, details):
-    """Updates an existing participant's details."""
     conn = get_db_connection()
     conn.execute(
         "UPDATE participants SET name = ?, details = ? WHERE id = ?",
@@ -159,15 +143,14 @@ def update_participant(participant_id, name, details):
 
 
 def delete_participant(participant_id):
-    """Deletes a participant from the database."""
     conn = get_db_connection()
     conn.execute("DELETE FROM participants WHERE id = ?", (participant_id,))
     conn.commit()
     conn.close()
 
 
+# --- Node Functions ---
 def add_node(project_id, name, parent_id=None):
-    """Adds a new node to a project, either as a root or a child."""
     conn = get_db_connection()
     conn.execute(
         "INSERT INTO nodes (project_id, name, parent_id) VALUES (?, ?, ?)",
@@ -178,7 +161,6 @@ def add_node(project_id, name, parent_id=None):
 
 
 def get_nodes_for_project(project_id):
-    """Retrieves all nodes for a given project ID."""
     conn = get_db_connection()
     nodes = conn.execute(
         "SELECT * FROM nodes WHERE project_id = ? ORDER BY position, name",
@@ -189,7 +171,6 @@ def get_nodes_for_project(project_id):
 
 
 def update_node_name(node_id, new_name):
-    """Updates the name of an existing node."""
     conn = get_db_connection()
     conn.execute("UPDATE nodes SET name = ? WHERE id = ?", (new_name, node_id))
     conn.commit()
@@ -197,7 +178,6 @@ def update_node_name(node_id, new_name):
 
 
 def delete_node(node_id):
-    """Deletes a node. Child nodes will also be deleted due to CASCADE constraint."""
     conn = get_db_connection()
     conn.execute("DELETE FROM nodes WHERE id = ?", (node_id,))
     conn.commit()
@@ -205,23 +185,41 @@ def delete_node(node_id):
 
 
 def update_node_order(node_positions):
-    """
-    Updates the position of multiple nodes in a single transaction.
-    'node_positions' is a list of (new_position, node_id) tuples.
-    """
     conn = get_db_connection()
     conn.executemany("UPDATE nodes SET position = ? WHERE id = ?", node_positions)
     conn.commit()
     conn.close()
 
 
-def add_document(project_id, title, content):
-    """Adds a new document to a project."""
+def update_node_parent(node_id, new_parent_id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    if new_parent_id is None:
+        cursor.execute(
+            "SELECT COUNT(*) FROM nodes WHERE project_id = (SELECT project_id FROM nodes WHERE id = ?) AND parent_id IS NULL",
+            (node_id,),
+        )
+    else:
+        cursor.execute(
+            "SELECT COUNT(*) FROM nodes WHERE parent_id = ?", (new_parent_id,)
+        )
+    count = cursor.fetchone()[0]
+    new_position = count
+    conn.execute(
+        "UPDATE nodes SET parent_id = ?, position = ? WHERE id = ?",
+        (new_parent_id, new_position, node_id),
+    )
+    conn.commit()
+    conn.close()
+
+
+# --- Document and Coding Functions ---
+def add_document(project_id, title, content, participant_id):
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute(
-        "INSERT INTO documents (project_id, title, content) VALUES (?, ?, ?)",
-        (project_id, title, content),
+        "INSERT INTO documents (project_id, title, content, participant_id) VALUES (?, ?, ?, ?)",
+        (project_id, title, content, participant_id),
     )
     doc_id = cursor.lastrowid
     conn.commit()
@@ -230,44 +228,50 @@ def add_document(project_id, title, content):
 
 
 def get_documents_for_project(project_id):
-    """Retrieves all documents for a given project."""
     conn = get_db_connection()
     docs = conn.execute(
-        "SELECT * FROM documents WHERE project_id = ?", (project_id,)
+        """
+        SELECT d.id, d.title, d.participant_id, p.name as participant_name
+        FROM documents d
+        LEFT JOIN participants p ON d.participant_id = p.id
+        WHERE d.project_id = ?
+    """,
+        (project_id,),
     ).fetchall()
     conn.close()
     return docs
 
 
 def get_document_content(document_id):
-    """Gets the full content of a single document."""
     conn = get_db_connection()
-    content = conn.execute(
-        "SELECT content FROM documents WHERE id = ?", (document_id,)
+    doc_data = conn.execute(
+        "SELECT content, participant_id FROM documents WHERE id = ?", (document_id,)
     ).fetchone()
     conn.close()
-    return content["content"] if content else ""
+    return (doc_data["content"], doc_data["participant_id"]) if doc_data else ("", None)
 
 
-def add_coded_segment(document_id, node_id, start, end, text_preview):
-    """Adds a new coded segment to the database."""
+def add_coded_segment(document_id, node_id, participant_id, start, end, text_preview):
     conn = get_db_connection()
     conn.execute(
-        "INSERT INTO coded_segments (document_id, node_id, segment_start, segment_end, content_preview) VALUES (?, ?, ?, ?, ?)",
-        (document_id, node_id, start, end, text_preview),
+        "INSERT INTO coded_segments (document_id, node_id, participant_id, segment_start, segment_end, content_preview) VALUES (?, ?, ?, ?, ?, ?)",
+        (document_id, node_id, participant_id, start, end, text_preview),
     )
     conn.commit()
     conn.close()
 
 
 def get_coded_segments_for_document(document_id):
-    """Retrieves all coded segments for a given document, joining node names."""
     conn = get_db_connection()
     segments = conn.execute(
         """
-        SELECT cs.id, cs.content_preview, n.name as node_name
+        SELECT
+            cs.id, cs.node_id, cs.content_preview,
+            n.name as node_name,
+            p.name as participant_name
         FROM coded_segments cs
         JOIN nodes n ON cs.node_id = n.id
+        LEFT JOIN participants p ON cs.participant_id = p.id
         WHERE cs.document_id = ?
         ORDER BY cs.id
     """,
@@ -278,9 +282,5 @@ def get_coded_segments_for_document(document_id):
 
 
 if __name__ == "__main__":
-    # This allows you to run this file directly to initialize the database
     if not os.path.exists(DB_FILE):
-        print(f"Database file '{DB_FILE}' not found, creating a new one.")
         create_tables()
-    else:
-        print(f"Database file '{DB_FILE}' already exists.")
