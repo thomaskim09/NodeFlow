@@ -5,18 +5,16 @@ DB_FILE = "nodeflow.db"
 
 
 def get_db_connection():
-    """Establishes a connection to the database."""
     conn = sqlite3.connect(DB_FILE)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON;")
     return conn
 
 
+# ... (create_tables, add_project, get_all_projects, participant functions, node functions are the same) ...
 def create_tables():
-    """Creates all the necessary tables for the application if they don't already exist."""
     conn = get_db_connection()
     cursor = conn.cursor()
-
     cursor.execute(
         """
         CREATE TABLE IF NOT EXISTS projects (
@@ -27,7 +25,6 @@ def create_tables():
         );
     """
     )
-
     cursor.execute(
         """
         CREATE TABLE IF NOT EXISTS participants (
@@ -39,7 +36,6 @@ def create_tables():
         );
     """
     )
-
     cursor.execute(
         """
         CREATE TABLE IF NOT EXISTS documents (
@@ -53,7 +49,6 @@ def create_tables():
         );
     """
     )
-
     cursor.execute(
         """
         CREATE TABLE IF NOT EXISTS nodes (
@@ -67,7 +62,6 @@ def create_tables():
         );
     """
     )
-
     cursor.execute(
         """
         CREATE TABLE IF NOT EXISTS coded_segments (
@@ -84,13 +78,11 @@ def create_tables():
         );
     """
     )
-
     conn.commit()
     conn.close()
     print("Database tables created or verified successfully.")
 
 
-# --- Project Functions ---
 def add_project(name, description=""):
     conn = get_db_connection()
     try:
@@ -112,7 +104,6 @@ def get_all_projects():
     return projects
 
 
-# --- Participant Functions ---
 def add_participant(project_id, name, details=""):
     conn = get_db_connection()
     conn.execute(
@@ -149,7 +140,6 @@ def delete_participant(participant_id):
     conn.close()
 
 
-# --- Node Functions ---
 def add_node(project_id, name, parent_id=None):
     conn = get_db_connection()
     conn.execute(
@@ -213,7 +203,6 @@ def update_node_parent(node_id, new_parent_id):
     conn.close()
 
 
-# --- Document and Coding Functions ---
 def add_document(project_id, title, content, participant_id):
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -251,6 +240,36 @@ def get_document_content(document_id):
     return (doc_data["content"], doc_data["participant_id"]) if doc_data else ("", None)
 
 
+def delete_document(document_id):
+    conn = get_db_connection()
+    conn.execute("DELETE FROM documents WHERE id = ?", (document_id,))
+    conn.commit()
+    conn.close()
+
+
+def update_document_content(document_id, new_content):
+    """Updates a document's content and deletes all its associated codes."""
+    conn = get_db_connection()
+    try:
+        cursor = conn.cursor()
+        # Start a transaction
+        cursor.execute("BEGIN TRANSACTION;")
+        # Delete old coded segments for this document
+        cursor.execute(
+            "DELETE FROM coded_segments WHERE document_id = ?", (document_id,)
+        )
+        # Update the document content
+        cursor.execute(
+            "UPDATE documents SET content = ? WHERE id = ?", (new_content, document_id)
+        )
+        conn.commit()
+    except conn.Error as e:
+        print(f"Database error: {e}")
+        conn.rollback()
+    finally:
+        conn.close()
+
+
 def add_coded_segment(document_id, node_id, participant_id, start, end, text_preview):
     conn = get_db_connection()
     conn.execute(
@@ -266,7 +285,7 @@ def get_coded_segments_for_document(document_id):
     segments = conn.execute(
         """
         SELECT
-            cs.id, cs.node_id, cs.content_preview,
+            cs.id, cs.node_id, cs.content_preview, cs.segment_start, cs.segment_end,
             n.name as node_name,
             p.name as participant_name
         FROM coded_segments cs
