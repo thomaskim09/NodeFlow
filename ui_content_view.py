@@ -40,12 +40,12 @@ class ContentView(QWidget):
         # Document selector
         self.doc_selector = QComboBox()
 
-        # --- NEW: Icon Buttons ---
-        import_button = QPushButton("📥")
+        # --- UPDATED: Icon Buttons ---
+        import_button = QPushButton("⇩")  # Changed Icon
         import_button.setToolTip("Import Document (.txt, .docx)")
         import_button.setFixedSize(28, 28)
 
-        self.save_button = QPushButton("💾")
+        self.save_button = QPushButton("✓")  # Changed Icon
         self.save_button.setToolTip(
             "Save Changes (clears existing codes for this document)"
         )

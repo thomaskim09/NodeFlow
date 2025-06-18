@@ -87,6 +87,10 @@ class WorkspaceView(QWidget):
         self.participant_manager.participant_updated.connect(self.on_data_changed)
         self.node_tree_manager.node_updated.connect(self.on_data_changed)
 
+        # --- Trigger initial load ---
+        self.center_pane.load_document_content()
+        self.on_document_changed()
+
     def on_data_changed(self):
         self.center_pane.load_document_list()
         self.bottom_pane.reload_view()

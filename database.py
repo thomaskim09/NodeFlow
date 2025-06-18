@@ -346,6 +346,19 @@ def get_coded_segments_for_project(project_id):
     return segments
 
 
+def delete_coded_segment(segment_id):
+    """Deletes a specific coded segment from the database."""
+    conn = get_db_connection()
+    try:
+        conn.execute("DELETE FROM coded_segments WHERE id = ?", (segment_id,))
+        conn.commit()
+    except conn.Error as e:
+        print(f"Database error: {e}")
+        conn.rollback()
+    finally:
+        conn.close()
+
+
 if __name__ == "__main__":
     if not os.path.exists(DB_FILE):
         create_tables()
