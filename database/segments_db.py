@@ -1,5 +1,3 @@
-# Replace the contents of database/segments_db.py
-
 from .db_core import get_db_connection
 
 

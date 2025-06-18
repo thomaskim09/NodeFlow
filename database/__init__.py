@@ -31,7 +31,6 @@ from .documents_db import (
 )  # noqa: F401
 
 # Nodes
-# FIXED: Aligned with the latest changes in nodes_db.py
 from .nodes_db import (
     add_node,
     get_nodes_for_project,
@@ -44,7 +43,6 @@ from .nodes_db import (
 )  # noqa: F401
 
 # Coded Segments
-# FIXED: Aligned with the latest changes in segments_db.py
 from .segments_db import (
     add_coded_segment,
     get_coded_segments_for_document,

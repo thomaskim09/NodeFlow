@@ -187,7 +187,6 @@ class CodedSegmentsView(QWidget):
             self.reload_view()
 
     def reload_view(self):
-        # FIXED: Safely disconnect to prevent RuntimeWarning
         try:
             self.tree_widget.currentItemChanged.disconnect(self.on_selection_changed)
         except RuntimeError:

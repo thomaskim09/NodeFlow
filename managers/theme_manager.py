@@ -1,5 +1,3 @@
-# Replace the contents of managers/theme_manager.py with this updated code.
-
 import json
 import os
 

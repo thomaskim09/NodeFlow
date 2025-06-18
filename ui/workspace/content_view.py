@@ -1,5 +1,3 @@
-# Replace the contents of ui/workspace/content_view.py
-
 from PySide6.QtWidgets import (
     QWidget,
     QVBoxLayout,
@@ -434,7 +432,6 @@ class ContentView(QWidget):
             if not self.current_document_id:
                 self.segment_count_label.setText("Coded Segments: 0")
                 return
-            # --- MODIFIED: Get full segment data needed for highlighting ---
             self._coded_segments_cache = database.get_coded_segments_for_document(
                 self.current_document_id
             )

@@ -237,7 +237,6 @@ class DashboardView(QDialog):
             self.tree_widget.clear()
             direct_children_nodes = nodes_by_parent.get(node_id, [])
 
-            # FIXED: Handle leaf nodes and parent nodes differently
             if direct_children_nodes:
                 # --- PARENT NODE LOGIC ---
                 children_data_for_charts = []

@@ -48,7 +48,6 @@ class WordCloudWorker(QRunnable):
     def run(self):
         """The main work task, executed in a separate thread."""
         try:
-            # FIXED: Generate cloud from node names, not coded words.
             node_names = [
                 seg["node_name"]
                 for seg in self.segments

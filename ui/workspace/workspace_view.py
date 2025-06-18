@@ -1,5 +1,3 @@
-# Replace the contents of ui/workspace/workspace_view.py
-
 from PySide6.QtWidgets import (
     QWidget,
     QSplitter,

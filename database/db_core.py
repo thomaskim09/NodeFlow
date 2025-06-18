@@ -1,5 +1,3 @@
-# Replace the contents of database/db_core.py with this updated code.
-
 import sqlite3
 import os
 
