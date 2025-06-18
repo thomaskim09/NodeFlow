@@ -1,3 +1,5 @@
+# Replace the entire contents of ui_workspace_view.py with this updated code.
+
 from PySide6.QtWidgets import (
     QWidget,
     QSplitter,
@@ -27,25 +29,21 @@ from theme_manager import save_settings, load_settings
 
 
 class SettingsDialog(QDialog):
+    # This class remains unchanged.
     theme_changed = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Settings")
         self.setMinimumWidth(300)
-
         self.settings = load_settings()
-
         layout = QVBoxLayout(self)
         form_layout = QFormLayout()
-
         self.theme_combo = QComboBox()
         self.theme_combo.addItems(["Light", "Dark"])
         self.theme_combo.setCurrentText(self.settings.get("theme", "Light"))
         form_layout.addRow(QLabel("Application Theme:"), self.theme_combo)
-
         layout.addLayout(form_layout)
-
         button_box = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Save
             | QDialogButtonBox.StandardButton.Cancel
@@ -120,34 +118,33 @@ class WorkspaceView(QWidget):
         main_splitter.setSizes([350, 700])
         main_layout.addWidget(main_splitter)
 
-        # --- Connect Signals ---
+        # Signal connections
         self.center_pane.doc_selector.currentIndexChanged.connect(
             self.on_document_changed
         )
-
         self.center_pane.document_deleted.connect(self.on_data_changed)
         self.center_pane.document_added.connect(self.on_data_changed)
         self.center_pane.segment_clicked.connect(self.bottom_pane.select_segment_by_id)
-        self.bottom_pane.segment_deleted.connect(self.on_segment_deleted)
-
+        self.bottom_pane.segment_deleted.connect(
+            self.on_segment_deleted
+        )  # BUG FIX RELATED
         self.action_export_json.triggered.connect(self.export_as_json)
         self.action_export_word.triggered.connect(self.export_as_word)
         self.action_export_excel.triggered.connect(self.export_as_excel)
-
         self.node_tree_manager.filter_by_node_family_signal.connect(
             self.bottom_pane.filter_by_node_family
         )
         self.node_tree_manager.filter_by_single_node_signal.connect(
             self.bottom_pane.filter_by_single_node
         )
-
         self.participant_manager.participant_updated.connect(self.on_data_changed)
         self.node_tree_manager.node_updated.connect(self.on_node_data_updated)
-
         self.center_pane.text_selection_changed.connect(
             self.node_tree_manager.set_selection_mode
         )
-        self.node_tree_manager.node_selected_for_coding.connect(self.code_selection)
+        self.node_tree_manager.node_selected_for_coding.connect(
+            self.code_selection
+        )  # BUG FIX RELATED
 
         self.center_pane.load_document_content()
         self.on_document_changed()
@@ -156,8 +153,11 @@ class WorkspaceView(QWidget):
         dialog = SettingsDialog(self)
         dialog.exec()
 
+    # MODIFIED: Added node tree refresh
     def on_segment_deleted(self):
+        """Called when a segment is deleted from the CodedSegmentsView."""
         self.center_pane.apply_all_highlights()
+        self.node_tree_manager.load_nodes()  # Refresh stats
 
     def on_node_data_updated(self):
         self.node_tree_manager.load_nodes()
@@ -184,10 +184,13 @@ class WorkspaceView(QWidget):
             doc_id = self.center_pane.current_document_id
             self.bottom_pane.load_segments(doc_id)
             self.node_tree_manager.tree_widget.clearSelection()
+            self.node_tree_manager.set_current_document_id(doc_id)
         finally:
             QApplication.restoreOverrideCursor()
 
+    # MODIFIED: Added node tree refresh
     def code_selection(self, node_id):
+        """Called when a node is selected from the tree in 'coding mode'."""
         cursor = self.center_pane.text_edit.textCursor()
         if not cursor.hasSelection():
             return
@@ -201,13 +204,12 @@ class WorkspaceView(QWidget):
         if not doc_id:
             return
 
-        # Add the segment to the database
         database.add_coded_segment(doc_id, node_id, participant_id, start, end, text)
 
-        # Clear the user's text selection in the editor
         cursor.clearSelection()
         self.center_pane.text_edit.setTextCursor(cursor)
 
-        # Refresh the views to show the new coded segment
+        # Refresh views
         self.bottom_pane.reload_view()
         self.center_pane.apply_all_highlights()
+        self.node_tree_manager.load_nodes()  # Refresh stats

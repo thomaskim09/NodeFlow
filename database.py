@@ -331,6 +331,73 @@ def update_document_text_only(document_id, new_content):
         conn.close()
 
 
+def get_document_word_count(document_id):
+    """Calculates the total word count for a single document."""
+    if not document_id:
+        return 0
+    conn = get_db_connection()
+    content_row = conn.execute(
+        "SELECT content FROM documents WHERE id = ?", (document_id,)
+    ).fetchone()
+    conn.close()
+    if content_row and content_row["content"]:
+        return len(content_row["content"].split())
+    return 0
+
+
+def get_project_word_count(project_id):
+    """Calculates the total word count for all documents in a project."""
+    conn = get_db_connection()
+    docs = conn.execute(
+        "SELECT content FROM documents WHERE project_id = ?", (project_id,)
+    ).fetchall()
+    conn.close()
+    total_words = 0
+    for doc in docs:
+        if doc["content"]:
+            total_words += len(doc["content"].split())
+    return total_words
+
+
+def get_node_statistics(project_id, document_id=None):
+    """
+    Calculates word count and segment count for each node based on its direct codings.
+    If document_id is provided, scope is limited to that document.
+    """
+    stats = {}  # {node_id: {'word_count': X, 'segment_count': Y}}
+
+    conn = get_db_connection()
+    if document_id:
+        segments = conn.execute(
+            """
+            SELECT node_id, content_preview FROM coded_segments
+            WHERE document_id = ?
+        """,
+            (document_id,),
+        ).fetchall()
+    else:  # Project-wide
+        segments = conn.execute(
+            """
+            SELECT cs.node_id, cs.content_preview
+            FROM coded_segments cs
+            JOIN documents d ON cs.document_id = d.id
+            WHERE d.project_id = ?
+        """,
+            (project_id,),
+        ).fetchall()
+    conn.close()
+
+    for seg in segments:
+        node_id = seg["node_id"]
+        if node_id not in stats:
+            stats[node_id] = {"word_count": 0, "segment_count": 0}
+
+        stats[node_id]["segment_count"] += 1
+        stats[node_id]["word_count"] += len(seg["content_preview"].split())
+
+    return stats
+
+
 def add_coded_segment(document_id, node_id, participant_id, start, end, text_preview):
     conn = get_db_connection()
     with conn:

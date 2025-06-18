@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
     QAbstractItemView,
     QMenu,
     QColorDialog,
+    QComboBox,
 )
 from PySide6.QtCore import Qt, Signal, QTimer
 from PySide6.QtGui import QDropEvent, QKeyEvent
@@ -32,10 +33,10 @@ PRESET_COLORS = [
 
 
 class DraggableTreeWidget(QTreeWidget):
+    # This class remains unchanged.
     def __init__(self, parent_manager):
         super().__init__()
         self.parent_manager = parent_manager
-
         self.setDragEnabled(True)
         self.setAcceptDrops(True)
         self.setDragDropMode(QAbstractItemView.DragDropMode.InternalMove)
@@ -45,59 +46,47 @@ class DraggableTreeWidget(QTreeWidget):
         source_item = self.currentItem()
         if not source_item:
             return
-
         source_id = source_item.data(0, 1)
         super().dropEvent(event)
-
         new_parent_item = source_item.parent()
         new_parent_id = new_parent_item.data(0, 1) if new_parent_item else None
-
         database.update_node_parent(source_id, new_parent_id)
-
         if new_parent_item:
             siblings = [
                 new_parent_item.child(i) for i in range(new_parent_item.childCount())
             ]
         else:
             siblings = [self.topLevelItem(i) for i in range(self.topLevelItemCount())]
-
         db_order_updates = [
             (i, item.data(0, 1))
             for i, item in enumerate(siblings)
             if item.data(0, 1) is not None
         ]
-
         database.update_node_order(db_order_updates)
         QTimer.singleShot(0, self.parent_manager.refresh_tree_and_emit_update)
 
     def keyPressEvent(self, event: QKeyEvent):
-        """Handles F2 for rename and Delete for delete."""
         current_item = self.currentItem()
         if not current_item:
             super().keyPressEvent(event)
             return
-
         node_id = current_item.data(0, 1)
         if node_id is None:
             super().keyPressEvent(event)
             return
-
         if event.key() == Qt.Key.Key_F2:
             self.parent_manager.rename_node(node_id)
             event.accept()
-
-        # --- ADD THIS BLOCK ---
         elif event.key() == Qt.Key.Key_Delete:
             self.parent_manager.delete_node(node_id)
             event.accept()
-        # ----------------------
-
         else:
             super().keyPressEvent(event)
 
 
 class NodeItemWidget(QWidget):
-    def __init__(self, node_id, node_color, display_text, parent_manager):
+    # MODIFIED: Constructor now takes separate name and stats text.
+    def __init__(self, node_id, node_color, name_text, stats_text, parent_manager):
         super().__init__()
         self.node_id = node_id
         self.parent_manager = parent_manager
@@ -112,8 +101,15 @@ class NodeItemWidget(QWidget):
         self.set_button_color(node_color)
         self.color_button.clicked.connect(self.on_color_change)
 
-        name_label = QLabel(display_text)
+        # Use the separate name_text
+        name_label = QLabel(name_text)
 
+        # Create a new label for the statistics
+        stats_label = QLabel(stats_text)
+        # Set a fixed style to distinguish it slightly if desired
+        stats_label.setStyleSheet("color: #888;")
+
+        # All action buttons remain the same
         self.export_button = QPushButton("↓")
         self.export_button.setFixedSize(24, 24)
         self.export_button.setToolTip("Export this node and its children")
@@ -134,21 +130,21 @@ class NodeItemWidget(QWidget):
 
         self.edit_button = QPushButton("✎")
         self.edit_button.setFixedSize(24, 24)
-        self.edit_button.setToolTip("Rename node")
         self.edit_button.setToolTip("Rename node (F2)")
         self.edit_button.clicked.connect(self.on_rename)
         self.edit_button.setVisible(False)
 
         self.delete_button = QPushButton("🗑")
         self.delete_button.setFixedSize(24, 24)
-        self.delete_button.setToolTip("Delete node and its children")
         self.delete_button.setToolTip("Delete node and its children (Delete)")
         self.delete_button.clicked.connect(self.on_delete)
         self.delete_button.setVisible(False)
 
+        # MODIFIED: Adjusted layout for right-alignment
         layout.addWidget(self.color_button)
         layout.addWidget(name_label)
-        layout.addStretch()
+        layout.addStretch()  # This pushes everything after it to the right
+        layout.addWidget(stats_label)  # Add the stats label here
         layout.addWidget(self.export_button)
         layout.addWidget(self.filter_button)
         layout.addWidget(self.add_button)
@@ -193,6 +189,7 @@ class NodeItemWidget(QWidget):
 
 
 class NodeTreeManager(QWidget):
+    # This class's __init__ is unchanged from the previous step.
     filter_by_node_family_signal = Signal(list)
     filter_by_single_node_signal = Signal(int)
     node_updated = Signal()
@@ -203,40 +200,135 @@ class NodeTreeManager(QWidget):
         self.project_id = project_id
         self.nodes_map = {}
         self._is_selection_mode = False
-
+        self.current_document_id = None
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(5)
-
         header_label = QLabel("Nodes & Codes")
         font = header_label.font()
         font.setBold(True)
         header_label.setFont(font)
-
         add_root_button = QPushButton("＋ Add Root Node")
         add_root_button.clicked.connect(lambda: self.add_node())
-
         clear_filter_button = QPushButton("▼ Show All")
         clear_filter_button.setToolTip(
             "Clear the current node filter in the Coded Segments view"
         )
         clear_filter_button.clicked.connect(self.clear_all_filters)
-
+        self.scope_combo = QComboBox()
+        self.scope_combo.addItems(["Project Total", "Current Document"])
+        self.scope_combo.setToolTip("Switch the scope of the percentage calculation")
+        self.scope_combo.currentTextChanged.connect(self.load_nodes)
         header_layout = QHBoxLayout()
         header_layout.addWidget(header_label)
         header_layout.addStretch()
+        header_layout.addWidget(self.scope_combo)
         header_layout.addWidget(clear_filter_button)
         header_layout.addWidget(add_root_button)
         main_layout.addLayout(header_layout)
-
         self.tree_widget = DraggableTreeWidget(self)
         self.tree_widget.setHeaderHidden(True)
         self.tree_widget.setIndentation(20)
         main_layout.addWidget(self.tree_widget)
-
         self.tree_widget.currentItemChanged.connect(self.on_selection_changed)
         self.tree_widget.itemClicked.connect(self.on_item_clicked)
         self.load_nodes()
+
+    # The `load_nodes` method logic is mostly the same, but we change what we pass to NodeItemWidget
+    def load_nodes(self):
+        try:
+            self.tree_widget.currentItemChanged.disconnect(self.on_selection_changed)
+        except RuntimeError:
+            pass
+        current_selection_id = None
+        if self.tree_widget.currentItem():
+            current_selection_id = self.tree_widget.currentItem().data(0, 1)
+        self.tree_widget.clear()
+        scope = self.scope_combo.currentText()
+        total_words = 0
+        doc_id_for_stats = None
+        if scope == "Current Document":
+            if self.current_document_id:
+                total_words = database.get_document_word_count(self.current_document_id)
+                doc_id_for_stats = self.current_document_id
+        else:
+            total_words = database.get_project_word_count(self.project_id)
+        node_stats = database.get_node_statistics(self.project_id, doc_id_for_stats)
+        nodes = database.get_nodes_for_project(self.project_id)
+        self.nodes_map = {n["id"]: n for n in nodes}
+        self.nodes_by_parent = {n_id: [] for n_id in self.nodes_map}
+        self.nodes_by_parent[None] = []
+        for n_id, node in self.nodes_map.items():
+            self.nodes_by_parent.setdefault(node["parent_id"], []).append(node)
+        for children_list in self.nodes_by_parent.values():
+            children_list.sort(key=lambda x: x["position"])
+        item_to_reselect = None
+        aggregated_stats = {}
+
+        def calculate_aggregated_stats(parent_id):
+            parent_word_count = 0
+            parent_segment_count = 0
+            children = self.nodes_by_parent.get(parent_id, [])
+            for node_data in children:
+                child_word_count, child_segment_count = calculate_aggregated_stats(
+                    node_data["id"]
+                )
+                direct_stats = node_stats.get(
+                    node_data["id"], {"word_count": 0, "segment_count": 0}
+                )
+                total_node_word_count = direct_stats["word_count"] + child_word_count
+                total_node_segment_count = (
+                    direct_stats["segment_count"] + child_segment_count
+                )
+                aggregated_stats[node_data["id"]] = {
+                    "word_count": total_node_word_count,
+                    "segment_count": total_node_segment_count,
+                }
+                parent_word_count += total_node_word_count
+                parent_segment_count += total_node_segment_count
+            return parent_word_count, parent_segment_count
+
+        calculate_aggregated_stats(None)
+
+        def add_items_recursively(parent_widget, parent_id, prefix=""):
+            nonlocal item_to_reselect
+            children = self.nodes_by_parent.get(parent_id, [])
+            for i, node_data in enumerate(children):
+                current_prefix = f"{prefix}{i + 1}."
+                stats = aggregated_stats.get(
+                    node_data["id"], {"word_count": 0, "segment_count": 0}
+                )
+                word_count = stats["word_count"]
+                segment_count = stats["segment_count"]
+                percentage = (word_count / total_words * 100) if total_words > 0 else 0
+
+                # MODIFIED: Create two separate strings for the widget
+                name_text = f"{current_prefix} {node_data['name']}"
+                stats_text = f"{percentage:.1f}% | {segment_count} Segments"
+
+                tree_item = QTreeWidgetItem(parent_widget)
+                tree_item.setData(0, 1, node_data["id"])
+
+                # MODIFIED: Pass the separate strings to the widget constructor
+                item_widget = NodeItemWidget(
+                    node_data["id"], node_data["color"], name_text, stats_text, self
+                )
+                self.tree_widget.setItemWidget(tree_item, 0, item_widget)
+                if node_data["id"] == current_selection_id:
+                    item_to_reselect = tree_item
+                add_items_recursively(tree_item, node_data["id"], prefix=current_prefix)
+
+        add_items_recursively(self.tree_widget, None)
+        self.tree_widget.expandAll()
+        if item_to_reselect:
+            self.tree_widget.setCurrentItem(item_to_reselect)
+        self.tree_widget.currentItemChanged.connect(self.on_selection_changed)
+
+    # All other methods in NodeTreeManager remain unchanged.
+    def set_current_document_id(self, doc_id):
+        self.current_document_id = doc_id
+        if self.scope_combo.currentText() == "Current Document":
+            self.load_nodes()
 
     def set_selection_mode(self, enabled: bool):
         self._is_selection_mode = enabled
@@ -266,12 +358,10 @@ class NodeTreeManager(QWidget):
             widget = self.tree_widget.itemWidget(previous_item, 0)
             if widget:
                 widget.set_icons_visible(False)
-
         if current_item:
             widget = self.tree_widget.itemWidget(current_item, 0)
             if widget:
                 widget.set_icons_visible(True)
-
             node_id = current_item.data(0, 1)
             descendants = self.get_all_descendant_ids(node_id)
             self.filter_by_node_family_signal.emit([node_id] + descendants)
@@ -285,68 +375,10 @@ class NodeTreeManager(QWidget):
             descendants.extend(self.get_all_descendant_ids(child_node["id"]))
         return descendants
 
-    def load_nodes(self):
-        try:
-            self.tree_widget.currentItemChanged.disconnect(self.on_selection_changed)
-        except RuntimeError:
-            pass
-
-        current_selection_id = None
-        if self.tree_widget.currentItem():
-            current_selection_id = self.tree_widget.currentItem().data(0, 1)
-
-        self.tree_widget.clear()
-
-        nodes = database.get_nodes_for_project(self.project_id)
-        self.nodes_map = {n["id"]: n for n in nodes}
-
-        self.nodes_by_parent = {n_id: [] for n_id in self.nodes_map}
-        self.nodes_by_parent[None] = []
-        for n_id, node in self.nodes_map.items():
-            self.nodes_by_parent.setdefault(node["parent_id"], []).append(node)
-
-        for children_list in self.nodes_by_parent.values():
-            children_list.sort(key=lambda x: x["position"])
-
-        item_to_reselect = None
-
-        def add_items_recursively(parent_widget, parent_id, prefix=""):
-            nonlocal item_to_reselect
-            children = self.nodes_by_parent.get(parent_id, [])
-            for i, node_data in enumerate(children):
-                current_prefix = f"{prefix}{i + 1}."
-                display_text = f"{current_prefix} {node_data['name']}"
-
-                tree_item = QTreeWidgetItem(parent_widget)
-                tree_item.setData(0, 1, node_data["id"])
-
-                item_widget = NodeItemWidget(
-                    node_data["id"], node_data["color"], display_text, self
-                )
-                self.tree_widget.setItemWidget(tree_item, 0, item_widget)
-
-                if node_data["id"] == current_selection_id:
-                    item_to_reselect = tree_item
-
-                child_nodes = self.nodes_by_parent.get(node_data["id"], [])
-                if child_nodes:
-                    add_items_recursively(
-                        tree_item, node_data["id"], prefix=current_prefix
-                    )
-
-        add_items_recursively(self.tree_widget, None)
-        self.tree_widget.expandAll()
-
-        if item_to_reselect:
-            self.tree_widget.setCurrentItem(item_to_reselect)
-
-        self.tree_widget.currentItemChanged.connect(self.on_selection_changed)
-
     def rename_node(self, node_id):
         node_data = self.nodes_map.get(node_id)
         if not node_data:
             return
-
         current_name = node_data["name"]
         new_name, ok = QInputDialog.getText(
             self, "Rename Node", "Enter new name:", text=current_name
@@ -366,8 +398,6 @@ class NodeTreeManager(QWidget):
                 if color not in existing_colors:
                     new_color = color
                     break
-
-            # Defensively ensure project_id is an integer before passing to DB layer
             try:
                 pid = int(self.project_id)
                 database.add_node(pid, name.strip(), parent_id, new_color)
@@ -407,7 +437,6 @@ class NodeTreeManager(QWidget):
         menu = QMenu(self)
         action_export_word = menu.addAction("Export as Word (.docx)")
         action_export_excel = menu.addAction("Export as Excel (.xlsx)")
-
         action_export_word.triggered.connect(
             lambda: export_manager.export_node_family_to_word(
                 self.project_id, node_id, self
@@ -416,7 +445,6 @@ class NodeTreeManager(QWidget):
         action_export_excel.triggered.connect(
             lambda: self.export_node_family_to_excel_handler(node_id)
         )
-
         menu.exec(button.mapToGlobal(button.rect().bottomLeft()))
 
     def export_node_family_to_excel_handler(self, node_id):
@@ -433,9 +461,7 @@ class NodeTreeManager(QWidget):
             "Multiple Sheets", QMessageBox.ButtonRole.ActionRole
         )
         msg_box.addButton(QMessageBox.StandardButton.Cancel)
-
         msg_box.exec()
-
         clicked_button = msg_box.clickedButton()
         if clicked_button == single_sheet_button:
             export_manager.export_node_family_to_excel(self.project_id, node_id, self)
