@@ -33,7 +33,7 @@ from managers import excel_import_manager
 
 class ContentView(QWidget):
     document_deleted = Signal()
-    document_added = Signal()
+    document_added = Signal(int)
     segment_clicked = Signal(int)
     text_selection_changed = Signal(bool)
 
@@ -273,29 +273,35 @@ class ContentView(QWidget):
     def on_selection_changed_for_coding(self):
         self.text_selection_changed.emit(self.text_edit.textCursor().hasSelection())
 
-    def load_document_list(self):
-        current_doc_id = self.current_document_id
+    def load_document_list(self, doc_id_to_select=None):
         self.doc_selector.blockSignals(True)
+
         self.doc_selector.clear()
         docs = database.get_documents_for_project(self.project_id)
         self.documents_map = {
             f"{doc['title']} ({doc['participant_name'] or 'Unassigned'})": doc["id"]
             for doc in docs
         }
-        id_to_display_text = {v: k for k, v in self.documents_map.items()}
         for display_text in sorted(self.documents_map.keys()):
             self.doc_selector.addItem(display_text)
+
         self.doc_selector.blockSignals(False)
-        new_text_to_select = id_to_display_text.get(current_doc_id)
-        index = self.doc_selector.findText(new_text_to_select)
-        if index != -1:
-            self.doc_selector.setCurrentIndex(index)
-        elif self.doc_selector.count() > 0:
-            self.doc_selector.setCurrentIndex(0)
-        else:
-            # This will trigger handle_document_switch with index -1
-            self.doc_selector.setCurrentIndex(-1)
-            self.load_document_content()
+
+        new_index = -1
+        if doc_id_to_select:
+            # Find the dropdown item that matches the new document ID
+            id_to_display_text = {v: k for k, v in self.documents_map.items()}
+            display_text = id_to_display_text.get(doc_id_to_select)
+            if display_text:
+                new_index = self.doc_selector.findText(display_text)
+
+        # Fallback for deletion or if the new doc isn't found for some reason
+        if new_index == -1 and self.doc_selector.count() > 0:
+            new_index = 0
+
+        # Set the current index and manually call the handler to ensure the view updates
+        self.doc_selector.setCurrentIndex(new_index)
+        self.handle_document_switch(new_index)
 
     def _import_and_add_document(self, participant_id, file_path):
         try:
@@ -307,10 +313,18 @@ class ContentView(QWidget):
                 with open(file_path, "r", encoding="utf-8") as f:
                     content = f.read()
             title = os.path.basename(file_path)
-            database.add_document(self.project_id, title, content, participant_id)
+
+            # Capture the returned ID
+            new_doc_id = database.add_document(
+                self.project_id, title, content, participant_id
+            )
+
             self.is_dirty = False
             self.save_button.setEnabled(False)
-            self.document_added.emit()
+
+            # Emit the new ID with the signal
+            self.document_added.emit(new_doc_id)
+
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to import file: {e}")
 
@@ -329,7 +343,6 @@ class ContentView(QWidget):
         if reply == QMessageBox.StandardButton.Yes:
             self.is_dirty = False
             database.delete_document(self.current_document_id)
-            self.load_document_list()
             self.document_deleted.emit()
 
     def on_text_changed(self):
@@ -421,23 +434,32 @@ class ContentView(QWidget):
         finally:
             QApplication.restoreOverrideCursor()
 
+    # In ui/workspace/content_view.py
+
     def apply_all_highlights(self):
         self.text_edit.blockSignals(True)
+
+        # Save the cursor's current position before making changes.
+        original_position = self.text_edit.textCursor().position()
+
         try:
             cursor = self.text_edit.textCursor()
             cursor.select(QTextCursor.SelectionType.Document)
             cursor.setCharFormat(QTextCharFormat())
             cursor.clearSelection()
             self.text_edit.setTextCursor(cursor)
+
             if not self.current_document_id:
                 self.segment_count_label.setText("Coded Segments: 0")
                 return
+
             self._coded_segments_cache = database.get_coded_segments_for_document(
                 self.current_document_id
             )
             self.segment_count_label.setText(
                 f"Coded Segments: {len(self._coded_segments_cache)}"
             )
+
             for segment in self._coded_segments_cache:
                 self.highlight_text(
                     segment["segment_start"],
@@ -445,6 +467,10 @@ class ContentView(QWidget):
                     segment["node_color"],
                 )
         finally:
+            # Restore the cursor to its original position after all changes.
+            cursor = self.text_edit.textCursor()
+            cursor.setPosition(original_position)
+            self.text_edit.setTextCursor(cursor)
             self.text_edit.blockSignals(False)
 
     def highlight_text(self, start, end, color_hex):

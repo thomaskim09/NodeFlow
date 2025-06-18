@@ -68,6 +68,7 @@ class WorkspaceView(QWidget):
         self.project_id = project_id
         self.project_name = project_name
         self.back_to_startup_callback = back_to_startup_callback
+        self._last_added_doc_id = None
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_splitter = QSplitter(Qt.Orientation.Horizontal)
@@ -115,8 +116,8 @@ class WorkspaceView(QWidget):
         self.center_pane.doc_selector.currentIndexChanged.connect(
             self.on_document_changed
         )
-        self.center_pane.document_deleted.connect(self.on_data_changed)
-        self.center_pane.document_added.connect(self.on_data_changed)
+        self.center_pane.document_added.connect(self.on_document_added)
+        self.center_pane.document_deleted.connect(self.on_document_deleted)
         self.center_pane.segment_clicked.connect(self.bottom_pane.select_segment_by_id)
         self.bottom_pane.segment_deleted.connect(self.on_segment_deleted)
         # ADDED: Connect the new activation signal to its handler
@@ -133,7 +134,7 @@ class WorkspaceView(QWidget):
             self.bottom_pane.filter_by_single_node
         )
 
-        self.participant_manager.participant_updated.connect(self.on_data_changed)
+        self.participant_manager.participant_updated.connect(self.refresh_all_views)
 
         self.node_tree_manager.node_updated.connect(self.on_node_data_updated)
         self.center_pane.text_selection_changed.connect(
@@ -164,17 +165,34 @@ class WorkspaceView(QWidget):
         self.node_tree_manager.load_nodes()
 
     def on_node_data_updated(self):
-        # This can be simplified. Calling on_data_changed covers nodes too.
+        """Called when a node is changed. Refreshes text highlights and all views."""
         self.center_pane.apply_all_highlights()
-        self.on_data_changed()
-        self.node_tree_manager.load_nodes()
+        self.refresh_all_views()
 
-    def on_data_changed(self):
-        """A general-purpose refresh for when participants or documents change."""
+    def on_document_added(self, new_doc_id):
+        """Catches the new document's ID and triggers a refresh."""
+        self._last_added_doc_id = new_doc_id
+        self.refresh_all_views()
+
+    def on_document_deleted(self):
+        """Handles document deletion and triggers a refresh."""
+        self._last_added_doc_id = None
+        self.refresh_all_views()
+
+    def refresh_all_views(self):
+        """A single, reliable method to refresh the entire workspace."""
         self.participant_manager.load_participants()
-        self.center_pane.load_document_list()
+
+        # Pass the stored ID to the content view's loader
+        self.center_pane.load_document_list(doc_id_to_select=self._last_added_doc_id)
+
+        # Refresh the other panes
         new_doc_id = self.center_pane.current_document_id
         self.bottom_pane.load_segments(new_doc_id)
+        self.node_tree_manager.load_nodes()
+
+        # Clear the temporary ID after use
+        self._last_added_doc_id = None
 
     def export_as_word(self):
         export_to_word(self.project_id, self)
@@ -195,10 +213,22 @@ class WorkspaceView(QWidget):
         finally:
             QApplication.restoreOverrideCursor()
 
+    # In ui/workspace/workspace_view.py
+
     def code_selection(self, node_id):
-        cursor = self.center_pane.text_edit.textCursor()
+        # Get the text edit widget for easier access
+        text_edit = self.center_pane.text_edit
+
+        cursor = text_edit.textCursor()
         if not cursor.hasSelection():
             return
+
+        # Save the scrollbar's value and selection end point BEFORE any changes
+        selection_end_pos = cursor.selectionEnd()
+        scrollbar = text_edit.verticalScrollBar()
+        original_scroll_value = scrollbar.value()
+
+        # Perform database operation
         start, end = cursor.selectionStart(), cursor.selectionEnd()
         text = cursor.selectedText()
         doc_id = self.center_pane.current_document_id
@@ -206,8 +236,17 @@ class WorkspaceView(QWidget):
         if not doc_id:
             return
         database.add_coded_segment(doc_id, node_id, participant_id, start, end, text)
-        cursor.clearSelection()
-        self.center_pane.text_edit.setTextCursor(cursor)
+
+        # Refresh all other UI components
         self.bottom_pane.reload_view()
         self.center_pane.apply_all_highlights()
         self.node_tree_manager.load_nodes()
+
+        # Restore cursor and then immediately restore scrollbar to prevent scrolling
+        new_cursor = text_edit.textCursor()
+        new_cursor.setPosition(selection_end_pos)
+        text_edit.setTextCursor(new_cursor)
+        scrollbar.setValue(original_scroll_value)
+
+        # Ensure the editor remains focused
+        text_edit.setFocus()

@@ -3,16 +3,17 @@
 from .db_core import get_db_connection
 
 
-def add_document(project_id, title, content, participant_id):
+def add_document(project_id, title, text, participant_id=None):
     conn = get_db_connection()
-    with conn:
-        cursor = conn.execute(
-            "INSERT INTO documents (project_id, title, content, participant_id) VALUES (?, ?, ?, ?)",
-            (project_id, title, content, participant_id),
-        )
-        doc_id = cursor.lastrowid
+    cursor = conn.cursor()
+    cursor.execute(
+        "INSERT INTO documents (project_id, title, content, participant_id) VALUES (?, ?, ?, ?)",
+        (project_id, title, text, participant_id),
+    )
+    new_id = cursor.lastrowid
+    conn.commit()
     conn.close()
-    return doc_id
+    return new_id
 
 
 def get_documents_for_project(project_id):

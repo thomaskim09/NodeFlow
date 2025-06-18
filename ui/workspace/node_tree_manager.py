@@ -1,5 +1,3 @@
-# In file: ui/workspace/node_tree_manager.py
-
 from PySide6.QtWidgets import (
     QWidget,
     QVBoxLayout,
@@ -213,8 +211,11 @@ class NodeTreeManager(QWidget):
         )
         clear_filter_button.clicked.connect(self.clear_all_filters)
         self.scope_combo = QComboBox()
-        self.scope_combo.addItems(["Project Total", "Current Document"])
+        self.scope_combo.addItems(["Current Document", "Project Total"])
         self.scope_combo.setToolTip("Switch the scope of the percentage calculation")
+        self.scope_combo.setCurrentText(
+            "Current Document"
+        )  # Default to Current Document
         self.scope_combo.currentTextChanged.connect(self.load_nodes)
         header_layout = QHBoxLayout()
         header_layout.addWidget(header_label)
@@ -299,8 +300,7 @@ class NodeTreeManager(QWidget):
 
                 name_text = f"{current_prefix} {node_data['name']}"
 
-                # --- FIXED: Only show stats if segment_count > 0 ---
-                stats_text = ""  # Default to empty string
+                stats_text = ""
                 if segment_count > 0:
                     percentage = (
                         (word_count / total_words * 100) if total_words > 0 else 0
