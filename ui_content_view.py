@@ -56,9 +56,7 @@ class ContentView(QWidget):
         self.import_button.setFixedSize(28, 28)
 
         self.save_button = QPushButton("💾")
-        self.save_button.setToolTip(
-            "Save Changes (clears existing codes for this document)"
-        )
+        self.save_button.setToolTip("Save Changes")
         self.save_button.setFixedSize(28, 28)
         self.save_button.setEnabled(False)
 
@@ -92,9 +90,9 @@ class ContentView(QWidget):
 
         # Connect signals
         self.import_button.clicked.connect(self.import_document)
-        self.save_button.clicked.connect(self.save_document_content)
+        self.save_button.clicked.connect(self.save_document)
         delete_button.clicked.connect(self.delete_current_document)
-        self.doc_selector.currentIndexChanged.connect(self.load_document_content)
+        self.doc_selector.currentIndexChanged.connect(self.handle_document_switch)
         self.text_edit.textChanged.connect(self.on_text_changed)
         self.text_edit.cursorPositionChanged.connect(self.on_cursor_position_changed)
         self.text_edit.selectionChanged.connect(self.on_selection_changed_for_coding)
@@ -131,6 +129,32 @@ class ContentView(QWidget):
             self.doc_selector.setCurrentIndex(-1)
             self.load_document_content()
 
+    def _import_and_add_document(self, participant_id, file_path):
+        """Helper function to read a file and add it to the database."""
+        try:
+            content = ""
+            if file_path.lower().endswith(".docx"):
+                doc = docx.Document(file_path)
+                content = "\n\n".join([p.text for p in doc.paragraphs])
+            else:
+                with open(file_path, "r", encoding="utf-8") as f:
+                    content = f.read()
+
+            title = os.path.basename(file_path)
+            new_doc_id = database.add_document(
+                self.project_id, title, content, participant_id
+            )
+            self.load_document_list()
+
+            new_doc_display_text = next(
+                (k for k, v in self.documents_map.items() if v == new_doc_id), None
+            )
+            if new_doc_display_text:
+                self.doc_selector.setCurrentText(new_doc_display_text)
+
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to import file: {e}")
+
     def import_document(self):
         file_path, _ = QFileDialog.getOpenFileName(
             self, "Import Document", "", "Documents (*.txt *.docx)"
@@ -153,36 +177,15 @@ class ContentView(QWidget):
             else:
                 return
 
-        dialog = AssignParticipantDialog(participants, self)
-        if dialog.exec() == QDialog.DialogCode.Accepted:
-            participant_id = dialog.get_selected_participant_id()
-            if not participant_id:
-                return
-
-            try:
-                content = ""
-                if file_path.lower().endswith(".docx"):
-                    doc = docx.Document(file_path)
-                    content = "\n\n".join([p.text for p in doc.paragraphs])
-                else:
-                    with open(file_path, "r", encoding="utf-8") as f:
-                        content = f.read()
-
-                title = os.path.basename(file_path)
-                new_doc_id = database.add_document(
-                    self.project_id, title, content, participant_id
-                )
-                self.load_document_list()
-
-                new_doc_display_text = next(
-                    (k for k, v in self.documents_map.items() if v == new_doc_id), None
-                )
-                if new_doc_display_text:
-                    self.doc_selector.setCurrentText(new_doc_display_text)
-                    self.load_document_content()
-
-            except Exception as e:
-                QMessageBox.critical(self, "Error", f"Failed to import file: {e}")
+        if len(participants) == 1:
+            participant_id = participants[0]["id"]
+            self._import_and_add_document(participant_id, file_path)
+        else:
+            dialog = AssignParticipantDialog(participants, self)
+            if dialog.exec() == QDialog.DialogCode.Accepted:
+                participant_id = dialog.get_selected_participant_id()
+                if participant_id:
+                    self._import_and_add_document(participant_id, file_path)
 
     def delete_current_document(self):
         if not self.current_document_id:
@@ -200,9 +203,9 @@ class ContentView(QWidget):
 
         if reply == QMessageBox.StandardButton.Yes:
             doc_id_to_delete = self.current_document_id
+            self.is_dirty = False
             database.delete_document(doc_id_to_delete)
             self.load_document_list()
-            self.load_document_content()
             self.document_deleted.emit()
 
     def on_text_changed(self):
@@ -210,42 +213,54 @@ class ContentView(QWidget):
             self.is_dirty = True
             self.save_button.setEnabled(True)
 
-    def save_document_content(self):
+    def save_document(self):
+        """Saves only the text content of the document."""
         if not self.is_dirty or not self.current_document_id:
             return
 
-        reply = QMessageBox.question(
-            self,
-            "Confirm Save and Clear Codes",
-            "Saving changes to the document text requires clearing all existing coded segments for this document to prevent errors.\n\nAre you sure you want to proceed?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No,
-        )
+        new_content = self.text_edit.toPlainText()
+        database.update_document_text_only(self.current_document_id, new_content)
 
-        if reply == QMessageBox.StandardButton.Yes:
-            new_content = self.text_edit.toPlainText()
-            database.update_document_content(self.current_document_id, new_content)
+        self.is_dirty = False
+        self.save_button.setEnabled(False)
 
-            self.is_dirty = False
-            self.save_button.setEnabled(False)
+        QMessageBox.information(self, "Success", "Document text saved successfully.")
 
-            parent_workspace = self.parent().parent().parent()
-            parent_workspace.on_document_changed()
-
-            QMessageBox.information(
-                self,
-                "Success",
-                "Document saved successfully. All codes for this document have been cleared.",
+    def handle_document_switch(self, new_index):
+        """Checks for unsaved changes before loading a new document."""
+        if self.is_dirty and self.current_document_id is not None:
+            msg_box = QMessageBox(self)
+            msg_box.setWindowTitle("Unsaved Changes")
+            msg_box.setText("You have unsaved changes. What would you like to do?")
+            msg_box.setStandardButtons(
+                QMessageBox.StandardButton.Save
+                | QMessageBox.StandardButton.Discard
+                | QMessageBox.StandardButton.Cancel
             )
+            msg_box.setDefaultButton(QMessageBox.StandardButton.Save)
+            reply = msg_box.exec()
 
-    def load_document_content(self, index=None):
+            if reply == QMessageBox.StandardButton.Save:
+                self.save_document()
+            elif reply == QMessageBox.StandardButton.Cancel:
+                id_to_display_text = {v: k for k, v in self.documents_map.items()}
+                old_display_text = id_to_display_text.get(self.current_document_id)
+                if old_display_text:
+                    old_index = self.doc_selector.findText(old_display_text)
+                    self.doc_selector.blockSignals(True)
+                    self.doc_selector.setCurrentIndex(old_index)
+                    self.doc_selector.blockSignals(False)
+                return
+
+        self.load_document_content()
+
+    def load_document_content(self):
         QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
         try:
-            # This is the main try block that pairs with the finally block
             try:
                 self.text_edit.textChanged.disconnect(self.on_text_changed)
             except RuntimeError:
-                pass  # Was not connected
+                pass
 
             self.text_edit.setDocument(QTextDocument(self))
             self.is_dirty = False
@@ -283,28 +298,40 @@ class ContentView(QWidget):
             QApplication.restoreOverrideCursor()
 
     def apply_all_highlights(self):
-        if not self.current_document_id:
-            return
+        """Applies highlights for all coded segments in the current document."""
+        # Block signals to prevent textChanged from firing during these changes
+        self.text_edit.blockSignals(True)
+        try:
+            if not self.current_document_id:
+                return
 
-        self._coded_segments_cache = database.get_coded_segments_for_document(
-            self.current_document_id
-        )
-        self.segment_count_label.setText(
-            f"Coded Segments: {len(self._coded_segments_cache)}"
-        )
-
-        cursor = self.text_edit.textCursor()
-        cursor.select(QTextCursor.SelectionType.Document)
-        cursor.setCharFormat(QTextCharFormat())
-        cursor.clearSelection()
-        self.text_edit.setTextCursor(cursor)
-
-        for segment in self._coded_segments_cache:
-            self.highlight_text(
-                segment["segment_start"], segment["segment_end"], segment["node_color"]
+            self._coded_segments_cache = database.get_coded_segments_for_document(
+                self.current_document_id
+            )
+            self.segment_count_label.setText(
+                f"Coded Segments: {len(self._coded_segments_cache)}"
             )
 
+            # Clear all existing formatting before applying new highlights
+            cursor = self.text_edit.textCursor()
+            cursor.select(QTextCursor.SelectionType.Document)
+            cursor.setCharFormat(QTextCharFormat())
+            cursor.clearSelection()
+            self.text_edit.setTextCursor(cursor)
+
+            # Apply highlights for each segment
+            for segment in self._coded_segments_cache:
+                self.highlight_text(
+                    segment["segment_start"],
+                    segment["segment_end"],
+                    segment["node_color"],
+                )
+        finally:
+            # Always unblock signals, even if an error occurred
+            self.text_edit.blockSignals(False)
+
     def highlight_text(self, start, end, color_hex):
+        """Helper method to apply color formatting to a text range."""
         cursor = self.text_edit.textCursor()
         cursor.setPosition(start)
         cursor.setPosition(end, QTextCursor.MoveMode.KeepAnchor)

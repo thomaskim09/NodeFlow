@@ -187,7 +187,7 @@ class NodeTreeManager(QWidget):
         header_label.setFont(font)
 
         add_root_button = QPushButton("＋ Add Root Node")
-        add_root_button.clicked.connect(self.add_node)
+        add_root_button.clicked.connect(lambda: self.add_node())
 
         clear_filter_button = QPushButton("▼ Show All")
         clear_filter_button.setToolTip(

@@ -142,11 +142,11 @@ class CodedSegmentsView(QWidget):
             self.reload_view()
 
     def reload_view(self):
-        # Safely disconnect signal to prevent runtime warnings
+        # Disconnect the signal once at the beginning of the refresh process.
         try:
             self.tree_widget.currentItemChanged.disconnect(self.on_selection_changed)
         except RuntimeError:
-            pass  # Signal was not connected
+            pass  # Signal was not connected, which is fine.
 
         self.tree_widget.clear()
         self.all_segments = []
@@ -173,7 +173,7 @@ class CodedSegmentsView(QWidget):
             self.tree_widget.setColumnWidth(0, 300)
             self.tree_widget.setColumnWidth(1, 150)
             self.tree_widget.setColumnWidth(2, 150)
-            self.tree_widget.setColumnWidth(3, 200)  # Set Document column width
+            self.tree_widget.setColumnWidth(3, 200)
             self.tree_widget.setColumnWidth(4, 50)
             self.search_scope_combo.clear()
             self.search_scope_combo.addItems(
@@ -181,21 +181,21 @@ class CodedSegmentsView(QWidget):
             )
             self.all_segments = database.get_coded_segments_for_project(self.project_id)
 
+        # Call the simplified populate_tree method.
         self.populate_tree(self.all_segments)
+
+        # Reconnect the signal once at the very end of the refresh process.
         self.tree_widget.currentItemChanged.connect(self.on_selection_changed)
 
+        # Re-apply any active filters
         if self._last_active_node_filter is not None:
             self.filter_by_node_family(self._last_active_node_filter)
         else:
             self.filter_tree()
 
     def populate_tree(self, segments):
-        try:
-            self.tree_widget.currentItemChanged.disconnect(self.on_selection_changed)
-        except RuntimeError:
-            pass
-
-        self.tree_widget.clear()
+        # This method is now simpler: it just adds items to the tree.
+        # It no longer clears the tree or handles signals.
         scope = self.scope_combo.currentText()
         for segment in segments:
             preview = segment["content_preview"]
@@ -212,7 +212,6 @@ class CodedSegmentsView(QWidget):
 
             item = QTreeWidgetItem(self.tree_widget, item_data)
             item.setData(0, 1, segment["id"])
-        self.tree_widget.currentItemChanged.connect(self.on_selection_changed)
 
     def filter_tree(self):
         self._last_active_node_filter = None
@@ -220,16 +219,22 @@ class CodedSegmentsView(QWidget):
         scope = self.search_scope_combo.currentText()
         view_scope = self.scope_combo.currentText()
 
+        # Temporarily disconnect to avoid issues while filtering
+        self.tree_widget.currentItemChanged.disconnect(self.on_selection_changed)
+        self.tree_widget.clear()
+
         if not search_text:
             self.populate_tree(self.all_segments)
-            return
+        else:
+            filtered_segments = [
+                seg
+                for seg in self.all_segments
+                if self._segment_matches_filter(seg, search_text, scope, view_scope)
+            ]
+            self.populate_tree(filtered_segments)
 
-        filtered_segments = [
-            seg
-            for seg in self.all_segments
-            if self._segment_matches_filter(seg, search_text, scope, view_scope)
-        ]
-        self.populate_tree(filtered_segments)
+        # Reconnect after the filtering is complete
+        self.tree_widget.currentItemChanged.connect(self.on_selection_changed)
 
     def _segment_matches_filter(self, seg, search_text, scope, view_scope):
         text_match = search_text in seg["content_preview"].lower()
@@ -258,21 +263,33 @@ class CodedSegmentsView(QWidget):
     def filter_by_node_family(self, node_ids: list):
         self.search_input.clear()
         self._last_active_node_filter = node_ids
+
+        self.tree_widget.currentItemChanged.disconnect(self.on_selection_changed)
+        self.tree_widget.clear()
+
         if not node_ids:
             self.populate_tree(self.all_segments)
-            return
-        node_filtered_segments = [
-            seg for seg in self.all_segments if seg["node_id"] in node_ids
-        ]
-        self.populate_tree(node_filtered_segments)
+        else:
+            node_filtered_segments = [
+                seg for seg in self.all_segments if seg["node_id"] in node_ids
+            ]
+            self.populate_tree(node_filtered_segments)
+
+        self.tree_widget.currentItemChanged.connect(self.on_selection_changed)
 
     def filter_by_single_node(self, node_id: int):
         self.search_input.clear()
         self._last_active_node_filter = [node_id]
+
+        self.tree_widget.currentItemChanged.disconnect(self.on_selection_changed)
+        self.tree_widget.clear()
+
         if not node_id:
             self.populate_tree(self.all_segments)
-            return
-        node_filtered_segments = [
-            seg for seg in self.all_segments if seg["node_id"] == node_id
-        ]
-        self.populate_tree(node_filtered_segments)
+        else:
+            node_filtered_segments = [
+                seg for seg in self.all_segments if seg["node_id"] == node_id
+            ]
+            self.populate_tree(node_filtered_segments)
+
+        self.tree_widget.currentItemChanged.connect(self.on_selection_changed)

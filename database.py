@@ -95,14 +95,14 @@ def create_tables():
 def add_project(name, description=""):
     conn = get_db_connection()
     try:
-        conn.execute(
-            "INSERT INTO projects (name, description) VALUES (?, ?)",
-            (name, description),
-        )
-        conn.commit()
+        with conn:
+            conn.execute(
+                "INSERT INTO projects (name, description) VALUES (?, ?)",
+                (name, description),
+            )
     except sqlite3.IntegrityError as e:
         print(f"Error: A project with the name '{name}' already exists.")
-        raise e  # Re-raise the exception to be caught by the UI
+        raise e
     finally:
         conn.close()
 
@@ -118,10 +118,10 @@ def rename_project(project_id, new_name):
     """Renames an existing project. Can raise sqlite3.IntegrityError on duplicate name."""
     conn = get_db_connection()
     try:
-        conn.execute(
-            "UPDATE projects SET name = ? WHERE id = ?", (new_name, project_id)
-        )
-        conn.commit()
+        with conn:
+            conn.execute(
+                "UPDATE projects SET name = ? WHERE id = ?", (new_name, project_id)
+            )
     finally:
         conn.close()
 
@@ -129,18 +129,18 @@ def rename_project(project_id, new_name):
 def delete_project(project_id):
     """Deletes a project and all its associated data."""
     conn = get_db_connection()
-    conn.execute("DELETE FROM projects WHERE id = ?", (project_id,))
-    conn.commit()
+    with conn:
+        conn.execute("DELETE FROM projects WHERE id = ?", (project_id,))
     conn.close()
 
 
 def add_participant(project_id, name, details=""):
     conn = get_db_connection()
-    conn.execute(
-        "INSERT INTO participants (project_id, name, details) VALUES (?, ?, ?)",
-        (project_id, name, details),
-    )
-    conn.commit()
+    with conn:
+        conn.execute(
+            "INSERT INTO participants (project_id, name, details) VALUES (?, ?, ?)",
+            (project_id, name, details),
+        )
     conn.close()
 
 
@@ -155,65 +155,59 @@ def get_participants_for_project(project_id):
 
 def update_participant(participant_id, name, details):
     conn = get_db_connection()
-    conn.execute(
-        "UPDATE participants SET name = ?, details = ? WHERE id = ?",
-        (name, details, participant_id),
-    )
-    conn.commit()
+    with conn:
+        conn.execute(
+            "UPDATE participants SET name = ?, details = ? WHERE id = ?",
+            (name, details, participant_id),
+        )
     conn.close()
 
 
 def delete_participant(participant_id):
     conn = get_db_connection()
-    conn.execute("DELETE FROM participants WHERE id = ?", (participant_id,))
-    conn.commit()
+    with conn:
+        conn.execute("DELETE FROM participants WHERE id = ?", (participant_id,))
     conn.close()
 
 
 def add_node(project_id, name, parent_id, color):
     """
-    Adds a new node robustly within a transaction. This version contains a final
-    fix for the persistent foreign key error when adding root nodes.
+    Adds a new node robustly using automatic transaction management.
     """
-    # This assertion will immediately fail if project_id is not an integer,
-    # providing a clearer error than the database's FOREIGN KEY constraint.
     assert isinstance(
         project_id, int
     ), f"project_id must be an integer, but was {type(project_id)}"
 
     conn = get_db_connection()
-    cursor = conn.cursor()
     try:
-        cursor.execute("BEGIN TRANSACTION")
+        with conn:
+            project_check = conn.execute(
+                "SELECT id FROM projects WHERE id = ?", (project_id,)
+            ).fetchone()
 
-        # First verify that the project exists
-        cursor.execute("SELECT id FROM projects WHERE id = ?", (project_id,))
-        if not cursor.fetchone():
-            raise ValueError(f"Project with ID {project_id} does not exist")
+            if project_check is None:
+                raise ValueError(
+                    f"Attempted to add a node to a non-existent project (ID: {project_id})."
+                )
 
-        # Determine position
-        if parent_id is None:
-            # For root node, count existing root nodes in the project
-            sql = (
-                "SELECT COUNT(*) FROM nodes WHERE project_id = ? AND parent_id IS NULL"
+            if parent_id is None:
+                position_result = conn.execute(
+                    "SELECT COUNT(*) FROM nodes WHERE project_id = ? AND parent_id IS NULL",
+                    (project_id,),
+                ).fetchone()
+            else:
+                position_result = conn.execute(
+                    "SELECT COUNT(*) FROM nodes WHERE parent_id = ?", (parent_id,)
+                ).fetchone()
+
+            position = position_result[0]
+
+            conn.execute(
+                "INSERT INTO nodes (project_id, name, parent_id, color, position) VALUES (?, ?, ?, ?, ?)",
+                (project_id, name, parent_id, color, position),
             )
-            params = (project_id,)
-        else:
-            # For child node, count siblings
-            sql = "SELECT COUNT(*) FROM nodes WHERE parent_id = ?"
-            params = (parent_id,)
-
-        cursor.execute(sql, params)
-        position = cursor.fetchone()[0]
-
-        # The INSERT statement itself.
-        cursor.execute(
-            "INSERT INTO nodes (project_id, name, parent_id, color, position) VALUES (?, ?, ?, ?, ?)",
-            (project_id, name, parent_id, color, position),
-        )
-        cursor.execute("COMMIT")
-    except Exception as e:
-        cursor.execute("ROLLBACK")
+    except sqlite3.Error as e:
+        print(f"Database error in add_node for project {project_id}: {e}")
         raise e
     finally:
         conn.close()
@@ -231,63 +225,61 @@ def get_nodes_for_project(project_id):
 
 def update_node_name(node_id, new_name):
     conn = get_db_connection()
-    conn.execute("UPDATE nodes SET name = ? WHERE id = ?", (new_name, node_id))
-    conn.commit()
+    with conn:
+        conn.execute("UPDATE nodes SET name = ? WHERE id = ?", (new_name, node_id))
     conn.close()
 
 
 def update_node_color(node_id, new_color):
     conn = get_db_connection()
-    conn.execute("UPDATE nodes SET color = ? WHERE id = ?", (new_color, node_id))
-    conn.commit()
+    with conn:
+        conn.execute("UPDATE nodes SET color = ? WHERE id = ?", (new_color, node_id))
     conn.close()
 
 
 def delete_node(node_id):
     conn = get_db_connection()
-    conn.execute("DELETE FROM nodes WHERE id = ?", (node_id,))
-    conn.commit()
+    with conn:
+        conn.execute("DELETE FROM nodes WHERE id = ?", (node_id,))
     conn.close()
 
 
 def update_node_order(node_positions):
     conn = get_db_connection()
-    conn.executemany("UPDATE nodes SET position = ? WHERE id = ?", node_positions)
-    conn.commit()
+    with conn:
+        conn.executemany("UPDATE nodes SET position = ? WHERE id = ?", node_positions)
     conn.close()
 
 
 def update_node_parent(node_id, new_parent_id):
     conn = get_db_connection()
-    cursor = conn.cursor()
-    if new_parent_id is None:
-        cursor.execute(
-            "SELECT COUNT(*) FROM nodes WHERE project_id = (SELECT project_id FROM nodes WHERE id = ?) AND parent_id IS NULL",
-            (node_id,),
+    with conn:
+        if new_parent_id is None:
+            cursor = conn.execute(
+                "SELECT COUNT(*) FROM nodes WHERE project_id = (SELECT project_id FROM nodes WHERE id = ?) AND parent_id IS NULL",
+                (node_id,),
+            )
+        else:
+            cursor = conn.execute(
+                "SELECT COUNT(*) FROM nodes WHERE parent_id = ?", (new_parent_id,)
+            )
+        count = cursor.fetchone()[0]
+        new_position = count
+        conn.execute(
+            "UPDATE nodes SET parent_id = ?, position = ? WHERE id = ?",
+            (new_parent_id, new_position, node_id),
         )
-    else:
-        cursor.execute(
-            "SELECT COUNT(*) FROM nodes WHERE parent_id = ?", (new_parent_id,)
-        )
-    count = cursor.fetchone()[0]
-    new_position = count
-    conn.execute(
-        "UPDATE nodes SET parent_id = ?, position = ? WHERE id = ?",
-        (new_parent_id, new_position, node_id),
-    )
-    conn.commit()
     conn.close()
 
 
 def add_document(project_id, title, content, participant_id):
     conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute(
-        "INSERT INTO documents (project_id, title, content, participant_id) VALUES (?, ?, ?, ?)",
-        (project_id, title, content, participant_id),
-    )
-    doc_id = cursor.lastrowid
-    conn.commit()
+    with conn:
+        cursor = conn.execute(
+            "INSERT INTO documents (project_id, title, content, participant_id) VALUES (?, ?, ?, ?)",
+            (project_id, title, content, participant_id),
+        )
+        doc_id = cursor.lastrowid
     conn.close()
     return doc_id
 
@@ -318,41 +310,34 @@ def get_document_content(document_id):
 
 def delete_document(document_id):
     conn = get_db_connection()
-    conn.execute("DELETE FROM documents WHERE id = ?", (document_id,))
-    conn.commit()
+    with conn:
+        conn.execute("DELETE FROM documents WHERE id = ?", (document_id,))
     conn.close()
 
 
-def update_document_content(document_id, new_content):
-    """Updates a document's content and deletes all its associated codes."""
+def update_document_text_only(document_id, new_content):
+    """Updates only the text content of a document, leaving codes untouched."""
     conn = get_db_connection()
     try:
-        cursor = conn.cursor()
-        # Start a transaction
-        cursor.execute("BEGIN TRANSACTION;")
-        # Delete old coded segments for this document
-        cursor.execute(
-            "DELETE FROM coded_segments WHERE document_id = ?", (document_id,)
-        )
-        # Update the document content
-        cursor.execute(
-            "UPDATE documents SET content = ? WHERE id = ?", (new_content, document_id)
-        )
-        conn.commit()
-    except conn.Error as e:
-        print(f"Database error: {e}")
-        conn.rollback()
+        with conn:
+            conn.execute(
+                "UPDATE documents SET content = ? WHERE id = ?",
+                (new_content, document_id),
+            )
+    except sqlite3.Error as e:
+        print(f"Database error in update_document_text_only: {e}")
+        raise e
     finally:
         conn.close()
 
 
 def add_coded_segment(document_id, node_id, participant_id, start, end, text_preview):
     conn = get_db_connection()
-    conn.execute(
-        "INSERT INTO coded_segments (document_id, node_id, participant_id, segment_start, segment_end, content_preview) VALUES (?, ?, ?, ?, ?, ?)",
-        (document_id, node_id, participant_id, start, end, text_preview),
-    )
-    conn.commit()
+    with conn:
+        conn.execute(
+            "INSERT INTO coded_segments (document_id, node_id, participant_id, segment_start, segment_end, content_preview) VALUES (?, ?, ?, ?, ?, ?)",
+            (document_id, node_id, participant_id, start, end, text_preview),
+        )
     conn.close()
 
 
@@ -402,14 +387,9 @@ def get_coded_segments_for_project(project_id):
 def delete_coded_segment(segment_id):
     """Deletes a specific coded segment from the database."""
     conn = get_db_connection()
-    try:
+    with conn:
         conn.execute("DELETE FROM coded_segments WHERE id = ?", (segment_id,))
-        conn.commit()
-    except conn.Error as e:
-        print(f"Database error: {e}")
-        conn.rollback()
-    finally:
-        conn.close()
+    conn.close()
 
 
 if __name__ == "__main__":

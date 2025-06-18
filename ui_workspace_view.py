@@ -124,9 +124,6 @@ class WorkspaceView(QWidget):
         self.center_pane.doc_selector.currentIndexChanged.connect(
             self.on_document_changed
         )
-        # REMOVED: Context menu logic is no longer needed
-        # self.center_pane.text_edit.setContextMenuPolicy(...)
-        # self.center_pane.text_edit.customContextMenuRequested.connect(...)
 
         self.center_pane.document_deleted.connect(self.on_data_changed)
         self.center_pane.segment_clicked.connect(self.bottom_pane.select_segment_by_id)
@@ -188,8 +185,6 @@ class WorkspaceView(QWidget):
         finally:
             QApplication.restoreOverrideCursor()
 
-    # REMOVED: The entire show_text_edit_context_menu method is gone.
-
     def code_selection(self, node_id):
         cursor = self.center_pane.text_edit.textCursor()
         if not cursor.hasSelection():
@@ -204,15 +199,13 @@ class WorkspaceView(QWidget):
         if not doc_id:
             return
 
+        # Add the segment to the database
         database.add_coded_segment(doc_id, node_id, participant_id, start, end, text)
 
-        node_data = self.node_tree_manager.nodes_map.get(node_id)
-        node_color = node_data["color"] if node_data else "#FFFF00"
-
-        self.center_pane.highlight_text(start, end, node_color)
-
+        # Clear the user's text selection in the editor
         cursor.clearSelection()
         self.center_pane.text_edit.setTextCursor(cursor)
 
+        # Refresh the views to show the new coded segment
         self.bottom_pane.reload_view()
         self.center_pane.apply_all_highlights()
