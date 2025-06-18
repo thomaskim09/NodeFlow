@@ -5,7 +5,8 @@ DB_FILE = "nodeflow.db"
 
 
 def get_db_connection():
-    conn = sqlite3.connect(DB_FILE)
+    # Add a timeout to prevent "database is locked" errors
+    conn = sqlite3.connect(DB_FILE, timeout=10)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON;")
     return conn
@@ -55,6 +56,7 @@ def create_tables():
             project_id INTEGER NOT NULL,
             parent_id INTEGER,
             name TEXT NOT NULL,
+            color TEXT DEFAULT '#FFFF00',
             position INTEGER DEFAULT 0,
             FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE CASCADE,
             FOREIGN KEY (parent_id) REFERENCES nodes (id) ON DELETE CASCADE
@@ -77,6 +79,14 @@ def create_tables():
         );
     """
     )
+
+    # --- Check and add 'color' column to nodes if it doesn't exist ---
+    cursor.execute("PRAGMA table_info(nodes);")
+    columns = [col[1] for col in cursor.fetchall()]
+    if "color" not in columns:
+        cursor.execute("ALTER TABLE nodes ADD COLUMN color TEXT DEFAULT '#FFFF00';")
+        print("Upgraded 'nodes' table with 'color' column.")
+
     conn.commit()
     conn.close()
     print("Database tables created or verified successfully.")
@@ -108,14 +118,11 @@ def rename_project(project_id, new_name):
     """Renames an existing project. Can raise sqlite3.IntegrityError on duplicate name."""
     conn = get_db_connection()
     try:
-        # The UNIQUE constraint on the name column will cause this to raise an
-        # IntegrityError if the new_name already exists.
         conn.execute(
             "UPDATE projects SET name = ? WHERE id = ?", (new_name, project_id)
         )
         conn.commit()
     finally:
-        # Ensure the connection is closed even if an error is raised.
         conn.close()
 
 
@@ -163,11 +170,15 @@ def delete_participant(participant_id):
     conn.close()
 
 
-def add_node(project_id, name, parent_id=None):
+def add_node(project_id, name, parent_id, color):
+    """
+    Adds a new node. Note the corrected parameter order.
+    """
     conn = get_db_connection()
+    # The tuple now correctly matches the INSERT statement order
     conn.execute(
-        "INSERT INTO nodes (project_id, name, parent_id) VALUES (?, ?, ?)",
-        (project_id, name, parent_id),
+        "INSERT INTO nodes (project_id, name, parent_id, color) VALUES (?, ?, ?, ?)",
+        (project_id, name, parent_id, color),
     )
     conn.commit()
     conn.close()
@@ -186,6 +197,13 @@ def get_nodes_for_project(project_id):
 def update_node_name(node_id, new_name):
     conn = get_db_connection()
     conn.execute("UPDATE nodes SET name = ? WHERE id = ?", (new_name, node_id))
+    conn.commit()
+    conn.close()
+
+
+def update_node_color(node_id, new_color):
+    conn = get_db_connection()
+    conn.execute("UPDATE nodes SET color = ? WHERE id = ?", (new_color, node_id))
     conn.commit()
     conn.close()
 
@@ -309,7 +327,7 @@ def get_coded_segments_for_document(document_id):
         """
         SELECT
             cs.id, cs.node_id, cs.content_preview, cs.segment_start, cs.segment_end,
-            n.name as node_name,
+            n.name as node_name, n.color as node_color,
             p.name as participant_name
         FROM coded_segments cs
         JOIN nodes n ON cs.node_id = n.id

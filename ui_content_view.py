@@ -11,15 +11,25 @@ from PySide6.QtWidgets import (
     QLabel,
     QDialogButtonBox,
     QApplication,
+    QFrame,
+    QToolTip,
 )
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QTextCursor, QColor, QTextCharFormat
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import (
+    QTextCursor,
+    QColor,
+    QTextCharFormat,
+    QTextDocument,
+)
 import os
 import database
 import docx
 
 
 class ContentView(QWidget):
+    document_deleted = Signal()
+    segment_clicked = Signal(int)  # Signal to emit the ID of the clicked segment
+
     def __init__(self, project_id):
         super().__init__()
         self.project_id = project_id
@@ -27,48 +37,56 @@ class ContentView(QWidget):
         self.current_document_id = None
         self.current_participant_id = None
         self.is_dirty = False
+        self._coded_segments_cache = []  # Cache for faster lookups
 
         main_layout = QVBoxLayout(self)
         top_bar_layout = QHBoxLayout()
 
-        # --- NEW: Area Title ---
         title_label = QLabel("Document View")
         font = title_label.font()
         font.setBold(True)
         title_label.setFont(font)
 
-        # Document selector
         self.doc_selector = QComboBox()
 
-        # --- UPDATED: Icon Buttons ---
-        import_button = QPushButton("⬆️")  # Changed Icon
+        import_button = QPushButton("⬆️")
         import_button.setToolTip("Import Document (.txt, .docx)")
         import_button.setFixedSize(28, 28)
 
-        self.save_button = QPushButton("💾")  # Changed Icon
+        self.save_button = QPushButton("💾")
         self.save_button.setToolTip(
             "Save Changes (clears existing codes for this document)"
         )
         self.save_button.setFixedSize(28, 28)
-        self.save_button.setEnabled(False)  # Disabled by default
+        self.save_button.setEnabled(False)
 
         delete_button = QPushButton("🗑️")
         delete_button.setToolTip("Delete Current Document")
         delete_button.setFixedSize(28, 28)
 
         self.text_edit = QTextEdit()
-        self.text_edit.setReadOnly(False)  # Allow editing
+        self.text_edit.setReadOnly(False)
 
-        # --- NEW: Layout setup ---
+        info_bar = QFrame()
+        info_bar.setFrameShape(QFrame.Shape.StyledPanel)
+        info_bar_layout = QHBoxLayout(info_bar)
+        info_bar_layout.setContentsMargins(5, 2, 5, 2)
+        self.word_count_label = QLabel("Word Count: 0")
+        self.segment_count_label = QLabel("Coded Segments: 0")
+        info_bar_layout.addWidget(self.word_count_label)
+        info_bar_layout.addStretch()
+        info_bar_layout.addWidget(self.segment_count_label)
+
         top_bar_layout.addWidget(title_label)
         top_bar_layout.addWidget(self.doc_selector)
-        top_bar_layout.addStretch()  # Spacer
+        top_bar_layout.addStretch()
         top_bar_layout.addWidget(import_button)
         top_bar_layout.addWidget(self.save_button)
         top_bar_layout.addWidget(delete_button)
 
         main_layout.addLayout(top_bar_layout)
         main_layout.addWidget(self.text_edit)
+        main_layout.addWidget(info_bar)
 
         # Connect signals
         import_button.clicked.connect(self.import_document)
@@ -76,6 +94,7 @@ class ContentView(QWidget):
         delete_button.clicked.connect(self.delete_current_document)
         self.doc_selector.currentIndexChanged.connect(self.load_document_content)
         self.text_edit.textChanged.connect(self.on_text_changed)
+        self.text_edit.cursorPositionChanged.connect(self.on_cursor_position_changed)
 
         self.load_document_list()
 
@@ -103,6 +122,7 @@ class ContentView(QWidget):
             self.doc_selector.setCurrentIndex(0)
         else:
             self.doc_selector.setCurrentIndex(-1)
+            self.load_document_content()
 
     def import_document(self):
         file_path, _ = QFileDialog.getOpenFileName(
@@ -130,7 +150,7 @@ class ContentView(QWidget):
                 content = ""
                 if file_path.lower().endswith(".docx"):
                     doc = docx.Document(file_path)
-                    content = "\n".join([p.text for p in doc.paragraphs])
+                    content = "\n\n".join([p.text for p in doc.paragraphs])
                 else:
                     with open(file_path, "r", encoding="utf-8") as f:
                         content = f.read()
@@ -164,17 +184,17 @@ class ContentView(QWidget):
         )
 
         if reply == QMessageBox.StandardButton.Yes:
-            database.delete_document(self.current_document_id)
+            doc_id_to_delete = self.current_document_id
+            database.delete_document(doc_id_to_delete)
             self.load_document_list()
+            self.document_deleted.emit()
 
     def on_text_changed(self):
-        """Marks the document as dirty and enables the save button."""
         if not self.text_edit.isReadOnly():
             self.is_dirty = True
             self.save_button.setEnabled(True)
 
     def save_document_content(self):
-        """Saves the edited text, after warning the user about clearing codes."""
         if not self.is_dirty or not self.current_document_id:
             return
 
@@ -193,10 +213,7 @@ class ContentView(QWidget):
             self.is_dirty = False
             self.save_button.setEnabled(False)
 
-            # Manually trigger a refresh of the views
-            parent_workspace = (
-                self.parent().parent().parent()
-            )  # Navigate up to WorkspaceView
+            parent_workspace = self.parent().parent().parent()
             parent_workspace.on_document_changed()
 
             QMessageBox.information(
@@ -206,11 +223,12 @@ class ContentView(QWidget):
             )
 
     def load_document_content(self, index=None):
-        """Loads a document, resetting the editor state."""
         QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
         try:
             self.text_edit.textChanged.disconnect(self.on_text_changed)
-            self.text_edit.clear()
+
+            # --- FIX for RuntimeError: Create a new document with a parent ---
+            self.text_edit.setDocument(QTextDocument(self))
 
             self.is_dirty = False
             self.save_button.setEnabled(False)
@@ -219,7 +237,11 @@ class ContentView(QWidget):
             if not selected_display_text:
                 self.current_document_id = None
                 self.current_participant_id = None
+                self._coded_segments_cache = []
                 self.text_edit.setReadOnly(True)
+                self.text_edit.setPlainText("No document selected.")
+                self.word_count_label.setText("Word Count: 0")
+                self.segment_count_label.setText("Coded Segments: 0")
                 self.text_edit.textChanged.connect(self.on_text_changed)
                 return
 
@@ -230,19 +252,67 @@ class ContentView(QWidget):
             )
             self.current_participant_id = participant_id
             self.text_edit.setPlainText(content)
+            self.apply_all_highlights()
+
+            word_count = len(content.split())
+            self.word_count_label.setText(f"Word Count: {word_count}")
+
             self.text_edit.textChanged.connect(self.on_text_changed)
         finally:
             QApplication.restoreOverrideCursor()
 
-    def highlight_text(self, start, end, color_hex="#FFFF00"):
-        """Applies a background color and contrasting text color to a segment."""
+    def apply_all_highlights(self):
+        if not self.current_document_id:
+            return
+
+        self._coded_segments_cache = database.get_coded_segments_for_document(
+            self.current_document_id
+        )
+        self.segment_count_label.setText(
+            f"Coded Segments: {len(self._coded_segments_cache)}"
+        )
+
+        for segment in self._coded_segments_cache:
+            self.highlight_text(
+                segment["segment_start"], segment["segment_end"], segment["node_color"]
+            )
+
+    def highlight_text(self, start, end, color_hex):
         cursor = self.text_edit.textCursor()
         cursor.setPosition(start)
         cursor.setPosition(end, QTextCursor.MoveMode.KeepAnchor)
+
         fmt = QTextCharFormat()
-        fmt.setBackground(QColor(color_hex))
-        fmt.setForeground(QColor("black"))  # Force black text for contrast
+        bg_color = QColor(color_hex)
+        brightness = (
+            bg_color.red() * 299 + bg_color.green() * 587 + bg_color.blue() * 114
+        ) / 1000
+        text_color = QColor("black") if brightness > 128 else QColor("white")
+
+        fmt.setBackground(bg_color)
+        fmt.setForeground(text_color)
         cursor.mergeCharFormat(fmt)
+
+        cursor.clearSelection()
+        self.text_edit.setTextCursor(cursor)
+
+    def on_cursor_position_changed(self):
+        pos = self.text_edit.textCursor().position()
+
+        found_segment = None
+        for segment in self._coded_segments_cache:
+            if segment["segment_start"] <= pos < segment["segment_end"]:
+                found_segment = segment
+                break
+
+        if found_segment:
+            tooltip_text = f"<b>Node:</b> {found_segment['node_name']}"
+            QToolTip.showText(
+                self.mapToGlobal(self.text_edit.cursorRect().topRight()),
+                tooltip_text,
+                self.text_edit,
+            )
+            self.segment_clicked.emit(found_segment["id"])
 
 
 class AssignParticipantDialog(QDialog):

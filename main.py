@@ -1,11 +1,13 @@
 import sys
 from PySide6.QtWidgets import QApplication, QMainWindow
 from PySide6.QtCore import QSize
-from PySide6.QtGui import QScreen, QIcon
+from PySide6.QtGui import QIcon
 
 from ui_startup_view import StartupView
 from ui_workspace_view import WorkspaceView
+from theme_manager import apply_theme  # Import the theme manager
 import database
+import os
 
 
 class MainWindow(QMainWindow):
@@ -18,42 +20,50 @@ class MainWindow(QMainWindow):
         super().__init__()
 
         self.setWindowTitle("NodeFlow")
-        self.setWindowIcon(QIcon("icon.png"))
+        if os.path.exists("icon.png"):
+            self.setWindowIcon(QIcon("icon.png"))
+
         database.create_tables()
         self.show_startup_view()
 
     def center_window(self):
         """Helper function to center the main window on the screen."""
-        center_point = QScreen.availableGeometry(QApplication.primaryScreen()).center()
-        frame_geometry = self.frameGeometry()
-        frame_geometry.moveCenter(center_point)
-        self.move(frame_geometry.topLeft())
+        try:
+            center_point = self.screen().availableGeometry().center()
+            frame_geometry = self.frameGeometry()
+            frame_geometry.moveCenter(center_point)
+            self.move(frame_geometry.topLeft())
+        except AttributeError:  # Handle cases where screen is not available yet
+            pass
 
     def show_startup_view(self):
         """Displays the project selection screen."""
         self.setWindowTitle("NodeFlow - Select Project")
         self.setMinimumSize(QSize(500, 400))
         self.resize(500, 400)
-        self.center_window()
 
         startup_view = StartupView(self.show_workspace_view)
         self.setCentralWidget(startup_view)
+        self.center_window()
 
     def show_workspace_view(self, project_id, project_name):
         """Displays the main workspace for the selected project."""
         self.setWindowTitle(f"NodeFlow - {project_name}")
         self.setMinimumSize(QSize(1000, 700))
         self.resize(1200, 800)
-        self.center_window()
 
-        # WorkspaceView no longer needs the callback
-        workspace_view = WorkspaceView(project_id, project_name)
+        workspace_view = WorkspaceView(project_id, project_name, self.show_startup_view)
         self.setCentralWidget(workspace_view)
+        self.center_window()
 
 
 # Main execution block
 if __name__ == "__main__":
     app = QApplication(sys.argv)
+
+    # Apply the saved theme at startup
+    apply_theme(app)
+
     window = MainWindow()
     window.show()
     sys.exit(app.exec())

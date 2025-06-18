@@ -9,6 +9,8 @@ from PySide6.QtWidgets import (
     QLabel,
     QPushButton,
     QMessageBox,
+    QTreeWidgetItemIterator,
+    QAbstractItemView,
 )
 import database
 
@@ -25,7 +27,6 @@ class CodedSegmentsView(QWidget):
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(5)
 
-        # --- Layout for controls ---
         controls_layout = QHBoxLayout()
         header_label = QLabel("Coded Segments")
         font = header_label.font()
@@ -54,7 +55,6 @@ class CodedSegmentsView(QWidget):
         self.tree_widget = QTreeWidget()
         main_layout.addWidget(self.tree_widget)
 
-        # --- Connect Signals ---
         self.scope_combo.currentTextChanged.connect(self.reload_view)
         self.search_input.textChanged.connect(self.filter_tree)
         self.search_scope_combo.currentTextChanged.connect(self.filter_tree)
@@ -63,18 +63,32 @@ class CodedSegmentsView(QWidget):
         self.scope_combo.setCurrentText("Entire Project")
         self.reload_view()
 
+    def select_segment_by_id(self, segment_id):
+        if not segment_id:
+            return
+
+        # Block signals to prevent feedback loops if selection triggers other events
+        self.tree_widget.blockSignals(True)
+
+        it = QTreeWidgetItemIterator(self.tree_widget)
+        while it.value():
+            item = it.value()
+            if item.data(0, 1) == segment_id:
+                self.tree_widget.setCurrentItem(item)
+                self.tree_widget.scrollToItem(
+                    item, QAbstractItemView.ScrollHint.PositionAtCenter
+                )
+                break
+            it += 1
+
+        self.tree_widget.blockSignals(False)
+
     def on_selection_changed(self, current, previous):
-        """
-        Dynamically adds a delete button to the selected row and removes it
-        from the previously selected row.
-        """
-        # Remove button from the previously selected item
         if previous:
             self.tree_widget.setItemWidget(
                 previous, self.tree_widget.columnCount() - 1, None
             )
 
-        # Add button to the newly selected item
         if current:
             segment_id = current.data(0, 1)
             preview = current.text(0)
@@ -86,9 +100,8 @@ class CodedSegmentsView(QWidget):
                 lambda: self.confirm_delete_segment(segment_id, preview)
             )
 
-            # Use a container to center the button in the cell
             button_container = QWidget()
-            button_container.setFixedHeight(20)  # Match button height
+            button_container.setFixedHeight(20)
             button_layout = QHBoxLayout(button_container)
             button_layout.setContentsMargins(0, 0, 0, 0)
             button_layout.setSpacing(0)

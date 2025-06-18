@@ -6,8 +6,15 @@ from PySide6.QtWidgets import (
     QMenu,
     QPushButton,
     QApplication,
+    QToolBar,
+    QMessageBox,
+    QDialog,
+    QFormLayout,
+    QComboBox,
+    QLabel,
+    QDialogButtonBox,
 )
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QAction
 
 from ui_participant_manager import ParticipantManager
@@ -16,16 +23,72 @@ from ui_content_view import ContentView
 from ui_coded_segments_view import CodedSegmentsView
 import export_manager
 import database
+from theme_manager import save_settings, load_settings
+
+
+class SettingsDialog(QDialog):
+    """
+    A dialog to manage application settings, like the theme.
+    """
+
+    theme_changed = Signal()
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Settings")
+        self.setMinimumWidth(300)
+
+        self.settings = load_settings()
+
+        layout = QVBoxLayout(self)
+        form_layout = QFormLayout()
+
+        self.theme_combo = QComboBox()
+        self.theme_combo.addItems(["Light", "Dark"])
+        self.theme_combo.setCurrentText(self.settings.get("theme", "Light"))
+        form_layout.addRow(QLabel("Application Theme:"), self.theme_combo)
+
+        layout.addLayout(form_layout)
+
+        button_box = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Save
+            | QDialogButtonBox.StandardButton.Cancel
+        )
+        button_box.accepted.connect(self.save_and_apply)
+        button_box.rejected.connect(self.reject)
+        layout.addWidget(button_box)
+
+    def save_and_apply(self):
+        self.settings["theme"] = self.theme_combo.currentText()
+        save_settings(self.settings)
+        QMessageBox.information(
+            self,
+            "Settings Saved",
+            "The new theme will be applied when you restart the application.",
+        )
+        self.accept()
 
 
 class WorkspaceView(QWidget):
-    def __init__(self, project_id, project_name):
+    def __init__(self, project_id, project_name, back_to_startup_callback):
         super().__init__()
         self.project_id = project_id
         self.project_name = project_name
+        self.back_to_startup_callback = back_to_startup_callback
 
         main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(0, 0, 0, 0)
         main_splitter = QSplitter(Qt.Orientation.Horizontal)
+
+        toolbar = QToolBar("Main Toolbar")
+        toolbar.setMovable(False)
+        back_action = QAction("Projects", self)
+        back_action.triggered.connect(self.back_to_startup_callback)
+        settings_action = QAction("Settings", self)
+        settings_action.triggered.connect(self.open_settings)
+        toolbar.addAction(back_action)
+        toolbar.addAction(settings_action)
+        main_layout.addWidget(toolbar)
 
         self.left_pane = QFrame()
         self.left_pane_layout = QVBoxLayout(self.left_pane)
@@ -71,12 +134,14 @@ class WorkspaceView(QWidget):
         self.center_pane.text_edit.customContextMenuRequested.connect(
             self.show_text_edit_context_menu
         )
+        self.center_pane.document_deleted.connect(self.on_data_changed)
+        # Connect the new click-to-select signal
+        self.center_pane.segment_clicked.connect(self.bottom_pane.select_segment_by_id)
 
         self.action_export_json.triggered.connect(self.export_as_json)
         self.action_export_word.triggered.connect(self.export_as_word)
         self.action_export_excel.triggered.connect(self.export_as_excel)
 
-        # Connect the NEW filter signals
         self.node_tree_manager.filter_by_node_family_signal.connect(
             self.bottom_pane.filter_by_node_family
         )
@@ -85,11 +150,20 @@ class WorkspaceView(QWidget):
         )
 
         self.participant_manager.participant_updated.connect(self.on_data_changed)
-        self.node_tree_manager.node_updated.connect(self.on_data_changed)
+        self.node_tree_manager.node_updated.connect(self.on_node_data_updated)
 
-        # --- Trigger initial load ---
         self.center_pane.load_document_content()
         self.on_document_changed()
+
+    def open_settings(self):
+        dialog = SettingsDialog(self)
+        dialog.exec()
+
+    def on_node_data_updated(self):
+        """Specifically handle node updates to refresh highlights."""
+        self.node_tree_manager.load_nodes()
+        self.center_pane.apply_all_highlights()
+        self.on_data_changed()
 
     def on_data_changed(self):
         self.center_pane.load_document_list()
@@ -173,5 +247,12 @@ class WorkspaceView(QWidget):
             return
 
         database.add_coded_segment(doc_id, node_id, participant_id, start, end, text)
-        self.center_pane.highlight_text(start, end)
+
+        node_color = self.node_tree_manager.nodes_map.get(node_id, {}).get(
+            "color", "#FFFF00"
+        )
+        self.center_pane.highlight_text(start, end, node_color)
+
+        # Refresh bottom pane and center pane info
         self.bottom_pane.reload_view()
+        self.center_pane.apply_all_highlights()
