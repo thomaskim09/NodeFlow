@@ -126,6 +126,7 @@ class WorkspaceView(QWidget):
         )
 
         self.center_pane.document_deleted.connect(self.on_data_changed)
+        self.center_pane.document_added.connect(self.on_data_changed)
         self.center_pane.segment_clicked.connect(self.bottom_pane.select_segment_by_id)
         self.bottom_pane.segment_deleted.connect(self.on_segment_deleted)
 
@@ -165,7 +166,8 @@ class WorkspaceView(QWidget):
 
     def on_data_changed(self):
         self.center_pane.load_document_list()
-        self.bottom_pane.reload_view()
+        new_doc_id = self.center_pane.current_document_id
+        self.bottom_pane.load_segments(new_doc_id)
 
     def export_as_word(self):
         export_manager.export_to_word(self.project_id, self)

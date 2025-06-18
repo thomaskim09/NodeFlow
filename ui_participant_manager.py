@@ -10,8 +10,42 @@ from PySide6.QtWidgets import (
     QLabel,
 )
 from PySide6.QtCore import Signal, Qt
+from PySide6.QtGui import QKeyEvent
 
 import database
+
+
+class RenamableListWidget(QListWidget):
+    """A QListWidget that handles the F2 key to trigger a rename action."""
+
+    def __init__(self, parent_manager):
+        super().__init__()
+        self.parent_manager = parent_manager
+
+    def keyPressEvent(self, event: QKeyEvent):
+        """Handles F2 for rename and Delete for delete."""
+        current_item = self.currentItem()
+        if not current_item:
+            super().keyPressEvent(event)
+            return
+
+        item_widget = self.itemWidget(current_item)
+        if not item_widget:
+            super().keyPressEvent(event)
+            return
+
+        if event.key() == Qt.Key.Key_F2:
+            if hasattr(item_widget, "on_edit_clicked"):
+                item_widget.on_edit_clicked()
+            event.accept()
+
+        elif event.key() == Qt.Key.Key_Delete:
+            if hasattr(item_widget, "on_delete_clicked"):
+                item_widget.on_delete_clicked()
+            event.accept()
+
+        else:
+            super().keyPressEvent(event)
 
 
 class ParticipantItemWidget(QWidget):
@@ -28,12 +62,14 @@ class ParticipantItemWidget(QWidget):
         self.edit_button = QPushButton("✎")
         self.edit_button.setFixedSize(24, 24)
         self.edit_button.setToolTip("Edit Participant Name")
+        self.edit_button.setToolTip("Edit Participant Name (F2)")
         self.edit_button.clicked.connect(self.on_edit_clicked)
         self.edit_button.setVisible(False)
 
         self.delete_button = QPushButton("🗑")
         self.delete_button.setFixedSize(24, 24)
         self.delete_button.setToolTip("Delete Participant")
+        self.delete_button.setToolTip("Delete Participant (Delete)")
         self.delete_button.clicked.connect(self.on_delete_clicked)
         self.delete_button.setVisible(False)
 
@@ -82,6 +118,7 @@ class ParticipantManager(QWidget):
         main_layout.addLayout(header_layout)
 
         self.list_widget = QListWidget()
+        self.list_widget = RenamableListWidget(self)
         self.list_widget.currentItemChanged.connect(self.on_selection_changed)
         main_layout.addWidget(self.list_widget)
 

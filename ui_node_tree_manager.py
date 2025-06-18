@@ -12,8 +12,8 @@ from PySide6.QtWidgets import (
     QMenu,
     QColorDialog,
 )
-from PySide6.QtCore import Signal, QTimer
-from PySide6.QtGui import QDropEvent
+from PySide6.QtCore import Qt, Signal, QTimer
+from PySide6.QtGui import QDropEvent, QKeyEvent
 import export_manager
 import database
 
@@ -70,6 +70,31 @@ class DraggableTreeWidget(QTreeWidget):
         database.update_node_order(db_order_updates)
         QTimer.singleShot(0, self.parent_manager.refresh_tree_and_emit_update)
 
+    def keyPressEvent(self, event: QKeyEvent):
+        """Handles F2 for rename and Delete for delete."""
+        current_item = self.currentItem()
+        if not current_item:
+            super().keyPressEvent(event)
+            return
+
+        node_id = current_item.data(0, 1)
+        if node_id is None:
+            super().keyPressEvent(event)
+            return
+
+        if event.key() == Qt.Key.Key_F2:
+            self.parent_manager.rename_node(node_id)
+            event.accept()
+
+        # --- ADD THIS BLOCK ---
+        elif event.key() == Qt.Key.Key_Delete:
+            self.parent_manager.delete_node(node_id)
+            event.accept()
+        # ----------------------
+
+        else:
+            super().keyPressEvent(event)
+
 
 class NodeItemWidget(QWidget):
     def __init__(self, node_id, node_color, display_text, parent_manager):
@@ -110,12 +135,14 @@ class NodeItemWidget(QWidget):
         self.edit_button = QPushButton("✎")
         self.edit_button.setFixedSize(24, 24)
         self.edit_button.setToolTip("Rename node")
+        self.edit_button.setToolTip("Rename node (F2)")
         self.edit_button.clicked.connect(self.on_rename)
         self.edit_button.setVisible(False)
 
         self.delete_button = QPushButton("🗑")
         self.delete_button.setFixedSize(24, 24)
         self.delete_button.setToolTip("Delete node and its children")
+        self.delete_button.setToolTip("Delete node and its children (Delete)")
         self.delete_button.clicked.connect(self.on_delete)
         self.delete_button.setVisible(False)
 

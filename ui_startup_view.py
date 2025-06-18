@@ -10,9 +10,42 @@ from PySide6.QtWidgets import (
     QInputDialog,
 )
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QFont, QPixmap
+from PySide6.QtGui import QFont, QPixmap, QKeyEvent
 
 import database
+
+
+class ProjectListWidget(QListWidget):
+    """A QListWidget that handles F2 for rename and Delete for delete."""
+
+    def __init__(self, parent_view):
+        super().__init__()
+        self.parent_view = parent_view
+
+    def keyPressEvent(self, event: QKeyEvent):
+        """Handles keyboard shortcuts for project actions."""
+        current_item = self.currentItem()
+        if not current_item:
+            super().keyPressEvent(event)
+            return
+
+        item_widget = self.itemWidget(current_item)
+        if not item_widget:
+            super().keyPressEvent(event)
+            return
+
+        if event.key() == Qt.Key.Key_F2:
+            if hasattr(item_widget, "on_rename_clicked"):
+                item_widget.on_rename_clicked()
+            event.accept()
+
+        elif event.key() == Qt.Key.Key_Delete:
+            if hasattr(item_widget, "on_delete_clicked"):
+                item_widget.on_delete_clicked()
+            event.accept()
+
+        else:
+            super().keyPressEvent(event)
 
 
 class ProjectItemWidget(QWidget):
@@ -37,6 +70,7 @@ class ProjectItemWidget(QWidget):
         self.edit_button.setFont(font)
         self.edit_button.setFixedSize(24, 24)
         self.edit_button.setToolTip("Rename Project")
+        self.edit_button.setToolTip("Rename Project (F2)")
         self.edit_button.clicked.connect(self.on_rename_clicked)
         self.edit_button.setVisible(False)
 
@@ -47,6 +81,7 @@ class ProjectItemWidget(QWidget):
         self.delete_button.setFont(font)
         self.delete_button.setFixedSize(24, 24)
         self.delete_button.setToolTip("Delete Project")
+        self.delete_button.setToolTip("Delete Project (Delete)")
         self.delete_button.clicked.connect(self.on_delete_clicked)
         self.delete_button.setVisible(False)
 
@@ -104,6 +139,7 @@ class StartupView(QWidget):
         self.subtitle_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         self.project_list_widget = QListWidget()
+        self.project_list_widget = ProjectListWidget(self)
         self.project_list_widget.setMaximumWidth(500)
         self.project_list_widget.itemDoubleClicked.connect(self.open_selected_project)
         self.project_list_widget.currentItemChanged.connect(self.on_selection_changed)

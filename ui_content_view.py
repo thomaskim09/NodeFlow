@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
     QApplication,
     QFrame,
     QInputDialog,
+    QStackedLayout,
 )
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import (
@@ -20,51 +21,17 @@ from PySide6.QtGui import (
     QColor,
     QTextCharFormat,
     QTextDocument,
+    QFont,
 )
 import os
 import database
 import docx
-
-
-class DropEnabledTextEdit(QTextEdit):
-    """A custom QTextEdit that accepts drag-and-drop file events."""
-
-    filesDropped = Signal(list)
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setAcceptDrops(True)
-
-    def dragEnterEvent(self, event):
-        mime_data = event.mimeData()
-        if mime_data.hasUrls():
-            # Check if any of the files have a valid extension
-            for url in mime_data.urls():
-                if url.isLocalFile():
-                    file_path = url.toLocalFile().lower()
-                    if file_path.endswith((".txt", ".docx")):
-                        event.acceptProposedAction()
-                        self.setStyleSheet("border: 2px dashed #0078d7;")
-                        return
-        event.ignore()
-
-    def dragLeaveEvent(self, event):
-        self.setStyleSheet("")  # Clear the border style
-
-    def dropEvent(self, event):
-        self.setStyleSheet("")  # Clear the border style
-        if event.mimeData().hasUrls():
-            file_paths = [
-                url.toLocalFile()
-                for url in event.mimeData().urls()
-                if url.isLocalFile()
-            ]
-            self.filesDropped.emit(file_paths)
-            event.acceptProposedAction()
+from theme_manager import load_settings
 
 
 class ContentView(QWidget):
     document_deleted = Signal()
+    document_added = Signal()
     segment_clicked = Signal(int)
     text_selection_changed = Signal(bool)
 
@@ -77,6 +44,9 @@ class ContentView(QWidget):
         self.is_dirty = False
         self._coded_segments_cache = []
 
+        # Accept drops on the entire ContentView widget for stability
+        self.setAcceptDrops(True)
+
         main_layout = QVBoxLayout(self)
         top_bar_layout = QHBoxLayout()
 
@@ -88,7 +58,7 @@ class ContentView(QWidget):
         self.doc_selector = QComboBox()
         self.doc_selector.setMinimumWidth(300)
 
-        self.import_button = QPushButton("⬆️")
+        self.import_button = QPushButton("📤")
         self.import_button.setToolTip("Import Document (.txt, .docx)")
         self.import_button.setFixedSize(28, 28)
 
@@ -101,9 +71,36 @@ class ContentView(QWidget):
         delete_button.setToolTip("Delete Current Document")
         delete_button.setFixedSize(28, 28)
 
-        # Use the new DropEnabledTextEdit widget
-        self.text_edit = DropEnabledTextEdit()
+        # Use a standard QTextEdit; the parent ContentView handles D&D
+        self.text_edit = QTextEdit()
         self.text_edit.setReadOnly(False)
+        self.text_edit.setAcceptDrops(False)
+
+        self.drop_overlay = QFrame()
+        self.drop_overlay.setObjectName("dropOverlay")
+        overlay_layout = QVBoxLayout(self.drop_overlay)
+        overlay_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        overlay_layout.setSpacing(10)
+
+        icon_label = QLabel("📤")
+        icon_font = QFont()
+        icon_font.setPointSize(48)
+        icon_label.setFont(icon_font)
+        icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        text_label = QLabel("Drop document file here\n(.txt, .docx)")
+        text_font = QFont()
+        text_font.setPointSize(12)
+        text_label.setFont(text_font)
+        text_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        overlay_layout.addWidget(icon_label)
+        overlay_layout.addWidget(text_label)
+
+        self.stacked_layout = QStackedLayout()
+        self.stacked_layout.addWidget(self.text_edit)
+        self.stacked_layout.addWidget(self.drop_overlay)
+        self.stacked_layout.setCurrentWidget(self.text_edit)
 
         info_bar = QFrame()
         info_bar.setFrameShape(QFrame.Shape.StyledPanel)
@@ -123,10 +120,9 @@ class ContentView(QWidget):
         top_bar_layout.addWidget(delete_button)
 
         main_layout.addLayout(top_bar_layout)
-        main_layout.addWidget(self.text_edit)
+        main_layout.addLayout(self.stacked_layout)
         main_layout.addWidget(info_bar)
 
-        # Connect signals
         self.import_button.clicked.connect(self.import_document_dialog)
         self.save_button.clicked.connect(self.save_document)
         delete_button.clicked.connect(self.delete_current_document)
@@ -134,11 +130,65 @@ class ContentView(QWidget):
         self.text_edit.textChanged.connect(self.on_text_changed)
         self.text_edit.cursorPositionChanged.connect(self.on_cursor_position_changed)
         self.text_edit.selectionChanged.connect(self.on_selection_changed_for_coding)
-        self.text_edit.filesDropped.connect(
-            self.handle_files_dropped
-        )  # Connect D&D signal
 
         self.load_document_list()
+
+    def dragEnterEvent(self, event):
+        mime_data = event.mimeData()
+        if mime_data.hasUrls():
+            for url in mime_data.urls():
+                if url.isLocalFile():
+                    file_path = url.toLocalFile().lower()
+                    if file_path.endswith((".txt", ".docx")):
+                        event.acceptProposedAction()
+                        self.show_drop_overlay()
+                        return
+        event.ignore()
+
+    def dragLeaveEvent(self, event):
+        self.hide_drop_overlay()
+        event.accept()
+
+    def dropEvent(self, event):
+        self.hide_drop_overlay()
+        if event.mimeData().hasUrls():
+            file_paths = [
+                url.toLocalFile()
+                for url in event.mimeData().urls()
+                if url.isLocalFile()
+            ]
+            self.handle_files_dropped(file_paths)
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    def show_drop_overlay(self):
+        if self.stacked_layout.currentWidget() is not self.drop_overlay:
+            settings = load_settings()
+            if settings.get("theme") == "Dark":
+                self.drop_overlay.setStyleSheet(
+                    """
+                    #dropOverlay {
+                        background-color: rgba(60, 60, 60, 0.95);
+                        border: 2px dashed #aaa;
+                        border-radius: 10px;
+                    }
+                """
+                )
+            else:
+                self.drop_overlay.setStyleSheet(
+                    """
+                    #dropOverlay {
+                        background-color: rgba(240, 240, 240, 0.95);
+                        border: 2px dashed #888;
+                        border-radius: 10px;
+                    }
+                """
+                )
+            self.stacked_layout.setCurrentWidget(self.drop_overlay)
+
+    def hide_drop_overlay(self):
+        self.stacked_layout.setCurrentWidget(self.text_edit)
 
     def on_selection_changed_for_coding(self):
         has_selection = self.text_edit.textCursor().hasSelection()
@@ -171,7 +221,6 @@ class ContentView(QWidget):
             self.load_document_content()
 
     def _import_and_add_document(self, participant_id, file_path):
-        """Helper function to read a file and add it to the database."""
         try:
             content = ""
             if file_path.lower().endswith(".docx"):
@@ -185,19 +234,26 @@ class ContentView(QWidget):
             new_doc_id = database.add_document(
                 self.project_id, title, content, participant_id
             )
-            self.load_document_list()
 
+            self.is_dirty = False
+            self.save_button.setEnabled(False)
+
+            self.load_document_list()
             new_doc_display_text = next(
                 (k for k, v in self.documents_map.items() if v == new_doc_id), None
             )
             if new_doc_display_text:
+                self.doc_selector.blockSignals(True)
                 self.doc_selector.setCurrentText(new_doc_display_text)
+                self.doc_selector.blockSignals(False)
+
+            self.load_document_content()
+            self.document_added.emit()
 
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to import file: {e}")
 
     def import_document_dialog(self):
-        """Opens a file dialog to select a document for import."""
         file_path, _ = QFileDialog.getOpenFileName(
             self, "Import Document", "", "Documents (*.txt *.docx)"
         )
@@ -205,13 +261,11 @@ class ContentView(QWidget):
             self.process_imported_file(file_path)
 
     def handle_files_dropped(self, file_paths):
-        """Processes files that were dropped onto the widget."""
         for path in file_paths:
             if path.lower().endswith((".txt", ".docx")):
                 self.process_imported_file(path)
 
     def process_imported_file(self, file_path):
-        """Central logic for assigning a participant and importing a file."""
         participants = database.get_participants_for_project(self.project_id)
         if not participants:
             name, ok = QInputDialog.getText(
@@ -255,7 +309,6 @@ class ContentView(QWidget):
             self.is_dirty = False
             database.delete_document(self.current_document_id)
             self.load_document_list()
-            # Explicitly reload content view to handle empty state
             self.load_document_content()
             self.document_deleted.emit()
 
@@ -265,7 +318,6 @@ class ContentView(QWidget):
             self.save_button.setEnabled(True)
 
     def save_document(self, show_success_prompt=True):
-        """Saves only the text content of the document."""
         if not self.is_dirty or not self.current_document_id:
             return
 
@@ -281,7 +333,6 @@ class ContentView(QWidget):
             )
 
     def handle_document_switch(self, new_index):
-        """Checks for unsaved changes before loading a new document."""
         if self.is_dirty and self.current_document_id is not None:
             msg_box = QMessageBox(self)
             msg_box.setWindowTitle("Unsaved Changes")
@@ -352,10 +403,8 @@ class ContentView(QWidget):
             QApplication.restoreOverrideCursor()
 
     def apply_all_highlights(self):
-        """Applies highlights for all coded segments in the current document."""
         self.text_edit.blockSignals(True)
         try:
-            # Clear all existing formatting before applying new highlights
             cursor = self.text_edit.textCursor()
             cursor.select(QTextCursor.SelectionType.Document)
             cursor.setCharFormat(QTextCharFormat())
@@ -373,7 +422,6 @@ class ContentView(QWidget):
                 f"Coded Segments: {len(self._coded_segments_cache)}"
             )
 
-            # Apply highlights for each segment
             for segment in self._coded_segments_cache:
                 self.highlight_text(
                     segment["segment_start"],
@@ -384,7 +432,6 @@ class ContentView(QWidget):
             self.text_edit.blockSignals(False)
 
     def highlight_text(self, start, end, color_hex):
-        """Helper method to apply color formatting to a text range."""
         cursor = self.text_edit.textCursor()
         cursor.setPosition(start)
         cursor.setPosition(end, QTextCursor.MoveMode.KeepAnchor)

@@ -12,8 +12,29 @@ from PySide6.QtWidgets import (
     QTreeWidgetItemIterator,
     QAbstractItemView,
 )
-from PySide6.QtCore import Signal
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QKeyEvent
 import database
+
+
+class DeletableTreeWidget(QTreeWidget):
+    """A QTreeWidget that handles the Delete key to remove a segment."""
+
+    def __init__(self, parent_view):
+        super().__init__()
+        self.parent_view = parent_view
+
+    def keyPressEvent(self, event: QKeyEvent):
+        if event.key() == Qt.Key.Key_Delete:
+            current_item = self.currentItem()
+            if current_item:
+                segment_id = current_item.data(0, 1)
+                preview = current_item.text(0)
+                if segment_id is not None:
+                    self.parent_view.confirm_delete_segment(segment_id, preview)
+                    event.accept()
+                    return
+        super().keyPressEvent(event)
 
 
 class CodedSegmentsView(QWidget):
@@ -57,6 +78,7 @@ class CodedSegmentsView(QWidget):
         main_layout.addLayout(controls_layout)
 
         self.tree_widget = QTreeWidget()
+        self.tree_widget = DeletableTreeWidget(self)
         main_layout.addWidget(self.tree_widget)
 
         self.scope_combo.currentTextChanged.connect(self.reload_view)
@@ -97,6 +119,7 @@ class CodedSegmentsView(QWidget):
             delete_button = QPushButton("🗑️")
             delete_button.setFixedSize(20, 20)
             delete_button.setToolTip("Delete this coded segment")
+            delete_button.setToolTip("Delete this coded segment (Delete)")
             delete_button.clicked.connect(
                 lambda: self.confirm_delete_segment(segment_id, preview)
             )
