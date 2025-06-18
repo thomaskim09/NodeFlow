@@ -1,4 +1,4 @@
-# Replace the contents of ui/dashboard/dashboard_view.py
+# In file: ui/dashboard/dashboard_view.py
 
 import csv
 from PySide6.QtWidgets import (
@@ -24,6 +24,7 @@ from PySide6.QtGui import QPixmap, QColor, QIcon
 from managers.theme_manager import load_settings
 from .charts_widget import ChartsWidget
 from .crosstab_widget import CrosstabWidget
+from .wordcloud_widget import WordCloudWidget  # Import the new widget
 import database
 
 
@@ -45,7 +46,6 @@ class DashboardView(QDialog):
 
         top_layout = QHBoxLayout()
 
-        # --- REFACTORED: Stats Overview Section ---
         stats_container = QFrame()
         stats_container.setObjectName("statsContainer")
         container_bg = "#2e3440" if self.is_dark else "#f2f2f2"
@@ -64,9 +64,7 @@ class DashboardView(QDialog):
         overview_layout.addWidget(self.total_words_label)
         overview_layout.addWidget(self.coded_segments_label)
         overview_layout.addWidget(self.coded_words_label)
-        # --- End Stats Section ---
 
-        # --- Controls Section ---
         controls_layout = QVBoxLayout()
         doc_scope_layout = QHBoxLayout()
         doc_scope_layout.addWidget(QLabel("Document Scope:"))
@@ -95,12 +93,15 @@ class DashboardView(QDialog):
         controls_layout.addLayout(part_scope_layout)
         controls_layout.addWidget(self.export_button, 0, Qt.AlignmentFlag.AlignRight)
 
-        top_layout.addWidget(stats_container, 2)  # Changed stretch factor
+        top_layout.addWidget(stats_container, 2)
         top_layout.addLayout(controls_layout, 1)
         main_layout.addLayout(top_layout)
 
+        # --- Tab Widget Setup ---
         self.tabs = QTabWidget()
         main_layout.addWidget(self.tabs)
+
+        # Tab 1: Breakdown
         breakdown_tab = QWidget()
         breakdown_layout = QVBoxLayout(breakdown_tab)
         self.tree_widget = QTreeWidget()
@@ -113,10 +114,18 @@ class DashboardView(QDialog):
             header.setSectionResizeMode(i, QHeaderView.ResizeMode.ResizeToContents)
         breakdown_layout.addWidget(self.tree_widget)
         self.tabs.addTab(breakdown_tab, "Code Breakdown")
+
+        # Tab 2: Charts
         self.charts_widget = ChartsWidget(self.settings)
         self.tabs.addTab(self.charts_widget, "Charts")
+
+        # Tab 3: Crosstab
         self.crosstab_widget = CrosstabWidget(self.settings)
         self.tabs.addTab(self.crosstab_widget, "Cross-Tabulation")
+
+        # Tab 4: Word Cloud (New)
+        self.wordcloud_widget = WordCloudWidget(self.settings)
+        self.tabs.addTab(self.wordcloud_widget, "Word Cloud")
 
         # --- Connections & Initial Load ---
         self.doc_scope_combo.currentIndexChanged.connect(self.load_dashboard_data)
@@ -129,7 +138,6 @@ class DashboardView(QDialog):
         else:
             self.load_dashboard_data()
 
-    # --- Stat Label Creation ---
     def _create_stat_label(self, title_text):
         label = QLabel()
         label.setTextFormat(Qt.RichText)
@@ -196,23 +204,28 @@ class DashboardView(QDialog):
             nodes_by_parent, nodes_map, aggregated_stats, total_words
         )
         self.tree_widget.expandAll()
+
+        # Update all visual tabs with the new data
         self.charts_widget.update_charts(root_nodes_data)
         self.crosstab_widget.update_crosstab(segments, nodes)
+        self.wordcloud_widget.update_wordcloud(segments)  # Update the new widget
 
-    # ... (the rest of the methods in DashboardView are unchanged) ...
     def export_chart_as_image(self):
-        if self.tabs.currentIndex() != 1:
+        current_tab_index = self.tabs.currentIndex()
+        if current_tab_index not in [1, 3]:  # Charts or Word Cloud tab
             QMessageBox.warning(
                 self,
-                "Not on Charts Tab",
-                "Please switch to the 'Charts' tab to export an image.",
+                "Incorrect Tab",
+                "Please switch to the 'Charts' or 'Word Cloud' tab to export an image.",
             )
             return
+
         path, _ = QFileDialog.getSaveFileName(
-            self, "Save Chart", "", "PNG Image (*.png)"
+            self, "Save Image", "", "PNG Image (*.png)"
         )
         if path:
-            self.tabs.widget(1).grab().save(path)
+            # Grab the contents of the currently visible tab widget
+            self.tabs.currentWidget().grab().save(path)
 
     def export_data_as_csv(self):
         path, _ = QFileDialog.getSaveFileName(

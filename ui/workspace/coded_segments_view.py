@@ -322,3 +322,35 @@ class CodedSegmentsView(QWidget):
             self.populate_tree(node_filtered_segments)
 
         self.tree_widget.currentItemChanged.connect(self.on_selection_changed)
+
+    # def refresh_coded_segments(self):
+    #     """
+    #     Clears and re-populates the tree widget with coded segments for the
+    #     currently selected document.
+    #     """
+    #     # Safer way to disconnect a signal to avoid RuntimeWarning
+    #     try:
+    #         self.tree_widget.currentItemChanged.disconnect(self.on_selection_changed)
+    #     except RuntimeError:
+    #         # This exception is raised if the signal was not connected, which is fine.
+    #         pass
+
+    #     self.tree_widget.clear()
+
+    #     doc_id = self.parent_view.get_current_document_id()
+    #     if not doc_id:
+    #         return
+
+    #     segments = database.get_coded_segments_for_document(doc_id)
+    #     if segments:
+    #         for segment in segments:
+    #             node_item = QTreeWidgetItem(self.tree_widget)
+    #             node_item.setText(0, segment["node_name"])
+    #             node_item.setText(1, segment["content_preview"])
+    #             node_item.setData(0, Qt.ItemDataRole.UserRole, segment["id"])
+    #             pixmap = QPixmap(16, 16)
+    #             pixmap.fill(QColor(segment["node_color"]))
+    #             node_item.setIcon(0, QIcon(pixmap))
+
+    #     # Re-connect the signal after populating the tree
+    #     self.tree_widget.currentItemChanged.connect(self.on_selection_changed)

@@ -14,20 +14,25 @@ def add_coded_segment(document_id, node_id, participant_id, start, end, text_pre
 
 
 def get_coded_segments_for_document(document_id):
+    """
+    Retrieves all coded segments for a specific document, including node info.
+    """
     conn = get_db_connection()
-    segments = conn.execute(
+    cursor = conn.cursor()
+    cursor.execute(
         """
-        SELECT cs.*, d.title as document_title, n.name as node_name, n.color as node_color, p.name as participant_name
-        FROM coded_segments cs
-        JOIN nodes n ON cs.node_id = n.id
-        JOIN documents d ON cs.document_id = d.id
-        LEFT JOIN participants p ON cs.participant_id = p.id
-        WHERE cs.document_id = ? ORDER BY cs.id
+        SELECT s.id, s.content_preview, s.start_position, s.end_position,
+               n.name as node_name, n.color as node_color
+        FROM segments s
+        JOIN nodes n ON s.node_id = n.id
+        WHERE s.document_id = ?
+        ORDER BY s.start_position
     """,
         (document_id,),
-    ).fetchall()
+    )
+    rows = cursor.fetchall()
     conn.close()
-    return segments
+    return rows
 
 
 def get_coded_segments_for_project(project_id):

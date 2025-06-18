@@ -2,3 +2,4 @@ PySide6
 python-docx
 pyinstaller
 openpyxl
+wordcloud
