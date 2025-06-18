@@ -1,6 +1,6 @@
-![NodeFlow Icon](icon.png)
+<img src="icon.png" width="20%" alt="Description of image">
 
-# NodeFlow - Qualitative Analysis Tool
+# NodeFlow - Qualitative Analysis Tool 
 
 NodeFlow is a user-friendly desktop application designed to assist researchers and students in the qualitative analysis of text-based data, such as interview transcripts. Built with Python and PySide6, it provides a powerful and modern interface to simplify the process of coding (labeling) text segments and organizing these codes into a fully hierarchical structure.
 
