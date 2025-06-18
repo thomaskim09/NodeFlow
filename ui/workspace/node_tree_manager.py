@@ -1,4 +1,4 @@
-# Replace the contents of ui/workspace/node_tree_manager.py
+# In file: ui/workspace/node_tree_manager.py
 
 from PySide6.QtWidgets import (
     QWidget,
@@ -231,7 +231,6 @@ class NodeTreeManager(QWidget):
         self.tree_widget.itemClicked.connect(self.on_item_clicked)
         self.load_nodes()
 
-    # MODIFIED: The load_nodes method now accepts an optional ID to re-select.
     def load_nodes(self, node_id_to_reselect=None):
         try:
             self.tree_widget.currentItemChanged.disconnect(self.on_selection_changed)
@@ -297,10 +296,16 @@ class NodeTreeManager(QWidget):
                 )
                 word_count = stats["word_count"]
                 segment_count = stats["segment_count"]
-                percentage = (word_count / total_words * 100) if total_words > 0 else 0
 
                 name_text = f"{current_prefix} {node_data['name']}"
-                stats_text = f"{percentage:.1f}% | {segment_count} Segments"
+
+                # --- FIXED: Only show stats if segment_count > 0 ---
+                stats_text = ""  # Default to empty string
+                if segment_count > 0:
+                    percentage = (
+                        (word_count / total_words * 100) if total_words > 0 else 0
+                    )
+                    stats_text = f"{percentage:.1f}% | {segment_count} Segments"
 
                 tree_item = QTreeWidgetItem(parent_widget)
                 tree_item.setData(0, 1, node_data["id"])
@@ -310,7 +315,6 @@ class NodeTreeManager(QWidget):
                 )
                 self.tree_widget.setItemWidget(tree_item, 0, item_widget)
 
-                # MODIFIED: Check against the new parameter instead of a local variable.
                 if node_data["id"] == node_id_to_reselect:
                     item_to_reselect = tree_item
                 add_items_recursively(tree_item, node_data["id"], prefix=current_prefix)
@@ -341,7 +345,6 @@ class NodeTreeManager(QWidget):
                 self.node_selected_for_coding.emit(node_id)
             self.tree_widget.blockSignals(False)
 
-    # MODIFIED: This method now accepts an optional ID to re-select.
     def refresh_tree_and_emit_update(self, node_id_to_reselect=None):
         self.load_nodes(node_id_to_reselect=node_id_to_reselect)
         self.node_updated.emit()
@@ -382,9 +385,7 @@ class NodeTreeManager(QWidget):
         )
         if ok and new_name.strip() and new_name.strip() != current_name:
             database.update_node_name(node_id, new_name.strip())
-            self.refresh_tree_and_emit_update(
-                node_id_to_reselect=node_id
-            )  # Pass ID to re-select
+            self.refresh_tree_and_emit_update(node_id_to_reselect=node_id)
 
     def set_stats_scope(self, scope, document_id=None):
         self.current_filter_scope = scope
@@ -405,7 +406,6 @@ class NodeTreeManager(QWidget):
             try:
                 pid = int(self.project_id)
                 database.add_node(pid, name.strip(), parent_id, new_color)
-                # MODIFIED: Pass the parent_id to re-select it after the reload.
                 self.refresh_tree_and_emit_update(node_id_to_reselect=parent_id)
             except (ValueError, TypeError) as e:
                 QMessageBox.critical(
@@ -425,12 +425,6 @@ class NodeTreeManager(QWidget):
         if not node_data:
             return
 
-        # Find parent before deleting to re-select it later
-        self.tree_widget.findItems(
-            str(node_id), Qt.MatchFlag.MatchRecursive, 1
-        )  # This is not ideal, need a better way
-        parent_id_to_reselect = None
-        # A more robust find method would be better, but for now let's find it in the map
         parent_id_to_reselect = node_data["parent_id"]
 
         reply = QMessageBox.question(
@@ -442,10 +436,8 @@ class NodeTreeManager(QWidget):
         )
 
         if reply == QMessageBox.StandardButton.Yes:
-            database.delete_node(node_id)
-            self.refresh_tree_and_emit_update(
-                node_id_to_reselect=parent_id_to_reselect
-            )  # Pass parent ID
+            database.delete_node_and_children(node_id)
+            self.refresh_tree_and_emit_update(node_id_to_reselect=parent_id_to_reselect)
 
     def filter_by_single_node(self, node_id):
         self.filter_by_single_node_signal.emit(node_id)

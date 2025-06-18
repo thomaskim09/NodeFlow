@@ -75,10 +75,16 @@ def get_document_word_count(document_id):
 
 
 def get_project_word_count(project_id):
+    """Calculates the total word count for all documents in a project."""
     conn = get_db_connection()
     docs = conn.execute(
         "SELECT content FROM documents WHERE project_id = ?", (project_id,)
     ).fetchall()
     conn.close()
-    total_words = sum(len(doc["content"].split()) for doc in docs if doc["content"])
+    total_words = 0
+    if docs:
+        for doc in docs:
+            # The 'content' might be None for an empty document
+            if doc and doc["content"]:
+                total_words += len(doc["content"].split())
     return total_words

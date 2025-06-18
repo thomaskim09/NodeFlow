@@ -1,4 +1,4 @@
-# Replace the contents of database/__init__.py with this updated version
+# In file: database/__init__.py
 
 # Core
 from .db_core import get_db_connection, create_tables  # noqa: F401
@@ -24,29 +24,33 @@ from .documents_db import (
     add_document,
     get_documents_for_project,
     get_document_content,
+    get_document_word_count,
     delete_document,
     update_document_text_only,
-    get_document_word_count,
     get_project_word_count,
 )  # noqa: F401
 
 # Nodes
+# FIXED: Aligned with the latest changes in nodes_db.py
 from .nodes_db import (
     add_node,
     get_nodes_for_project,
     update_node_name,
     update_node_color,
-    delete_node,
+    delete_node_and_children,
     update_node_order,
     update_node_parent,
+    get_node_descendants,
 )  # noqa: F401
 
 # Coded Segments
+# FIXED: Aligned with the latest changes in segments_db.py
 from .segments_db import (
     add_coded_segment,
     get_coded_segments_for_document,
     get_coded_segments_for_project,
     get_coded_segments_for_participant,
+    get_coded_segments_for_nodes,
     delete_coded_segment,
     get_node_statistics,
     get_word_count_for_participant,

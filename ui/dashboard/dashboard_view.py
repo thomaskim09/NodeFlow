@@ -24,7 +24,7 @@ from PySide6.QtGui import QPixmap, QColor, QIcon
 from managers.theme_manager import load_settings
 from .charts_widget import ChartsWidget
 from .crosstab_widget import CrosstabWidget
-from .wordcloud_widget import WordCloudWidget  # Import the new widget
+from .wordcloud_widget import WordCloudWidget
 import database
 
 
@@ -82,6 +82,11 @@ class DashboardView(QDialog):
             self.part_scope_combo.addItem(p["name"], p["id"])
         part_scope_layout.addWidget(self.part_scope_combo)
 
+        node_scope_layout = QHBoxLayout()
+        node_scope_layout.addWidget(QLabel("Node Scope:"))
+        self.node_scope_combo = QComboBox()
+        node_scope_layout.addWidget(self.node_scope_combo)
+
         self.export_button = QPushButton("Export Options")
         export_menu = QMenu(self)
         export_menu.addAction("Export Chart as Image", self.export_chart_as_image)
@@ -91,17 +96,16 @@ class DashboardView(QDialog):
 
         controls_layout.addLayout(doc_scope_layout)
         controls_layout.addLayout(part_scope_layout)
+        controls_layout.addLayout(node_scope_layout)
         controls_layout.addWidget(self.export_button, 0, Qt.AlignmentFlag.AlignRight)
 
         top_layout.addWidget(stats_container, 2)
         top_layout.addLayout(controls_layout, 1)
         main_layout.addLayout(top_layout)
 
-        # --- Tab Widget Setup ---
         self.tabs = QTabWidget()
         main_layout.addWidget(self.tabs)
 
-        # Tab 1: Breakdown
         breakdown_tab = QWidget()
         breakdown_layout = QVBoxLayout(breakdown_tab)
         self.tree_widget = QTreeWidget()
@@ -115,21 +119,19 @@ class DashboardView(QDialog):
         breakdown_layout.addWidget(self.tree_widget)
         self.tabs.addTab(breakdown_tab, "Code Breakdown")
 
-        # Tab 2: Charts
         self.charts_widget = ChartsWidget(self.settings)
         self.tabs.addTab(self.charts_widget, "Charts")
 
-        # Tab 3: Crosstab
         self.crosstab_widget = CrosstabWidget(self.settings)
         self.tabs.addTab(self.crosstab_widget, "Cross-Tabulation")
 
-        # Tab 4: Word Cloud (New)
         self.wordcloud_widget = WordCloudWidget(self.settings)
         self.tabs.addTab(self.wordcloud_widget, "Word Cloud")
 
-        # --- Connections & Initial Load ---
+        self._populate_node_scope_combo()
         self.doc_scope_combo.currentIndexChanged.connect(self.load_dashboard_data)
         self.part_scope_combo.currentIndexChanged.connect(self.load_dashboard_data)
+        self.node_scope_combo.currentIndexChanged.connect(self.load_dashboard_data)
 
         if self.initial_document_id:
             index = self.doc_scope_combo.findData(self.initial_document_id)
@@ -138,93 +140,200 @@ class DashboardView(QDialog):
         else:
             self.load_dashboard_data()
 
+    def _populate_node_scope_combo(self):
+        """Populates the node scope dropdown with a node hierarchy."""
+        self.node_scope_combo.blockSignals(True)
+        self.node_scope_combo.clear()
+
+        self.node_scope_combo.addItem("All Nodes", -1)
+
+        nodes = database.get_nodes_for_project(self.project_id)
+        if nodes:
+            self.node_scope_combo.insertSeparator(self.node_scope_combo.count())
+
+            nodes_by_parent = {}
+            for n in nodes:
+                pid = n.get("parent_id")
+                nodes_by_parent.setdefault(pid, []).append(n)
+
+            def add_nodes_recursively(parent_id, indent=0):
+                if parent_id not in nodes_by_parent:
+                    return
+
+                # Sorting by position is important if you have it, otherwise by name
+                def key(x):
+                    return x.get("position", 0) or 0
+
+                for node in sorted(nodes_by_parent[parent_id], key=key):
+                    self.node_scope_combo.addItem(
+                        f"{'  ' * indent}{node['name']}", node["id"]
+                    )
+                    add_nodes_recursively(node["id"], indent + 1)
+
+            add_nodes_recursively(None)
+
+        self.node_scope_combo.blockSignals(False)
+
     def _create_stat_label(self, title_text):
         label = QLabel()
         label.setTextFormat(Qt.RichText)
         label.setAlignment(Qt.AlignCenter)
-
         bg_color = "#3b4252" if self.is_dark else "#ffffff"
         border_color = "#4c566a" if self.is_dark else "#d8dee9"
         title_color = "#d8dee9" if self.is_dark else "#4c566a"
         value_color = "#eceff4" if self.is_dark else "#2e3440"
-
         label.setStyleSheet(
-            f"""
-            QLabel {{
-                background-color: {bg_color};
-                border: 1px solid {border_color};
-                border-radius: 6px;
-                padding: 10px;
-            }}
-        """
+            f"QLabel {{ background-color: {bg_color}; border: 1px solid {border_color}; border-radius: 6px; padding: 10px; }}"
         )
-
-        html = f"""
-            <div style='color: {title_color}; font-size: 9pt;'>{title_text}</div>
-            <div style='color: {value_color}; font-size: 18pt; font-weight: 600;'>N/A</div>
-        """
+        html = f"<div style='color: {title_color}; font-size: 9pt;'>{title_text}</div><div style='color: {value_color}; font-size: 18pt; font-weight: 600;'>N/A</div>"
         label.setText(html)
         return label
 
     def _update_stat_label(self, label, title, value):
         title_color = "#d8dee9" if self.is_dark else "#4c566a"
         value_color = "#eceff4" if self.is_dark else "#2e3440"
-
-        html = f"""
-            <div style='color: {title_color}; font-size: 9pt;'>{title}</div>
-            <div style='color: {value_color}; font-size: 18pt; font-weight: 600;'>{value}</div>
-        """
+        html = f"<div style='color: {title_color}; font-size: 9pt;'>{title}</div><div style='color: {value_color}; font-size: 18pt; font-weight: 600;'>{value}</div>"
         label.setText(html)
 
     def load_dashboard_data(self):
-        doc_id, part_id = (
-            self.doc_scope_combo.currentData(),
-            self.part_scope_combo.currentData(),
-        )
-        total_words, segments = self._get_scoped_data(doc_id, part_id)
+        doc_id = self.doc_scope_combo.currentData()
+        part_id = self.part_scope_combo.currentData()
+        node_id = self.node_scope_combo.currentData()
+        if node_id is None:
+            return
+
         nodes = database.get_nodes_for_project(self.project_id)
-
-        self._update_stat_label(
-            self.total_words_label, "Scope Words", f"{total_words:,}"
-        )
-        self._update_stat_label(
-            self.coded_segments_label, "Coded Segments", f"{len(segments):,}"
-        )
-
-        node_stats, coded_words = self._calculate_direct_stats(segments)
-        coded_percentage = (coded_words / total_words * 100) if total_words > 0 else 0
-
-        percent_html = f"{coded_words:,} <span style='font-size: 11pt; font-weight: normal;'>({coded_percentage:.1f}%)</span>"
-        self._update_stat_label(self.coded_words_label, "Coded Words", percent_html)
-
         nodes_map, nodes_by_parent = self._build_node_hierarchy(nodes)
-        aggregated_stats = self._calculate_aggregated_stats(nodes_by_parent, node_stats)
-        self.tree_widget.clear()
-        root_nodes_data = self._populate_tree_widget(
-            nodes_by_parent, nodes_map, aggregated_stats, total_words
-        )
-        self.tree_widget.expandAll()
 
-        # Update all visual tabs with the new data
-        self.charts_widget.update_charts(root_nodes_data)
-        self.crosstab_widget.update_crosstab(segments, nodes)
-        self.wordcloud_widget.update_wordcloud(segments)  # Update the new widget
+        if node_id != -1:
+            all_project_segments = database.get_coded_segments_for_project(
+                self.project_id
+            )
+            node_stats, _ = self._calculate_direct_stats(all_project_segments)
+            aggregated_stats = self._calculate_aggregated_stats(
+                nodes_by_parent, node_stats
+            )
 
+            parent_stats = aggregated_stats.get(
+                node_id, {"word_count": 0, "segment_count": 0}
+            )
+            parent_total_words = parent_stats.get("word_count", 0)
+            parent_segment_count = parent_stats.get("segment_count", 0)
+
+            self._update_stat_label(
+                self.total_words_label,
+                f"Words in '{nodes_map[node_id]['name']}'",
+                f"{parent_total_words:,}",
+            )
+            self._update_stat_label(
+                self.coded_segments_label,
+                "Segments in Node",
+                f"{parent_segment_count:,}",
+            )
+            self._update_stat_label(
+                self.coded_words_label, "Coded Words", f"{parent_total_words:,}"
+            )
+
+            self.tree_widget.clear()
+            direct_children_nodes = nodes_by_parent.get(node_id, [])
+
+            # FIXED: Handle leaf nodes and parent nodes differently
+            if direct_children_nodes:
+                # --- PARENT NODE LOGIC ---
+                children_data_for_charts = []
+                for child_node in direct_children_nodes:
+                    child_stats = aggregated_stats.get(
+                        child_node["id"], {"word_count": 0, "segment_count": 0}
+                    )
+                    wc, sc = child_stats.get("word_count", 0), child_stats.get(
+                        "segment_count", 0
+                    )
+                    p = (wc / parent_total_words * 100) if parent_total_words > 0 else 0
+                    children_data_for_charts.append((child_node["name"], p, wc, sc))
+                    # Populate tree with children
+                    item = QTreeWidgetItem(self.tree_widget)
+                    pixmap = QPixmap(16, 16)
+                    pixmap.fill(QColor(child_node["color"]))
+                    item.setIcon(0, QIcon(pixmap))
+                    item.setText(0, f" {child_node['name']}")
+                    item.setText(1, f"{wc:,}")
+                    item.setText(2, f"{p:.1f}%")
+                    item.setText(3, f"{sc:,}")
+                    for col in [1, 2, 3]:
+                        item.setTextAlignment(col, Qt.AlignmentFlag.AlignRight)
+                self.charts_widget.update_charts(children_data_for_charts)
+            else:
+                # --- LEAF NODE LOGIC ---
+                wc, sc = parent_total_words, parent_segment_count
+                # Chart data is just the node itself, representing 100%
+                leaf_node_data = [(nodes_map[node_id]["name"], 100.0, wc, sc)]
+                # Populate tree with just the single node
+                item = QTreeWidgetItem(self.tree_widget)
+                pixmap = QPixmap(16, 16)
+                pixmap.fill(QColor(nodes_map[node_id]["color"]))
+                item.setIcon(0, QIcon(pixmap))
+                item.setText(0, f" {nodes_map[node_id]['name']}")
+                item.setText(1, f"{wc:,}")
+                item.setText(2, "100.0%")
+                item.setText(3, f"{sc:,}")
+                for col in [1, 2, 3]:
+                    item.setTextAlignment(col, Qt.AlignmentFlag.AlignRight)
+                self.charts_widget.update_charts(leaf_node_data)
+
+            self.tree_widget.expandAll()
+
+            descendants = database.get_node_descendants(node_id)
+            family_node_ids = [node_id] + descendants
+            family_segments = [
+                s for s in all_project_segments if s["node_id"] in family_node_ids
+            ]
+
+            self.crosstab_widget.update_crosstab(family_segments, nodes)
+            self.wordcloud_widget.update_wordcloud(family_segments)
+        else:
+            # --- REGULAR PROJECT/DOCUMENT/PARTICIPANT SCOPE ---
+            total_words, segments = self._get_scoped_data(doc_id, part_id)
+            node_stats, coded_words = self._calculate_direct_stats(segments)
+            coded_percentage = (
+                (coded_words / total_words * 100) if total_words > 0 else 0
+            )
+            percent_html = f"{coded_words:,} <span style='font-size: 11pt; font-weight: normal;'>({coded_percentage:.1f}%)</span>"
+
+            self._update_stat_label(
+                self.total_words_label, "Scope Words", f"{total_words:,}"
+            )
+            self._update_stat_label(
+                self.coded_segments_label, "Coded Segments", f"{len(segments):,}"
+            )
+            self._update_stat_label(self.coded_words_label, "Coded Words", percent_html)
+
+            aggregated_stats = self._calculate_aggregated_stats(
+                nodes_by_parent, node_stats
+            )
+            self.tree_widget.clear()
+            root_nodes_data = self._populate_tree_widget(
+                nodes_by_parent, nodes_map, aggregated_stats, total_words
+            )
+            self.tree_widget.expandAll()
+
+            self.charts_widget.update_charts(root_nodes_data)
+            self.crosstab_widget.update_crosstab(segments, nodes)
+            self.wordcloud_widget.update_wordcloud(segments)
+
+    # ... (rest of the file is unchanged) ...
     def export_chart_as_image(self):
         current_tab_index = self.tabs.currentIndex()
-        if current_tab_index not in [1, 3]:  # Charts or Word Cloud tab
+        if current_tab_index not in [1, 3]:
             QMessageBox.warning(
                 self,
                 "Incorrect Tab",
                 "Please switch to the 'Charts' or 'Word Cloud' tab to export an image.",
             )
             return
-
         path, _ = QFileDialog.getSaveFileName(
             self, "Save Image", "", "PNG Image (*.png)"
         )
         if path:
-            # Grab the contents of the currently visible tab widget
             self.tabs.currentWidget().grab().save(path)
 
     def export_data_as_csv(self):
@@ -318,7 +427,7 @@ class DashboardView(QDialog):
         for node in nodes:
             nodes_by_parent.setdefault(node["parent_id"], []).append(node)
         for L in nodes_by_parent.values():
-            L.sort(key=lambda x: x["position"])
+            L.sort(key=lambda x: (x.get("position", 0) or 0, x["name"]))
         return nodes_map, nodes_by_parent
 
     def _calculate_aggregated_stats(self, nodes_by_parent, node_stats):

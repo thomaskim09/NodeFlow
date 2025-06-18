@@ -11,21 +11,13 @@ import traceback
 
 
 class WorkerSignals(QObject):
-    """
-    Defines the signals available from a running worker thread.
-    Supported signals are:
-    result:
-        object data returned from processing, in this case a QPixmap.
-        An empty QPixmap indicates an error or no data.
-    """
+    """Defines the signals available from a running worker thread."""
 
-    result = Signal(QPixmap, str)  # Pixmap and an optional error/status message
+    result = Signal(QPixmap, str)
 
 
 class WordCloudWorker(QRunnable):
-    """
-    Worker thread for generating the word cloud asynchronously.
-    """
+    """Worker thread for generating the word cloud asynchronously."""
 
     def __init__(self, segments, is_dark):
         super().__init__()
@@ -35,13 +27,13 @@ class WordCloudWorker(QRunnable):
 
     def _find_cjk_font(self):
         """Tries to find a common CJK font on the user's system."""
-        if os.name == "nt":  # Windows
+        if os.name == "nt":
             paths = [
                 "C:/Windows/Fonts/simhei.ttf",
                 "C:/Windows/Fonts/msyh.ttc",
                 "C:/Windows/Fonts/malgun.ttf",
             ]
-        else:  # macOS / Linux
+        else:
             paths = [
                 "/System/Library/Fonts/PingFang.ttc",
                 "/System/Library/Fonts/STHeiti.ttf",
@@ -56,7 +48,7 @@ class WordCloudWorker(QRunnable):
     def run(self):
         """The main work task, executed in a separate thread."""
         try:
-            # FIX: sqlite3.Row does not have .get(). Check for key existence with 'in'.
+            # FIXED: Generate cloud from node names, not coded words.
             node_names = [
                 seg["node_name"]
                 for seg in self.segments
@@ -86,10 +78,11 @@ class WordCloudWorker(QRunnable):
                 font_path=font_path,
                 background_color=bg_color,
                 max_words=150,
-                width=1200,
-                height=800,
+                width=1000,
+                height=600,
                 colormap="viridis",
                 random_state=42,
+                prefer_horizontal=1,
             )
 
             wc = wc_object.generate_from_frequencies(frequencies)
@@ -100,7 +93,7 @@ class WordCloudWorker(QRunnable):
             qt_image = QImage.fromData(buffer.getvalue())
             pixmap = QPixmap.fromImage(qt_image)
 
-            self.signals.result.emit(pixmap, "")  # Emit success with an empty message
+            self.signals.result.emit(pixmap, "")
 
         except Exception as e:
             traceback.print_exc()

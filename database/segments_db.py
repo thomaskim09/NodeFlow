@@ -1,4 +1,4 @@
-# In file: database/segments_db.py
+# Replace the contents of database/segments_db.py
 
 from .db_core import get_db_connection
 
@@ -13,13 +13,46 @@ def add_coded_segment(document_id, node_id, participant_id, start, end, text_pre
     conn.close()
 
 
+# ADDED: New function to get segments based on a list of node IDs.
+def get_coded_segments_for_nodes(project_id, node_ids, document_id=None):
+    """
+    Retrieves all coded segments for a given list of node IDs,
+    optionally filtered by a document ID.
+    """
+    if not node_ids:
+        return []
+
+    conn = get_db_connection()
+    placeholders = ",".join("?" * len(node_ids))
+
+    params = [project_id] + node_ids
+
+    sql = f"""
+        SELECT cs.*, d.title as document_title, d.id as document_id, n.name as node_name, n.color as node_color, p.name as participant_name
+        FROM coded_segments cs
+        JOIN documents d ON cs.document_id = d.id
+        JOIN nodes n ON cs.node_id = n.id
+        LEFT JOIN participants p ON cs.participant_id = p.id
+        WHERE d.project_id = ? AND cs.node_id IN ({placeholders})
+    """
+
+    if document_id:
+        sql += " AND d.id = ?"
+        params.append(document_id)
+
+    sql += " ORDER BY d.title, cs.id"
+
+    segments_rows = conn.execute(sql, tuple(params)).fetchall()
+    conn.close()
+    return [dict(row) for row in segments_rows]
+
+
 def get_coded_segments_for_document(document_id):
     """
     Retrieves all coded segments for a specific document, including node, participant, and document info.
     """
     conn = get_db_connection()
     cursor = conn.cursor()
-    # FIXED: Added JOIN to documents table to fetch d.title as document_title.
     cursor.execute(
         """
         SELECT s.id, s.node_id, s.content_preview, s.segment_start, s.segment_end,

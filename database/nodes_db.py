@@ -1,4 +1,4 @@
-# Create this file at: database/nodes_db.py
+# In file: database/nodes_db.py
 
 from .db_core import get_db_connection
 
@@ -18,10 +18,11 @@ def add_node(project_id, name, parent_id, color):
                     "SELECT COUNT(*) FROM nodes WHERE parent_id = ?", (parent_id,)
                 ).fetchone()
             position = pos_res[0]
-            conn.execute(
+            cursor = conn.execute(
                 "INSERT INTO nodes (project_id, name, parent_id, color, position) VALUES (?, ?, ?, ?, ?)",
                 (project_id, name, parent_id, color, position),
             )
+            return cursor.lastrowid
     finally:
         conn.close()
 
@@ -33,7 +34,7 @@ def get_nodes_for_project(project_id):
         (project_id,),
     ).fetchall()
     conn.close()
-    return nodes
+    return [dict(row) for row in nodes]
 
 
 def update_node_name(node_id, new_name):
@@ -50,10 +51,26 @@ def update_node_color(node_id, new_color):
     conn.close()
 
 
-def delete_node(node_id):
+def delete_node_and_children(node_id):
     conn = get_db_connection()
-    with conn:
-        conn.execute("DELETE FROM nodes WHERE id = ?", (node_id,))
+    cursor = conn.cursor()
+    nodes_to_delete = [node_id]
+    query_ids = [node_id]
+    while query_ids:
+        placeholders = ",".join("?" for _ in query_ids)
+        children = cursor.execute(
+            f"SELECT id FROM nodes WHERE parent_id IN ({placeholders})", query_ids
+        ).fetchall()
+        child_ids = [row["id"] for row in children]
+        nodes_to_delete.extend(child_ids)
+        query_ids = child_ids
+    placeholders = ",".join("?" for _ in nodes_to_delete)
+    cursor.execute(f"DELETE FROM nodes WHERE id IN ({placeholders})", nodes_to_delete)
+    cursor.execute(
+        f"DELETE FROM coded_segments WHERE node_id IN ({placeholders})",
+        nodes_to_delete,
+    )
+    conn.commit()
     conn.close()
 
 
@@ -82,3 +99,33 @@ def update_node_parent(node_id, new_parent_id):
             (new_parent_id, count, node_id),
         )
     conn.close()
+
+
+def get_node_descendants(node_id):
+    """
+    Recursively fetches all descendant node IDs for a given node_id.
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    all_descendant_ids = []
+
+    # Start with the direct children
+    query_ids = [node_id]
+
+    while query_ids:
+        placeholders = ",".join("?" for _ in query_ids)
+        children = cursor.execute(
+            f"SELECT id FROM nodes WHERE parent_id IN ({placeholders})", query_ids
+        ).fetchall()
+
+        child_ids = [row["id"] for row in children]
+
+        if not child_ids:
+            break
+
+        all_descendant_ids.extend(child_ids)
+        query_ids = child_ids
+
+    conn.close()
+    return all_descendant_ids
