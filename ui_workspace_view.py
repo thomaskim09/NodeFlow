@@ -19,11 +19,10 @@ import database
 
 
 class WorkspaceView(QWidget):
-    def __init__(self, project_id, project_name, show_startup_callback):
+    def __init__(self, project_id, project_name):
         super().__init__()
         self.project_id = project_id
         self.project_name = project_name
-        self.show_startup_callback = show_startup_callback
 
         main_layout = QVBoxLayout(self)
         main_splitter = QSplitter(Qt.Orientation.Horizontal)
@@ -32,10 +31,6 @@ class WorkspaceView(QWidget):
         self.left_pane_layout = QVBoxLayout(self.left_pane)
         self.center_pane = ContentView(self.project_id)
         self.bottom_pane = CodedSegmentsView(self.project_id)
-
-        back_button = QPushButton("⬅ Back to Projects")
-        back_button.clicked.connect(self.show_startup_callback)
-        self.left_pane_layout.addWidget(back_button)
 
         self.participant_manager = ParticipantManager(self.project_id)
         self.node_tree_manager = NodeTreeManager(self.project_id)
@@ -97,10 +92,14 @@ class WorkspaceView(QWidget):
         self.bottom_pane.reload_view()
 
     def export_as_word(self):
-        export_manager.export_to_word(self.project_id, self)
+        export_manager.export_to_word(
+            self.project_id, self.center_pane.current_document_id, self
+        )
 
     def export_as_json(self):
-        export_manager.export_to_json(self.project_id, self)
+        export_manager.export_to_json(
+            self.project_id, self.center_pane.current_document_id, self
+        )
 
     def export_as_excel(self):
         export_manager.export_to_excel(self.project_id, self)

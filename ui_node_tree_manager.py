@@ -9,10 +9,11 @@ from PySide6.QtWidgets import (
     QLabel,
     QHBoxLayout,
     QAbstractItemView,
+    QMenu,
 )
 from PySide6.QtCore import Signal
 from PySide6.QtGui import QDropEvent
-
+import export_manager
 import database
 
 
@@ -70,7 +71,14 @@ class NodeItemWidget(QWidget):
 
         name_label = QLabel(display_text)
 
-        self.filter_button = QPushButton("🔎")
+        # --- NEW: Export button ---
+        self.export_button = QPushButton("↓")
+        self.export_button.setFixedSize(24, 24)
+        self.export_button.setToolTip("Export this node and its children")
+        self.export_button.clicked.connect(self.on_export)
+        self.export_button.setVisible(False)
+
+        self.filter_button = QPushButton("▼")  # <-- CHANGED: Icon
         self.filter_button.setFixedSize(24, 24)
         self.filter_button.setToolTip("Filter by this node only")
         self.filter_button.clicked.connect(self.on_filter)
@@ -96,16 +104,21 @@ class NodeItemWidget(QWidget):
 
         layout.addWidget(name_label)
         layout.addStretch()
+        layout.addWidget(self.export_button)  # <-- ADDED
         layout.addWidget(self.filter_button)
         layout.addWidget(self.add_button)
         layout.addWidget(self.edit_button)
         layout.addWidget(self.delete_button)
 
     def set_icons_visible(self, visible):
+        self.export_button.setVisible(visible)  # <-- ADDED
         self.filter_button.setVisible(visible)
         self.add_button.setVisible(visible)
         self.edit_button.setVisible(visible)
         self.delete_button.setVisible(visible)
+
+    def on_export(self):
+        self.parent_manager.show_node_export_menu(self.node_id, self.export_button)
 
     def on_filter(self):
         self.parent_manager.filter_by_single_node(self.node_id)
@@ -141,9 +154,17 @@ class NodeTreeManager(QWidget):
         add_root_button = QPushButton("＋ Add Root Node")
         add_root_button.clicked.connect(self.add_node)
 
+        # --- NEW: Clear filter button ---
+        clear_filter_button = QPushButton("🔄 Show All")
+        clear_filter_button.setToolTip(
+            "Clear the current node filter in the Coded Segments view"
+        )
+        clear_filter_button.clicked.connect(self.clear_all_filters)
+
         header_layout = QHBoxLayout()
         header_layout.addWidget(header_label)
         header_layout.addStretch()
+        header_layout.addWidget(clear_filter_button)  # <-- ADDED
         header_layout.addWidget(add_root_button)
         main_layout.addLayout(header_layout)
 
@@ -154,6 +175,9 @@ class NodeTreeManager(QWidget):
 
         self.tree_widget.currentItemChanged.connect(self.on_selection_changed)
         self.load_nodes()
+
+    def clear_all_filters(self):
+        self.tree_widget.clearSelection()
 
     def on_selection_changed(self, current_item, previous_item):
         if previous_item:
@@ -167,21 +191,17 @@ class NodeTreeManager(QWidget):
                 widget.set_icons_visible(True)
 
             node_id = current_item.data(0, 1)
-            # FIX: Call the corrected function without the extra argument
             descendants = self.get_all_descendant_ids(node_id)
             self.filter_by_node_family_signal.emit([node_id] + descendants)
 
         else:
             self.filter_by_node_family_signal.emit([])
 
-    # FIX: Corrected method signature and implementation
     def get_all_descendant_ids(self, node_id):
         """Recursively gets all children of a node using the class's node map."""
         descendants = []
-        # Use self.nodes_by_parent, which is defined in load_nodes
         for child_node in self.nodes_by_parent.get(node_id, []):
             descendants.append(child_node["id"])
-            # The recursive call is also fixed to not pass the extra argument
             descendants.extend(self.get_all_descendant_ids(child_node["id"]))
         return descendants
 
@@ -263,3 +283,23 @@ class NodeTreeManager(QWidget):
 
     def filter_by_single_node(self, node_id):
         self.filter_by_single_node_signal.emit(node_id)
+
+    # --- NEW: Export menu for a specific node ---
+    def show_node_export_menu(self, node_id, button):
+        menu = QMenu(self)
+        action_export_word = menu.addAction("Export as Word (.docx)")
+        action_export_excel = menu.addAction("Export as Excel (.xlsx)")
+
+        # Connect actions to the new export functions
+        action_export_word.triggered.connect(
+            lambda: export_manager.export_node_family_to_word(
+                self.project_id, node_id, self
+            )
+        )
+        action_export_excel.triggered.connect(
+            lambda: export_manager.export_node_family_to_excel(
+                self.project_id, node_id, self
+            )
+        )
+
+        menu.exec(button.mapToGlobal(button.rect().bottomLeft()))

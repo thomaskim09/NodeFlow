@@ -23,7 +23,7 @@ class ProjectItemWidget(QWidget):
         self.parent_view = parent_view
 
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(5, 5, 5, 5)
+        layout.setContentsMargins(5, 5, 5, 10)
 
         name_label = QLabel(project_name)
         font = name_label.font()
@@ -33,11 +33,9 @@ class ProjectItemWidget(QWidget):
         # Edit button with pencil icon
         self.edit_button = QPushButton("✎")
         font = self.edit_button.font()
-        font.setPointSize(14)
+        font.setPointSize(12)
         self.edit_button.setFont(font)
-        self.edit_button.setFixedSize(
-            28, 28
-        )  # <-- FIX: Reduced size from 32x32 to 28x28
+        self.edit_button.setFixedSize(24, 24)  # <-- FIX: Reduced size
         self.edit_button.setToolTip("Rename Project")
         self.edit_button.clicked.connect(self.on_rename_clicked)
         self.edit_button.setVisible(False)
@@ -45,11 +43,9 @@ class ProjectItemWidget(QWidget):
         # Delete button with icon
         self.delete_button = QPushButton("🗑")
         font = self.delete_button.font()
-        font.setPointSize(14)
+        font.setPointSize(12)
         self.delete_button.setFont(font)
-        self.delete_button.setFixedSize(
-            28, 28
-        )  # <-- FIX: Reduced size from 32x32 to 28x28
+        self.delete_button.setFixedSize(24, 24)  # <-- FIX: Reduced size
         self.delete_button.setToolTip("Delete Project")
         self.delete_button.clicked.connect(self.on_delete_clicked)
         self.delete_button.setVisible(False)
@@ -92,6 +88,16 @@ class StartupView(QWidget):
         title_font.setBold(True)
         title_label.setFont(title_font)
         title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        # --- NEW: Tagline ---
+        tagline_label = QLabel("Your compass for qualitative data.")
+        tagline_font = QFont()
+        tagline_font.setPointSize(10)
+        tagline_font.setItalic(True)
+        tagline_label.setFont(tagline_font)
+        tagline_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        tagline_label.setStyleSheet("color: #555;")
+
         subtitle_label = QLabel("Select a project to open or create a new one.")
         subtitle_font = QFont()
         subtitle_font.setPointSize(12)
@@ -110,6 +116,8 @@ class StartupView(QWidget):
 
         main_layout.addWidget(icon_label)
         main_layout.addWidget(title_label)
+        main_layout.addWidget(tagline_label)  # <-- ADDED
+        main_layout.addSpacing(10)
         main_layout.addWidget(subtitle_label)
         main_layout.addWidget(self.project_list_widget)
         button_layout.addWidget(open_button)

@@ -23,17 +23,17 @@ class ParticipantItemWidget(QWidget):
         self.parent_manager = parent_manager
 
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(5, 5, 5, 5)
+        layout.setContentsMargins(5, 5, 5, 8)
         name_label = QLabel(participant_name)
 
         self.edit_button = QPushButton("✎")
-        self.edit_button.setFixedSize(28, 28)
+        self.edit_button.setFixedSize(24, 24)
         self.edit_button.setToolTip("Edit Participant Name")
         self.edit_button.clicked.connect(self.on_edit_clicked)
         self.edit_button.setVisible(False)
 
         self.delete_button = QPushButton("🗑")
-        self.delete_button.setFixedSize(28, 28)
+        self.delete_button.setFixedSize(24, 24)
         self.delete_button.setToolTip("Delete Participant")
         self.delete_button.clicked.connect(self.on_delete_clicked)
         self.delete_button.setVisible(False)
