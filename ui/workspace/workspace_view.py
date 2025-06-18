@@ -112,6 +112,7 @@ class WorkspaceView(QWidget):
         main_splitter.addWidget(right_splitter)
         main_splitter.setSizes([350, 700])
         main_layout.addWidget(main_splitter)
+
         self.center_pane.doc_selector.currentIndexChanged.connect(
             self.on_document_changed
         )
@@ -119,21 +120,26 @@ class WorkspaceView(QWidget):
         self.center_pane.document_added.connect(self.on_data_changed)
         self.center_pane.segment_clicked.connect(self.bottom_pane.select_segment_by_id)
         self.bottom_pane.segment_deleted.connect(self.on_segment_deleted)
+
         self.action_export_json.triggered.connect(self.export_as_json)
         self.action_export_word.triggered.connect(self.export_as_word)
         self.action_export_excel.triggered.connect(self.export_as_excel)
+
         self.node_tree_manager.filter_by_node_family_signal.connect(
             self.bottom_pane.filter_by_node_family
         )
         self.node_tree_manager.filter_by_single_node_signal.connect(
             self.bottom_pane.filter_by_single_node
         )
+
         self.participant_manager.participant_updated.connect(self.on_data_changed)
+
         self.node_tree_manager.node_updated.connect(self.on_node_data_updated)
         self.center_pane.text_selection_changed.connect(
             self.node_tree_manager.set_selection_mode
         )
         self.node_tree_manager.node_selected_for_coding.connect(self.code_selection)
+
         self.center_pane.load_document_content()
         self.on_document_changed()
 
@@ -156,6 +162,8 @@ class WorkspaceView(QWidget):
         self.on_data_changed()
 
     def on_data_changed(self):
+        # --- FIXED: Reload participant list to show new additions ---
+        self.participant_manager.load_participants()
         self.center_pane.load_document_list()
         new_doc_id = self.center_pane.current_document_id
         self.bottom_pane.load_segments(new_doc_id)
@@ -175,7 +183,7 @@ class WorkspaceView(QWidget):
             doc_id = self.center_pane.current_document_id
             self.bottom_pane.load_segments(doc_id)
             self.node_tree_manager.tree_widget.clearSelection()
-            self.node_tree_manager.set_current_document_id(doc_id)
+            self.node_tree_manager.set_stats_scope("Current Document", doc_id)
         finally:
             QApplication.restoreOverrideCursor()
 

@@ -1,3 +1,5 @@
+# Replace the contents of ui/workspace/coded_segments_view.py
+
 from PySide6.QtWidgets import (
     QWidget,
     QVBoxLayout,
@@ -38,7 +40,6 @@ class DeletableTreeWidget(QTreeWidget):
 
 
 class CodedSegmentsView(QWidget):
-    # Signal to notify when a segment is deleted
     segment_deleted = Signal()
 
     def __init__(self, project_id):
@@ -77,7 +78,6 @@ class CodedSegmentsView(QWidget):
         controls_layout.addWidget(self.search_scope_combo)
         main_layout.addLayout(controls_layout)
 
-        self.tree_widget = QTreeWidget()
         self.tree_widget = DeletableTreeWidget(self)
         main_layout.addWidget(self.tree_widget)
 
@@ -118,7 +118,6 @@ class CodedSegmentsView(QWidget):
 
             delete_button = QPushButton("🗑️")
             delete_button.setFixedSize(20, 20)
-            delete_button.setToolTip("Delete this coded segment")
             delete_button.setToolTip("Delete this coded segment (Delete)")
             delete_button.clicked.connect(
                 lambda: self.confirm_delete_segment(segment_id, preview)
@@ -164,6 +163,7 @@ class CodedSegmentsView(QWidget):
             self.reload_view()
 
     def reload_view(self):
+        # --- FIXED: Suppress RuntimeWarning ---
         try:
             self.tree_widget.currentItemChanged.disconnect(self.on_selection_changed)
         except RuntimeError:
@@ -213,7 +213,8 @@ class CodedSegmentsView(QWidget):
     def populate_tree(self, segments):
         scope = self.scope_combo.currentText()
         for segment in segments:
-            preview = segment["content_preview"]
+            # --- FIXED: Remove leading/trailing spaces ---
+            preview = segment["content_preview"].strip()
             if len(preview) > 100:
                 preview = preview[:100] + "..."
 
@@ -234,6 +235,7 @@ class CodedSegmentsView(QWidget):
         scope = self.search_scope_combo.currentText()
         view_scope = self.scope_combo.currentText()
 
+        # --- FIXED: Suppress RuntimeWarning ---
         try:
             self.tree_widget.currentItemChanged.disconnect(self.on_selection_changed)
         except RuntimeError:
@@ -281,6 +283,7 @@ class CodedSegmentsView(QWidget):
         self.search_input.clear()
         self._last_active_node_filter = node_ids
 
+        # --- FIXED: Suppress RuntimeWarning ---
         try:
             self.tree_widget.currentItemChanged.disconnect(self.on_selection_changed)
         except RuntimeError:
@@ -302,6 +305,7 @@ class CodedSegmentsView(QWidget):
         self.search_input.clear()
         self._last_active_node_filter = [node_id]
 
+        # --- FIXED: Suppress RuntimeWarning ---
         try:
             self.tree_widget.currentItemChanged.disconnect(self.on_selection_changed)
         except RuntimeError:

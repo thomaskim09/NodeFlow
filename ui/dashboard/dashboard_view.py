@@ -8,7 +8,6 @@ from PySide6.QtWidgets import (
     QLabel,
     QTreeWidget,
     QTreeWidgetItem,
-    QSizePolicy,
     QPushButton,
     QFileDialog,
     QMessageBox,
@@ -17,19 +16,12 @@ from PySide6.QtWidgets import (
     QComboBox,
     QMenu,
     QHeaderView,
+    QFrame,
 )
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QPixmap, QColor, QIcon
 
-# Updated import
 from managers.theme_manager import load_settings
-
-# The rest of the imports are unchanged.
-# ...
-
-# The class definition for DashboardView has been updated to import from managers,
-# but otherwise its logic from the last step remains the same.
-# The full, correct code is provided below for completeness.
 from .charts_widget import ChartsWidget
 from .crosstab_widget import CrosstabWidget
 import database
@@ -45,45 +37,68 @@ class DashboardView(QDialog):
         self.docs = database.get_documents_for_project(self.project_id)
         self.participants = database.get_participants_for_project(self.project_id)
         self.settings = load_settings()
+        self.is_dark = self.settings.get("theme") == "Dark"
+
         main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(10, 5, 10, 10)
+        main_layout.setContentsMargins(15, 15, 15, 15)
+        main_layout.setSpacing(10)
+
         top_layout = QHBoxLayout()
-        overview_layout = QHBoxLayout()
-        controls_layout = QVBoxLayout()
-        self.total_words_label = self._create_stat_label("Scope Words\nN/A")
-        self.coded_segments_label = self._create_stat_label("Coded Segments\nN/A")
-        self.coded_words_label = self._create_stat_label("Coded Words\nN/A")
+
+        # --- REFACTORED: Stats Overview Section ---
+        stats_container = QFrame()
+        stats_container.setObjectName("statsContainer")
+        container_bg = "#2e3440" if self.is_dark else "#f2f2f2"
+        stats_container.setStyleSheet(
+            f"#statsContainer {{ background-color: {container_bg}; border-radius: 8px; }}"
+        )
+
+        overview_layout = QHBoxLayout(stats_container)
+        overview_layout.setContentsMargins(15, 15, 15, 15)
+        overview_layout.setSpacing(15)
+
+        self.total_words_label = self._create_stat_label("Scope Words")
+        self.coded_segments_label = self._create_stat_label("Coded Segments")
+        self.coded_words_label = self._create_stat_label("Coded Words")
+
         overview_layout.addWidget(self.total_words_label)
         overview_layout.addWidget(self.coded_segments_label)
         overview_layout.addWidget(self.coded_words_label)
+        # --- End Stats Section ---
+
+        # --- Controls Section ---
+        controls_layout = QVBoxLayout()
         doc_scope_layout = QHBoxLayout()
         doc_scope_layout.addWidget(QLabel("Document Scope:"))
         self.doc_scope_combo = QComboBox()
         self.doc_scope_combo.addItem("Project Total", -1)
         for doc in self.docs:
             self.doc_scope_combo.addItem(doc["title"], doc["id"])
-        self.doc_scope_combo.currentIndexChanged.connect(self.load_dashboard_data)
         doc_scope_layout.addWidget(self.doc_scope_combo)
+
         part_scope_layout = QHBoxLayout()
         part_scope_layout.addWidget(QLabel("Participant Scope:"))
         self.part_scope_combo = QComboBox()
         self.part_scope_combo.addItem("All Participants", -1)
         for p in self.participants:
             self.part_scope_combo.addItem(p["name"], p["id"])
-        self.part_scope_combo.currentIndexChanged.connect(self.load_dashboard_data)
         part_scope_layout.addWidget(self.part_scope_combo)
-        self.export_button = QPushButton("Export...")
+
+        self.export_button = QPushButton("Export Options")
         export_menu = QMenu(self)
         export_menu.addAction("Export Chart as Image", self.export_chart_as_image)
         export_menu.addAction("Export Data Table as CSV", self.export_data_as_csv)
         export_menu.addAction("Export Cross-Tab as CSV", self.export_crosstab_as_csv)
         self.export_button.setMenu(export_menu)
+
         controls_layout.addLayout(doc_scope_layout)
         controls_layout.addLayout(part_scope_layout)
-        controls_layout.addWidget(self.export_button, 0, Qt.AlignmentFlag.AlignBottom)
-        top_layout.addLayout(overview_layout, 3)
+        controls_layout.addWidget(self.export_button, 0, Qt.AlignmentFlag.AlignRight)
+
+        top_layout.addWidget(stats_container, 2)  # Changed stretch factor
         top_layout.addLayout(controls_layout, 1)
         main_layout.addLayout(top_layout)
+
         self.tabs = QTabWidget()
         main_layout.addWidget(self.tabs)
         breakdown_tab = QWidget()
@@ -102,6 +117,11 @@ class DashboardView(QDialog):
         self.tabs.addTab(self.charts_widget, "Charts")
         self.crosstab_widget = CrosstabWidget(self.settings)
         self.tabs.addTab(self.crosstab_widget, "Cross-Tabulation")
+
+        # --- Connections & Initial Load ---
+        self.doc_scope_combo.currentIndexChanged.connect(self.load_dashboard_data)
+        self.part_scope_combo.currentIndexChanged.connect(self.load_dashboard_data)
+
         if self.initial_document_id:
             index = self.doc_scope_combo.findData(self.initial_document_id)
             if index != -1:
@@ -109,6 +129,77 @@ class DashboardView(QDialog):
         else:
             self.load_dashboard_data()
 
+    # --- Stat Label Creation ---
+    def _create_stat_label(self, title_text):
+        label = QLabel()
+        label.setTextFormat(Qt.RichText)
+        label.setAlignment(Qt.AlignCenter)
+
+        bg_color = "#3b4252" if self.is_dark else "#ffffff"
+        border_color = "#4c566a" if self.is_dark else "#d8dee9"
+        title_color = "#d8dee9" if self.is_dark else "#4c566a"
+        value_color = "#eceff4" if self.is_dark else "#2e3440"
+
+        label.setStyleSheet(
+            f"""
+            QLabel {{
+                background-color: {bg_color};
+                border: 1px solid {border_color};
+                border-radius: 6px;
+                padding: 10px;
+            }}
+        """
+        )
+
+        html = f"""
+            <div style='color: {title_color}; font-size: 9pt;'>{title_text}</div>
+            <div style='color: {value_color}; font-size: 18pt; font-weight: 600;'>N/A</div>
+        """
+        label.setText(html)
+        return label
+
+    def _update_stat_label(self, label, title, value):
+        title_color = "#d8dee9" if self.is_dark else "#4c566a"
+        value_color = "#eceff4" if self.is_dark else "#2e3440"
+
+        html = f"""
+            <div style='color: {title_color}; font-size: 9pt;'>{title}</div>
+            <div style='color: {value_color}; font-size: 18pt; font-weight: 600;'>{value}</div>
+        """
+        label.setText(html)
+
+    def load_dashboard_data(self):
+        doc_id, part_id = (
+            self.doc_scope_combo.currentData(),
+            self.part_scope_combo.currentData(),
+        )
+        total_words, segments = self._get_scoped_data(doc_id, part_id)
+        nodes = database.get_nodes_for_project(self.project_id)
+
+        self._update_stat_label(
+            self.total_words_label, "Scope Words", f"{total_words:,}"
+        )
+        self._update_stat_label(
+            self.coded_segments_label, "Coded Segments", f"{len(segments):,}"
+        )
+
+        node_stats, coded_words = self._calculate_direct_stats(segments)
+        coded_percentage = (coded_words / total_words * 100) if total_words > 0 else 0
+
+        percent_html = f"{coded_words:,} <span style='font-size: 11pt; font-weight: normal;'>({coded_percentage:.1f}%)</span>"
+        self._update_stat_label(self.coded_words_label, "Coded Words", percent_html)
+
+        nodes_map, nodes_by_parent = self._build_node_hierarchy(nodes)
+        aggregated_stats = self._calculate_aggregated_stats(nodes_by_parent, node_stats)
+        self.tree_widget.clear()
+        root_nodes_data = self._populate_tree_widget(
+            nodes_by_parent, nodes_map, aggregated_stats, total_words
+        )
+        self.tree_widget.expandAll()
+        self.charts_widget.update_charts(root_nodes_data)
+        self.crosstab_widget.update_crosstab(segments, nodes)
+
+    # ... (the rest of the methods in DashboardView are unchanged) ...
     def export_chart_as_image(self):
         if self.tabs.currentIndex() != 1:
             QMessageBox.warning(
@@ -175,37 +266,6 @@ class DashboardView(QDialog):
                     writer.writerow(row_data)
         except Exception as e:
             QMessageBox.critical(self, "Export Failed", f"An error occurred: {e}")
-
-    def _create_stat_label(self, text):
-        label = QLabel(text)
-        label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
-        label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        label.setStyleSheet("padding: 2px; font-weight: bold;")
-        return label
-
-    def load_dashboard_data(self):
-        doc_id, part_id = (
-            self.doc_scope_combo.currentData(),
-            self.part_scope_combo.currentData(),
-        )
-        total_words, segments = self._get_scoped_data(doc_id, part_id)
-        nodes = database.get_nodes_for_project(self.project_id)
-        self.total_words_label.setText(f"Scope Words\n{total_words:,}")
-        self.coded_segments_label.setText(f"Coded Segments\n{len(segments):,}")
-        node_stats, coded_words = self._calculate_direct_stats(segments)
-        coded_percentage = (coded_words / total_words * 100) if total_words > 0 else 0
-        self.coded_words_label.setText(
-            f"Coded Words\n{coded_words:,} ({coded_percentage:.1f}%)"
-        )
-        nodes_map, nodes_by_parent = self._build_node_hierarchy(nodes)
-        aggregated_stats = self._calculate_aggregated_stats(nodes_by_parent, node_stats)
-        self.tree_widget.clear()
-        root_nodes_data = self._populate_tree_widget(
-            nodes_by_parent, nodes_map, aggregated_stats, total_words
-        )
-        self.tree_widget.expandAll()
-        self.charts_widget.update_charts(root_nodes_data)
-        self.crosstab_widget.update_crosstab(segments, nodes)
 
     def _get_scoped_data(self, doc_id, part_id):
         if doc_id != -1:

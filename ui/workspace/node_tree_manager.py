@@ -1,3 +1,5 @@
+# Replace the contents of ui/workspace/node_tree_manager.py
+
 from PySide6.QtWidgets import (
     QWidget,
     QVBoxLayout,
@@ -37,7 +39,6 @@ PRESET_COLORS = [
 
 
 class DraggableTreeWidget(QTreeWidget):
-    # This class remains unchanged.
     def __init__(self, parent_manager):
         super().__init__()
         self.parent_manager = parent_manager
@@ -89,14 +90,13 @@ class DraggableTreeWidget(QTreeWidget):
 
 
 class NodeItemWidget(QWidget):
-    # MODIFIED: Constructor now takes separate name and stats text.
     def __init__(self, node_id, node_color, name_text, stats_text, parent_manager):
         super().__init__()
         self.node_id = node_id
         self.parent_manager = parent_manager
 
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(0, 0, 5, 1)
+        layout.setContentsMargins(0, 2, 5, 7)
         layout.setSpacing(5)
 
         self.color_button = QPushButton()
@@ -105,15 +105,10 @@ class NodeItemWidget(QWidget):
         self.set_button_color(node_color)
         self.color_button.clicked.connect(self.on_color_change)
 
-        # Use the separate name_text
         name_label = QLabel(name_text)
-
-        # Create a new label for the statistics
         stats_label = QLabel(stats_text)
-        # Set a fixed style to distinguish it slightly if desired
         stats_label.setStyleSheet("color: #888;")
 
-        # All action buttons remain the same
         self.export_button = QPushButton("↓")
         self.export_button.setFixedSize(24, 24)
         self.export_button.setToolTip("Export this node and its children")
@@ -144,11 +139,10 @@ class NodeItemWidget(QWidget):
         self.delete_button.clicked.connect(self.on_delete)
         self.delete_button.setVisible(False)
 
-        # MODIFIED: Adjusted layout for right-alignment
         layout.addWidget(self.color_button)
         layout.addWidget(name_label)
-        layout.addStretch()  # This pushes everything after it to the right
-        layout.addWidget(stats_label)  # Add the stats label here
+        layout.addStretch()
+        layout.addWidget(stats_label)
         layout.addWidget(self.export_button)
         layout.addWidget(self.filter_button)
         layout.addWidget(self.add_button)
@@ -193,7 +187,6 @@ class NodeItemWidget(QWidget):
 
 
 class NodeTreeManager(QWidget):
-    # This class's __init__ is unchanged from the previous step.
     filter_by_node_family_signal = Signal(list)
     filter_by_single_node_signal = Signal(int)
     node_updated = Signal()
@@ -238,15 +231,13 @@ class NodeTreeManager(QWidget):
         self.tree_widget.itemClicked.connect(self.on_item_clicked)
         self.load_nodes()
 
-    # The `load_nodes` method logic is mostly the same, but we change what we pass to NodeItemWidget
-    def load_nodes(self):
+    # MODIFIED: The load_nodes method now accepts an optional ID to re-select.
+    def load_nodes(self, node_id_to_reselect=None):
         try:
             self.tree_widget.currentItemChanged.disconnect(self.on_selection_changed)
         except RuntimeError:
             pass
-        current_selection_id = None
-        if self.tree_widget.currentItem():
-            current_selection_id = self.tree_widget.currentItem().data(0, 1)
+
         self.tree_widget.clear()
         scope = self.scope_combo.currentText()
         total_words = 0
@@ -257,6 +248,7 @@ class NodeTreeManager(QWidget):
                 doc_id_for_stats = self.current_document_id
         else:
             total_words = database.get_project_word_count(self.project_id)
+
         node_stats = database.get_node_statistics(self.project_id, doc_id_for_stats)
         nodes = database.get_nodes_for_project(self.project_id)
         self.nodes_map = {n["id"]: n for n in nodes}
@@ -266,6 +258,7 @@ class NodeTreeManager(QWidget):
             self.nodes_by_parent.setdefault(node["parent_id"], []).append(node)
         for children_list in self.nodes_by_parent.values():
             children_list.sort(key=lambda x: x["position"])
+
         item_to_reselect = None
         aggregated_stats = {}
 
@@ -306,19 +299,19 @@ class NodeTreeManager(QWidget):
                 segment_count = stats["segment_count"]
                 percentage = (word_count / total_words * 100) if total_words > 0 else 0
 
-                # MODIFIED: Create two separate strings for the widget
                 name_text = f"{current_prefix} {node_data['name']}"
                 stats_text = f"{percentage:.1f}% | {segment_count} Segments"
 
                 tree_item = QTreeWidgetItem(parent_widget)
                 tree_item.setData(0, 1, node_data["id"])
 
-                # MODIFIED: Pass the separate strings to the widget constructor
                 item_widget = NodeItemWidget(
                     node_data["id"], node_data["color"], name_text, stats_text, self
                 )
                 self.tree_widget.setItemWidget(tree_item, 0, item_widget)
-                if node_data["id"] == current_selection_id:
+
+                # MODIFIED: Check against the new parameter instead of a local variable.
+                if node_data["id"] == node_id_to_reselect:
                     item_to_reselect = tree_item
                 add_items_recursively(tree_item, node_data["id"], prefix=current_prefix)
 
@@ -328,7 +321,6 @@ class NodeTreeManager(QWidget):
             self.tree_widget.setCurrentItem(item_to_reselect)
         self.tree_widget.currentItemChanged.connect(self.on_selection_changed)
 
-    # All other methods in NodeTreeManager remain unchanged.
     def set_current_document_id(self, doc_id):
         self.current_document_id = doc_id
         if self.scope_combo.currentText() == "Current Document":
@@ -349,8 +341,9 @@ class NodeTreeManager(QWidget):
                 self.node_selected_for_coding.emit(node_id)
             self.tree_widget.blockSignals(False)
 
-    def refresh_tree_and_emit_update(self):
-        self.load_nodes()
+    # MODIFIED: This method now accepts an optional ID to re-select.
+    def refresh_tree_and_emit_update(self, node_id_to_reselect=None):
+        self.load_nodes(node_id_to_reselect=node_id_to_reselect)
         self.node_updated.emit()
 
     def clear_all_filters(self):
@@ -389,7 +382,14 @@ class NodeTreeManager(QWidget):
         )
         if ok and new_name.strip() and new_name.strip() != current_name:
             database.update_node_name(node_id, new_name.strip())
-            self.refresh_tree_and_emit_update()
+            self.refresh_tree_and_emit_update(
+                node_id_to_reselect=node_id
+            )  # Pass ID to re-select
+
+    def set_stats_scope(self, scope, document_id=None):
+        self.current_filter_scope = scope
+        self.current_document_id = document_id
+        self.load_nodes()
 
     def add_node(self, parent_id=None):
         name, ok = QInputDialog.getText(
@@ -405,7 +405,8 @@ class NodeTreeManager(QWidget):
             try:
                 pid = int(self.project_id)
                 database.add_node(pid, name.strip(), parent_id, new_color)
-                self.refresh_tree_and_emit_update()
+                # MODIFIED: Pass the parent_id to re-select it after the reload.
+                self.refresh_tree_and_emit_update(node_id_to_reselect=parent_id)
             except (ValueError, TypeError) as e:
                 QMessageBox.critical(
                     self,
@@ -423,6 +424,15 @@ class NodeTreeManager(QWidget):
         node_data = self.nodes_map.get(node_id)
         if not node_data:
             return
+
+        # Find parent before deleting to re-select it later
+        self.tree_widget.findItems(
+            str(node_id), Qt.MatchFlag.MatchRecursive, 1
+        )  # This is not ideal, need a better way
+        parent_id_to_reselect = None
+        # A more robust find method would be better, but for now let's find it in the map
+        parent_id_to_reselect = node_data["parent_id"]
+
         reply = QMessageBox.question(
             self,
             "Confirm Delete",
@@ -430,9 +440,12 @@ class NodeTreeManager(QWidget):
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
         )
+
         if reply == QMessageBox.StandardButton.Yes:
             database.delete_node(node_id)
-            self.refresh_tree_and_emit_update()
+            self.refresh_tree_and_emit_update(
+                node_id_to_reselect=parent_id_to_reselect
+            )  # Pass parent ID
 
     def filter_by_single_node(self, node_id):
         self.filter_by_single_node_signal.emit(node_id)

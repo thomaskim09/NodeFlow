@@ -14,7 +14,6 @@ from PySide6.QtWidgets import (
     QDialogButtonBox,
     QApplication,
     QFrame,
-    QInputDialog,
     QStackedLayout,
 )
 from PySide6.QtCore import Qt, Signal
@@ -29,12 +28,11 @@ import os
 import database
 import docx
 
-# Updated import
 from managers.theme_manager import load_settings
+from .excel_import_dialog import ExcelImportDialog
+from managers import excel_import_manager
 
 
-# The rest of this file's code is unchanged.
-# ... (paste the existing ContentView and AssignParticipantDialog classes here) ...
 class ContentView(QWidget):
     document_deleted = Signal()
     document_added = Signal()
@@ -58,9 +56,10 @@ class ContentView(QWidget):
         title_label.setFont(font)
         self.doc_selector = QComboBox()
         self.doc_selector.setMinimumWidth(300)
-        self.import_button = QPushButton("📤")
-        self.import_button.setToolTip("Import Document (.txt, .docx)")
-        self.import_button.setFixedSize(28, 28)
+
+        self.import_button = QPushButton("📤 Import")
+        self.import_button.setToolTip("Import Document (.txt, .docx, .xlsx)")
+
         self.save_button = QPushButton("💾")
         self.save_button.setToolTip("Save Changes")
         self.save_button.setFixedSize(28, 28)
@@ -68,6 +67,7 @@ class ContentView(QWidget):
         delete_button = QPushButton("🗑️")
         delete_button.setToolTip("Delete Current Document")
         delete_button.setFixedSize(28, 28)
+
         self.text_edit = QTextEdit()
         self.text_edit.setReadOnly(False)
         self.text_edit.setAcceptDrops(False)
@@ -81,7 +81,8 @@ class ContentView(QWidget):
         icon_font.setPointSize(48)
         icon_label.setFont(icon_font)
         icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        text_label = QLabel("Drop document file here\n(.txt, .docx)")
+
+        text_label = QLabel("Drop document file(s) here\n(.txt, .docx, .xlsx)")
         text_font = QFont()
         text_font.setPointSize(12)
         text_label.setFont(text_font)
@@ -110,7 +111,8 @@ class ContentView(QWidget):
         main_layout.addLayout(top_bar_layout)
         main_layout.addLayout(self.stacked_layout)
         main_layout.addWidget(info_bar)
-        self.import_button.clicked.connect(self.import_document_dialog)
+
+        self.import_button.clicked.connect(self.open_import_dialog)
         self.save_button.clicked.connect(self.save_document)
         delete_button.clicked.connect(self.delete_current_document)
         self.doc_selector.currentIndexChanged.connect(self.handle_document_switch)
@@ -119,21 +121,76 @@ class ContentView(QWidget):
         self.text_edit.selectionChanged.connect(self.on_selection_changed_for_coding)
         self.load_document_list()
 
+    def open_import_dialog(self):
+        file_paths, _ = QFileDialog.getOpenFileNames(
+            self,
+            "Import Documents",
+            "",
+            "All Supported Files (*.txt *.docx *.xlsx);;Text Files (*.txt);;Word Documents (*.docx);;Excel Files (*.xlsx)",
+        )
+        if file_paths:
+            self.handle_files_dropped(file_paths)
+
+    def handle_file_import(self, file_path):
+        ext = os.path.splitext(file_path)[1].lower()
+        if ext == ".xlsx":
+            self._import_from_excel(file_path)
+        elif ext in [".txt", ".docx"]:
+            self._process_text_document(file_path)
+        else:
+            QMessageBox.warning(
+                self, "Unsupported File", f"The file type '{ext}' is not supported."
+            )
+
+    def _import_from_excel(self, file_path):
+        participants = database.get_participants_for_project(self.project_id)
+        dialog = ExcelImportDialog(file_path, participants, self)
+
+        if not dialog.valid_headers:
+            QMessageBox.critical(
+                self,
+                "Error",
+                f"Could not read headers from '{os.path.basename(file_path)}'. Please ensure it is a valid .xlsx file with a header row.",
+            )
+            return
+
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+            mappings = dialog.get_column_mappings()
+
+            docs_imported, errors = excel_import_manager.import_data(
+                self.project_id, file_path, mappings
+            )
+
+            QApplication.restoreOverrideCursor()
+
+            if docs_imported > 0:
+                self.document_added.emit()
+
+            summary_message = f"Successfully imported {docs_imported} document(s) from '{os.path.basename(file_path)}'."
+            if errors:
+                detailed_errors = "\n".join(errors[:5])
+                if len(errors) > 5:
+                    detailed_errors += "\n(And more...)"
+                error_dialog = QMessageBox(self)
+                error_dialog.setWindowTitle("Import Complete with Errors")
+                error_dialog.setText(summary_message)
+                error_dialog.setDetailedText(detailed_errors)
+                error_dialog.exec()
+            else:
+                QMessageBox.information(self, "Import Complete", summary_message)
+
     def dragEnterEvent(self, event):
         mime_data = event.mimeData()
         if mime_data.hasUrls():
             for url in mime_data.urls():
                 if url.isLocalFile():
                     file_path = url.toLocalFile().lower()
-                    if file_path.endswith((".txt", ".docx")):
+                    if file_path.endswith((".txt", ".docx", ".xlsx")):
                         event.acceptProposedAction()
                         self.show_drop_overlay()
                         return
         event.ignore()
-
-    def dragLeaveEvent(self, event):
-        self.hide_drop_overlay()
-        event.accept()
 
     def dropEvent(self, event):
         self.hide_drop_overlay()
@@ -148,6 +205,33 @@ class ContentView(QWidget):
         else:
             event.ignore()
 
+    def handle_files_dropped(self, file_paths):
+        for path in file_paths:
+            self.handle_file_import(path)
+
+    def _process_text_document(self, file_path):
+        participants = database.get_participants_for_project(self.project_id)
+        if not participants:
+            QMessageBox.warning(
+                self,
+                "No Participants",
+                "Please create at least one participant before importing documents.",
+            )
+            return
+
+        if len(participants) == 1:
+            self._import_and_add_document(participants[0]["id"], file_path)
+        else:
+            dialog = AssignParticipantDialog(participants, self)
+            if dialog.exec() == QDialog.DialogCode.Accepted:
+                participant_id = dialog.get_selected_participant_id()
+                if participant_id:
+                    self._import_and_add_document(participant_id, file_path)
+
+    def dragLeaveEvent(self, event):
+        self.hide_drop_overlay()
+        event.accept()
+
     def show_drop_overlay(self):
         if self.stacked_layout.currentWidget() is not self.drop_overlay:
             settings = load_settings()
@@ -156,15 +240,9 @@ class ContentView(QWidget):
                 "rgba(60, 60, 60, 0.95)" if is_dark else "rgba(240, 240, 240, 0.95)"
             )
             border_color_str = "#aaa" if is_dark else "#888"
-
-            stylesheet = f"""
-                #dropOverlay {{
-                    background-color: {bg_color_str};
-                    border: 2px dashed {border_color_str};
-                    border-radius: 10px;
-                }}
-            """
-            self.drop_overlay.setStyleSheet(stylesheet)
+            self.drop_overlay.setStyleSheet(
+                f"#dropOverlay {{ background-color: {bg_color_str}; border: 2px dashed {border_color_str}; border-radius: 10px; }}"
+            )
             self.stacked_layout.setCurrentWidget(self.drop_overlay)
 
     def hide_drop_overlay(self):
@@ -206,58 +284,13 @@ class ContentView(QWidget):
                 with open(file_path, "r", encoding="utf-8") as f:
                     content = f.read()
             title = os.path.basename(file_path)
-            new_doc_id = database.add_document(
-                self.project_id, title, content, participant_id
-            )
+            # --- FIXED: Unused variable removed ---
+            database.add_document(self.project_id, title, content, participant_id)
             self.is_dirty = False
             self.save_button.setEnabled(False)
-            self.load_document_list()
-            new_doc_display_text = next(
-                (k for k, v in self.documents_map.items() if v == new_doc_id), None
-            )
-            if new_doc_display_text:
-                self.doc_selector.blockSignals(True)
-                self.doc_selector.setCurrentText(new_doc_display_text)
-                self.doc_selector.blockSignals(False)
-            self.load_document_content()
             self.document_added.emit()
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to import file: {e}")
-
-    def import_document_dialog(self):
-        file_path, _ = QFileDialog.getOpenFileName(
-            self, "Import Document", "", "Documents (*.txt *.docx)"
-        )
-        if file_path:
-            self.process_imported_file(file_path)
-
-    def handle_files_dropped(self, file_paths):
-        for path in file_paths:
-            if path.lower().endswith((".txt", ".docx")):
-                self.process_imported_file(path)
-
-    def process_imported_file(self, file_path):
-        participants = database.get_participants_for_project(self.project_id)
-        if not participants:
-            name, ok = QInputDialog.getText(
-                self,
-                "Create First Participant",
-                "No participants exist. Enter a name for the first participant:",
-            )
-            if ok and name.strip():
-                database.add_participant(self.project_id, name.strip())
-                participants = database.get_participants_for_project(self.project_id)
-                self.parent().parent().parent().participant_manager.load_participants()
-            else:
-                return
-        if len(participants) == 1:
-            self._import_and_add_document(participants[0]["id"], file_path)
-        else:
-            dialog = AssignParticipantDialog(participants, self)
-            if dialog.exec() == QDialog.DialogCode.Accepted:
-                participant_id = dialog.get_selected_participant_id()
-                if participant_id:
-                    self._import_and_add_document(participant_id, file_path)
 
     def delete_current_document(self):
         if not self.current_document_id:
