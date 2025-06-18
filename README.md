@@ -1,3 +1,5 @@
+![NodeFlow Icon](icon.png)
+
 # NodeFlow - Qualitative Analysis Tool
 
 NodeFlow is a user-friendly desktop application designed to assist researchers and students in the qualitative analysis of text-based data, such as interview transcripts. Built with Python and PySide6, it provides a powerful and modern interface to simplify the process of coding (labeling) text segments and organizing these codes into a fully hierarchical structure.
@@ -9,7 +11,7 @@ NodeFlow is a user-friendly desktop application designed to assist researchers a
 * **Advanced Hierarchical Node Coding**:
     * Create and manage "nodes" (codes/labels) in a flexible, multi-level tree structure.
     * Automatic hierarchical numbering for clear organization (e.g., 1., 1.1., 1.1.1.).
-    * Full control to reorder nodes (Move Up/Down) and change their level (Promote/Demote).
+    * Full control to reorder nodes (Move Up/Down) and change their level (Promote/Demote) via Drag-and-Drop.
 * **Versatile Document Handling**:
     * Import documents from both plain text (`.txt`) and Microsoft Word (`.docx`) formats.
     * Assign each document to a specific participant upon import.
@@ -20,6 +22,7 @@ NodeFlow is a user-friendly desktop application designed to assist researchers a
 * **Powerful Data Export**:
     * Export your coded data to a structured **JSON** file, perfect for backups or further processing with other tools and AI.
     * Export a clean, formatted **Word Document** report, with your nodes as headings and the coded text listed beneath them.
+    * Export a comprehensive **Excel** report, with each node and its children's coded segments on a separate, hierarchically-ordered worksheet.
 
 ## Getting Started (For Developers)
 

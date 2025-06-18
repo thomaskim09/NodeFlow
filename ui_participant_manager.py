@@ -4,15 +4,56 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QPushButton,
     QListWidget,
-    QGroupBox,
+    QListWidgetItem,
     QMessageBox,
-    QDialog,
-    QLineEdit,
-    QDialogButtonBox,
+    QInputDialog,
     QLabel,
 )
-from PySide6.QtCore import Signal
+from PySide6.QtCore import Signal, Qt
+
 import database
+
+
+# --- Custom Widget for each participant item ---
+class ParticipantItemWidget(QWidget):
+    def __init__(self, participant_id, participant_name, parent_manager):
+        super().__init__()
+        self.participant_id = participant_id
+        self.participant_name = participant_name
+        self.parent_manager = parent_manager
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(5, 5, 5, 5)
+        name_label = QLabel(participant_name)
+
+        self.edit_button = QPushButton("✎")
+        self.edit_button.setFixedSize(28, 28)
+        self.edit_button.setToolTip("Edit Participant Name")
+        self.edit_button.clicked.connect(self.on_edit_clicked)
+        self.edit_button.setVisible(False)
+
+        self.delete_button = QPushButton("🗑")
+        self.delete_button.setFixedSize(28, 28)
+        self.delete_button.setToolTip("Delete Participant")
+        self.delete_button.clicked.connect(self.on_delete_clicked)
+        self.delete_button.setVisible(False)
+
+        layout.addWidget(name_label)
+        layout.addStretch()
+        layout.addWidget(self.edit_button)
+        layout.addWidget(self.delete_button)
+
+    def set_icons_visible(self, visible):
+        self.edit_button.setVisible(visible)
+        self.delete_button.setVisible(visible)
+
+    def on_edit_clicked(self):
+        self.parent_manager.edit_participant(self.participant_id, self.participant_name)
+
+    def on_delete_clicked(self):
+        self.parent_manager.delete_participant(
+            self.participant_id, self.participant_name
+        )
 
 
 class ParticipantManager(QWidget):
@@ -20,85 +61,82 @@ class ParticipantManager(QWidget):
 
     def __init__(self, project_id):
         super().__init__()
-
         self.project_id = project_id
-        self.participants_map = {}
 
-        group_box = QGroupBox("Participants")
         main_layout = QVBoxLayout(self)
-        group_box_layout = QVBoxLayout(group_box)
-        main_layout.addWidget(group_box)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(5)
 
-        self.list_widget = QListWidget()
+        # --- Header ---
+        header_layout = QHBoxLayout()
+        header_label = QLabel("Participants")
+        font = header_label.font()
+        font.setBold(True)
+        header_label.setFont(font)
 
-        button_layout = QHBoxLayout()
-        add_button = QPushButton("Add")
+        add_button = QPushButton("＋ Add")
         add_button.setToolTip("Add a new participant")
-        edit_button = QPushButton("Edit")
-        edit_button.setToolTip("Edit the selected participant's name")
-        delete_button = QPushButton("Delete")
-        delete_button.setToolTip("Delete the selected participant")
-
-        button_layout.addWidget(add_button)
-        button_layout.addWidget(edit_button)
-        button_layout.addWidget(delete_button)
-
-        group_box_layout.addWidget(self.list_widget)
-        group_box_layout.addLayout(button_layout)
-
         add_button.clicked.connect(self.add_participant)
-        edit_button.clicked.connect(self.edit_participant)
-        delete_button.clicked.connect(self.delete_participant)
-        self.list_widget.itemDoubleClicked.connect(self.edit_participant)
+
+        header_layout.addWidget(header_label)
+        header_layout.addStretch()
+        header_layout.addWidget(add_button)
+        main_layout.addLayout(header_layout)
+
+        # --- List Widget ---
+        self.list_widget = QListWidget()
+        self.list_widget.currentItemChanged.connect(self.on_selection_changed)
+        main_layout.addWidget(self.list_widget)
 
         self.load_participants()
 
+    def on_selection_changed(self, current_item, previous_item):
+        if previous_item:
+            widget = self.list_widget.itemWidget(previous_item)
+            if widget:
+                widget.set_icons_visible(False)
+
+        if current_item:
+            widget = self.list_widget.itemWidget(current_item)
+            if widget:
+                widget.set_icons_visible(True)
+
     def load_participants(self):
+        self.list_widget.currentItemChanged.disconnect(self.on_selection_changed)
         self.list_widget.clear()
         participants = database.get_participants_for_project(self.project_id)
-        self.participants_map = {p["name"]: p["id"] for p in participants}
-        for name in sorted(self.participants_map.keys()):
-            self.list_widget.addItem(name)
+
+        if not participants:
+            item = QListWidgetItem("No participants created.", self.list_widget)
+            item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsSelectable)
+        else:
+            for p in sorted(participants, key=lambda x: x["name"]):
+                list_item = QListWidgetItem(self.list_widget)
+                item_widget = ParticipantItemWidget(p["id"], p["name"], self)
+                list_item.setSizeHint(item_widget.sizeHint())
+                self.list_widget.addItem(list_item)
+                self.list_widget.setItemWidget(list_item, item_widget)
+        self.list_widget.currentItemChanged.connect(self.on_selection_changed)
 
     def add_participant(self):
-        dialog = ParticipantDialog(self)
-        if dialog.exec() == QDialog.DialogCode.Accepted:
-            name = dialog.get_name()
-            if name:
-                database.add_participant(self.project_id, name)
-                self.load_participants()
-                self.participant_updated.emit()
+        name, ok = QInputDialog.getText(
+            self, "Add Participant", "Enter participant's name:"
+        )
+        if ok and name.strip():
+            database.add_participant(self.project_id, name.strip())
+            self.load_participants()
+            self.participant_updated.emit()
 
-    def edit_participant(self):
-        selected_items = self.list_widget.selectedItems()
-        if not selected_items:
-            QMessageBox.warning(
-                self, "No Selection", "Please select a participant to edit."
-            )
-            return
+    def edit_participant(self, participant_id, current_name):
+        new_name, ok = QInputDialog.getText(
+            self, "Edit Participant", "Enter new name:", text=current_name
+        )
+        if ok and new_name.strip() and new_name.strip() != current_name:
+            database.update_participant(participant_id, new_name.strip(), "")
+            self.load_participants()
+            self.participant_updated.emit()
 
-        current_name = selected_items[0].text()
-        participant_id = self.participants_map[current_name]
-
-        dialog = ParticipantDialog(self, current_name=current_name)
-        if dialog.exec() == QDialog.DialogCode.Accepted:
-            new_name = dialog.get_name()
-            if new_name and new_name != current_name:
-                database.update_participant(participant_id, new_name, "")
-                self.load_participants()
-                self.participant_updated.emit()
-
-    def delete_participant(self):
-        selected_items = self.list_widget.selectedItems()
-        if not selected_items:
-            QMessageBox.warning(
-                self, "No Selection", "Please select a participant to delete."
-            )
-            return
-
-        current_name = selected_items[0].text()
-        participant_id = self.participants_map[current_name]
-
+    def delete_participant(self, participant_id, current_name):
         reply = QMessageBox.question(
             self,
             "Confirm Delete",
@@ -111,26 +149,3 @@ class ParticipantManager(QWidget):
             database.delete_participant(participant_id)
             self.load_participants()
             self.participant_updated.emit()
-
-
-class ParticipantDialog(QDialog):
-    def __init__(self, parent=None, current_name=""):
-        super().__init__(parent)
-        self.setWindowTitle("Participant Details")
-
-        self.layout = QVBoxLayout(self)
-        self.label = QLabel("Participant Name:")
-        self.name_input = QLineEdit(current_name)
-
-        self.button_box = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
-        )
-        self.button_box.accepted.connect(self.accept)
-        self.button_box.rejected.connect(self.reject)
-
-        self.layout.addWidget(self.label)
-        self.layout.addWidget(self.name_input)
-        self.layout.addWidget(self.button_box)
-
-    def get_name(self):
-        return self.name_input.text().strip()

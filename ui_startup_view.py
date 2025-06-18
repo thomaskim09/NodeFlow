@@ -2,90 +2,159 @@ from PySide6.QtWidgets import (
     QWidget,
     QLabel,
     QListWidget,
+    QListWidgetItem,
     QPushButton,
     QVBoxLayout,
     QHBoxLayout,
     QMessageBox,
-    QDialog,
-    QLineEdit,
-    QDialogButtonBox,
+    QInputDialog,
 )
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QFont
+from PySide6.QtGui import QFont, QPixmap
 
 import database
 
 
-class StartupView(QWidget):
-    """
-    The startup view for project selection and creation.
-    """
+class ProjectItemWidget(QWidget):
+    def __init__(self, project_id, project_name, parent_view):
+        super().__init__()
+        self.project_id = project_id
+        self.project_name = project_name
+        self.parent_view = parent_view
 
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(5, 5, 5, 5)
+
+        name_label = QLabel(project_name)
+        font = name_label.font()
+        font.setPointSize(12)
+        name_label.setFont(font)
+
+        # Edit button with pencil icon
+        self.edit_button = QPushButton("✎")
+        font = self.edit_button.font()
+        font.setPointSize(14)
+        self.edit_button.setFont(font)
+        self.edit_button.setFixedSize(
+            28, 28
+        )  # <-- FIX: Reduced size from 32x32 to 28x28
+        self.edit_button.setToolTip("Rename Project")
+        self.edit_button.clicked.connect(self.on_rename_clicked)
+        self.edit_button.setVisible(False)
+
+        # Delete button with icon
+        self.delete_button = QPushButton("🗑")
+        font = self.delete_button.font()
+        font.setPointSize(14)
+        self.delete_button.setFont(font)
+        self.delete_button.setFixedSize(
+            28, 28
+        )  # <-- FIX: Reduced size from 32x32 to 28x28
+        self.delete_button.setToolTip("Delete Project")
+        self.delete_button.clicked.connect(self.on_delete_clicked)
+        self.delete_button.setVisible(False)
+
+        layout.addWidget(name_label)
+        layout.addStretch()
+        layout.addWidget(self.edit_button)
+        layout.addWidget(self.delete_button)
+
+    def set_icons_visible(self, visible):
+        self.edit_button.setVisible(visible)
+        self.delete_button.setVisible(visible)
+
+    def on_rename_clicked(self):
+        self.parent_view.rename_project(self.project_id, self.project_name)
+
+    def on_delete_clicked(self):
+        self.parent_view.delete_project(self.project_id, self.project_name)
+
+
+class StartupView(QWidget):
     def __init__(self, show_workspace_callback):
         super().__init__()
-
         self.show_workspace_callback = show_workspace_callback
-        self.project_map = {}
+        self._current_selected_widget = None
 
-        # --- Layouts ---
-        # Main vertical layout for the whole widget
         main_layout = QVBoxLayout(self)
         main_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-
-        # Horizontal layout for the buttons
         button_layout = QHBoxLayout()
 
-        # --- Widgets ---
+        icon_label = QLabel()
+        pixmap = QPixmap("icon.png")
+        icon_label.setPixmap(
+            pixmap.scaledToWidth(64, Qt.TransformationMode.SmoothTransformation)
+        )
+        icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         title_label = QLabel("NodeFlow")
         title_font = QFont()
         title_font.setPointSize(24)
         title_font.setBold(True)
         title_label.setFont(title_font)
         title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-
-        subtitle_label = QLabel("Select a project to begin")
+        subtitle_label = QLabel("Select a project to open or create a new one.")
         subtitle_font = QFont()
         subtitle_font.setPointSize(12)
         subtitle_label.setFont(subtitle_font)
         subtitle_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         self.project_list_widget = QListWidget()
-        self.project_list_widget.setMaximumWidth(500)  # Constrain the width
+        self.project_list_widget.setMaximumWidth(500)
         self.project_list_widget.itemDoubleClicked.connect(self.open_selected_project)
+        self.project_list_widget.currentItemChanged.connect(self.on_selection_changed)
 
         open_button = QPushButton("Open Selected Project")
         open_button.clicked.connect(self.open_selected_project)
-
         new_button = QPushButton("Create New Project")
         new_button.clicked.connect(self.open_new_project_dialog)
 
-        # --- Assemble Layout ---
+        main_layout.addWidget(icon_label)
         main_layout.addWidget(title_label)
         main_layout.addWidget(subtitle_label)
         main_layout.addWidget(self.project_list_widget)
-
-        # Add buttons to the button layout
         button_layout.addWidget(open_button)
         button_layout.addWidget(new_button)
-
-        # Add the button layout to the main layout
         main_layout.addLayout(button_layout)
-
-        # --- Load Initial Data ---
         self.load_projects()
 
+    def on_selection_changed(self, current_item, previous_item):
+        if previous_item:
+            widget = self.project_list_widget.itemWidget(previous_item)
+            if widget:
+                widget.set_icons_visible(False)
+
+        if current_item:
+            widget = self.project_list_widget.itemWidget(current_item)
+            if widget:
+                widget.set_icons_visible(True)
+
     def load_projects(self):
-        """Fetches projects from the database and populates the list widget."""
+        self.project_list_widget.currentItemChanged.disconnect(
+            self.on_selection_changed
+        )
         self.project_list_widget.clear()
         projects = database.get_all_projects()
-        self.project_map = {p["name"]: (p["id"], p["name"]) for p in projects}
-        for name in sorted(self.project_map.keys()):
-            self.project_list_widget.addItem(name)
 
-    def open_selected_project(self):
-        """Gets the selected project and tells the main app to switch views."""
-        selected_items = self.project_list_widget.selectedItems()
-        if not selected_items:
+        if not projects:
+            no_projects_item = QListWidgetItem(
+                "No projects found. Create one to begin!", self.project_list_widget
+            )
+            no_projects_item.setFlags(
+                no_projects_item.flags() & ~Qt.ItemFlag.ItemIsSelectable
+            )
+        else:
+            for project in sorted(projects, key=lambda p: p["name"]):
+                list_item = QListWidgetItem(self.project_list_widget)
+                item_widget = ProjectItemWidget(project["id"], project["name"], self)
+                list_item.setSizeHint(item_widget.sizeHint())
+                self.project_list_widget.addItem(list_item)
+                self.project_list_widget.setItemWidget(list_item, item_widget)
+
+        self.project_list_widget.currentItemChanged.connect(self.on_selection_changed)
+
+    def open_selected_project(self, item=None):
+        selected_item = self.project_list_widget.currentItem()
+        if not selected_item:
             QMessageBox.warning(
                 self,
                 "No Project Selected",
@@ -93,39 +162,50 @@ class StartupView(QWidget):
             )
             return
 
-        selected_name = selected_items[0].text()
-        project_id, project_name = self.project_map[selected_name]
+        widget = self.project_list_widget.itemWidget(selected_item)
+        if isinstance(widget, ProjectItemWidget):
+            self.show_workspace_callback(widget.project_id, widget.project_name)
 
-        # This calls the function passed in from main.py to switch the view
-        self.show_workspace_callback(project_id, project_name)
+    def rename_project(self, project_id, current_name):
+        new_name, ok = QInputDialog.getText(
+            self, "Rename Project", "Enter new project name:", text=current_name
+        )
+        if ok and new_name.strip() and new_name.strip() != current_name:
+            try:
+                database.rename_project(project_id, new_name.strip())
+                self.load_projects()
+            except database.sqlite3.IntegrityError:
+                QMessageBox.critical(
+                    self,
+                    "Error",
+                    f"A project named '{new_name.strip()}' already exists.",
+                )
+
+    def delete_project(self, project_id, project_name):
+        reply = QMessageBox.question(
+            self,
+            "Confirm Delete",
+            f"Are you sure you want to permanently delete the project '{project_name}'?\nThis action cannot be undone.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply == QMessageBox.StandardButton.Yes:
+            database.delete_project(project_id)
+            self.load_projects()
 
     def open_new_project_dialog(self):
-        """Opens a dialog to create a new project."""
-        dialog = QDialog(self)
-        dialog.setWindowTitle("Create New Project")
-
-        dialog_layout = QVBoxLayout(dialog)
-
-        label = QLabel("Enter new project name:")
-        name_input = QLineEdit()
-
-        # Standard OK/Cancel buttons
-        button_box = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        project_name, ok = QInputDialog.getText(
+            self, "Create New Project", "Enter new project name:"
         )
-
-        button_box.accepted.connect(dialog.accept)
-        button_box.rejected.connect(dialog.reject)
-
-        dialog_layout.addWidget(label)
-        dialog_layout.addWidget(name_input)
-        dialog_layout.addWidget(button_box)
-
-        # If the user clicks OK, process the input
-        if dialog.exec() == QDialog.DialogCode.Accepted:
-            project_name = name_input.text().strip()
-            if project_name:
-                database.add_project(project_name)
-                self.load_projects()  # Refresh the list
-            else:
-                QMessageBox.critical(self, "Error", "Project name cannot be empty.")
+        if ok and project_name.strip():
+            try:
+                database.add_project(project_name.strip())
+                self.load_projects()
+            except database.sqlite3.IntegrityError:
+                QMessageBox.critical(
+                    self,
+                    "Error",
+                    f"A project named '{project_name.strip()}' already exists.",
+                )
+        elif ok:
+            QMessageBox.critical(self, "Error", "Project name cannot be empty.")

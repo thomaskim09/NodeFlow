@@ -1,7 +1,7 @@
 import sys
 from PySide6.QtWidgets import QApplication, QMainWindow
 from PySide6.QtCore import QSize
-from PySide6.QtGui import QScreen
+from PySide6.QtGui import QScreen, QIcon  # <-- Import QIcon
 
 from ui_startup_view import StartupView
 from ui_workspace_view import WorkspaceView
@@ -18,6 +18,7 @@ class MainWindow(QMainWindow):
         super().__init__()
 
         self.setWindowTitle("NodeFlow")
+        self.setWindowIcon(QIcon("icon.png"))  # <-- SET APP ICON
         database.create_tables()
         self.show_startup_view()
 
@@ -43,9 +44,10 @@ class MainWindow(QMainWindow):
         self.setWindowTitle(f"NodeFlow - {project_name}")
         self.setMinimumSize(QSize(1000, 700))
         self.resize(1200, 800)
-        self.center_window()  # <-- THIS IS THE FIX
+        self.center_window()
 
-        workspace_view = WorkspaceView(project_id, project_name)
+        # Pass the method to go back to the startup view
+        workspace_view = WorkspaceView(project_id, project_name, self.show_startup_view)
         self.setCentralWidget(workspace_view)
 
 

@@ -11,7 +11,6 @@ def get_db_connection():
     return conn
 
 
-# ... (create_tables, add_project, get_all_projects, participant functions, node functions are the same) ...
 def create_tables():
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -91,8 +90,9 @@ def add_project(name, description=""):
             (name, description),
         )
         conn.commit()
-    except sqlite3.IntegrityError:
+    except sqlite3.IntegrityError as e:
         print(f"Error: A project with the name '{name}' already exists.")
+        raise e  # Re-raise the exception to be caught by the UI
     finally:
         conn.close()
 
@@ -102,6 +102,29 @@ def get_all_projects():
     projects = conn.execute("SELECT * FROM projects ORDER BY name;").fetchall()
     conn.close()
     return projects
+
+
+def rename_project(project_id, new_name):
+    """Renames an existing project. Can raise sqlite3.IntegrityError on duplicate name."""
+    conn = get_db_connection()
+    try:
+        # The UNIQUE constraint on the name column will cause this to raise an
+        # IntegrityError if the new_name already exists.
+        conn.execute(
+            "UPDATE projects SET name = ? WHERE id = ?", (new_name, project_id)
+        )
+        conn.commit()
+    finally:
+        # Ensure the connection is closed even if an error is raised.
+        conn.close()
+
+
+def delete_project(project_id):
+    """Deletes a project and all its associated data."""
+    conn = get_db_connection()
+    conn.execute("DELETE FROM projects WHERE id = ?", (project_id,))
+    conn.commit()
+    conn.close()
 
 
 def add_participant(project_id, name, details=""):
@@ -295,6 +318,29 @@ def get_coded_segments_for_document(document_id):
         ORDER BY cs.id
     """,
         (document_id,),
+    ).fetchall()
+    conn.close()
+    return segments
+
+
+def get_coded_segments_for_project(project_id):
+    """Gets all coded segments for an entire project."""
+    conn = get_db_connection()
+    segments = conn.execute(
+        """
+        SELECT
+            cs.id, cs.node_id, cs.content_preview,
+            d.title as document_title,
+            n.name as node_name,
+            p.name as participant_name
+        FROM coded_segments cs
+        JOIN documents d ON cs.document_id = d.id
+        JOIN nodes n ON cs.node_id = n.id
+        LEFT JOIN participants p ON cs.participant_id = p.id
+        WHERE d.project_id = ?
+        ORDER BY d.title, cs.id
+    """,
+        (project_id,),
     ).fetchall()
     conn.close()
     return segments

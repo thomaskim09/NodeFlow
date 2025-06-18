@@ -10,7 +10,9 @@ from PySide6.QtWidgets import (
     QDialog,
     QLabel,
     QDialogButtonBox,
+    QApplication,  # <-- Import QApplication
 )
+from PySide6.QtCore import Qt  # <-- Import Qt
 from PySide6.QtGui import QTextCursor, QColor, QTextCharFormat
 import os
 import database
@@ -182,29 +184,32 @@ class ContentView(QWidget):
 
     def load_document_content(self, index=None):
         """Loads a document, resetting the editor state."""
-        self.text_edit.textChanged.disconnect(self.on_text_changed)
-        self.text_edit.clear()
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        try:
+            self.text_edit.textChanged.disconnect(self.on_text_changed)
+            self.text_edit.clear()
 
-        # Reset dirty state
-        self.is_dirty = False
-        self.save_button.setEnabled(False)
+            self.is_dirty = False
+            self.save_button.setEnabled(False)
 
-        selected_display_text = self.doc_selector.currentText()
-        if not selected_display_text:
-            self.current_document_id = None
-            self.current_participant_id = None
-            self.text_edit.setReadOnly(True)  # No doc, so read-only
+            selected_display_text = self.doc_selector.currentText()
+            if not selected_display_text:
+                self.current_document_id = None
+                self.current_participant_id = None
+                self.text_edit.setReadOnly(True)
+                self.text_edit.textChanged.connect(self.on_text_changed)
+                return
+
+            self.text_edit.setReadOnly(False)
+            self.current_document_id = self.documents_map[selected_display_text]
+            content, participant_id = database.get_document_content(
+                self.current_document_id
+            )
+            self.current_participant_id = participant_id
+            self.text_edit.setPlainText(content)
             self.text_edit.textChanged.connect(self.on_text_changed)
-            return
-
-        self.text_edit.setReadOnly(False)  # Doc loaded, enable editing
-        self.current_document_id = self.documents_map[selected_display_text]
-        content, participant_id = database.get_document_content(
-            self.current_document_id
-        )
-        self.current_participant_id = participant_id
-        self.text_edit.setPlainText(content)
-        self.text_edit.textChanged.connect(self.on_text_changed)
+        finally:
+            QApplication.restoreOverrideCursor()
 
     def highlight_text(self, start, end, color_hex="#FFFF00"):
         """Applies a background color and contrasting text color to a segment."""
