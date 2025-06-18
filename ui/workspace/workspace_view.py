@@ -121,7 +121,6 @@ class WorkspaceView(QWidget):
         self.center_pane.bulk_documents_added.connect(self.on_document_deleted)
         self.center_pane.segment_clicked.connect(self.bottom_pane.select_segment_by_id)
         self.bottom_pane.segment_deleted.connect(self.on_segment_deleted)
-        # ADDED: Connect the new activation signal to its handler
         self.bottom_pane.segment_activated.connect(self.on_segment_navigation_requested)
 
         self.action_export_json.triggered.connect(self.export_as_json)
@@ -147,7 +146,6 @@ class WorkspaceView(QWidget):
         self.center_pane.load_document_content()
         self.on_document_changed()
 
-    # ADDED: Handler for the navigation signal
     def on_segment_navigation_requested(self, document_id, start, end):
         """Receives signal from CodedSegmentsView and commands ContentView."""
         self.center_pane.go_to_segment(document_id, start, end)

@@ -11,7 +11,6 @@ def add_coded_segment(document_id, node_id, participant_id, start, end, text_pre
     conn.close()
 
 
-# ADDED: New function to get segments based on a list of node IDs.
 def get_coded_segments_for_nodes(project_id, node_ids, document_id=None):
     """
     Retrieves all coded segments for a given list of node IDs,

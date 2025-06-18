@@ -46,7 +46,6 @@ class ContentView(QWidget):
         self.current_participant_id = None
         self.is_dirty = False
         self._coded_segments_cache = []
-        # ADDED: State to handle highlighting after a document switch
         self._pending_highlight = None
         self.setAcceptDrops(True)
         main_layout = QVBoxLayout(self)
@@ -122,7 +121,6 @@ class ContentView(QWidget):
         self.text_edit.selectionChanged.connect(self.on_selection_changed_for_coding)
         self.load_document_list()
 
-    # ADDED: Helper method to perform the actual selection and scroll
     def _select_and_scroll(self, start, end):
         cursor = self.text_edit.textCursor()
         cursor.setPosition(start)
@@ -130,7 +128,6 @@ class ContentView(QWidget):
         self.text_edit.setTextCursor(cursor)
         self.text_edit.ensureCursorVisible()
 
-    # ADDED: Public method to be called from the workspace to initiate navigation
     def go_to_segment(self, document_id, start, end):
         if document_id == self.current_document_id:
             self._select_and_scroll(start, end)
@@ -425,7 +422,6 @@ class ContentView(QWidget):
                 word_count = len(content.split())
                 self.word_count_label.setText(f"Word Count: {word_count}")
 
-            # ADDED: Check for and apply a pending highlight after content is loaded
             if self._pending_highlight:
                 start, end = self._pending_highlight
                 self._select_and_scroll(start, end)
