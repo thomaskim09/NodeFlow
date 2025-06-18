@@ -1,5 +1,4 @@
-    
-    PySide6
-    python-docx
-    pyinstaller
-    openpyxl
+PySide6
+python-docx
+pyinstaller
+openpyxl

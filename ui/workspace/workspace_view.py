@@ -1,4 +1,4 @@
-# Replace the entire contents of ui_workspace_view.py with this updated code.
+# Replace the contents of ui/workspace/workspace_view.py
 
 from PySide6.QtWidgets import (
     QWidget,
@@ -19,17 +19,18 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QAction
 
-from ui_participant_manager import ParticipantManager
-from ui_node_tree_manager import NodeTreeManager
-from ui_content_view import ContentView
-from ui_coded_segments_view import CodedSegmentsView
-import export_manager
+from .participant_manager import ParticipantManager
+from .node_tree_manager import NodeTreeManager
+from .content_view import ContentView
+from .coded_segments_view import CodedSegmentsView
+from ui.dashboard.dashboard_view import DashboardView
+
+from managers.export_manager import export_to_word, export_to_json, export_to_excel
+from managers.theme_manager import save_settings, load_settings
 import database
-from theme_manager import save_settings, load_settings
 
 
 class SettingsDialog(QDialog):
-    # This class remains unchanged.
     theme_changed = Signal()
 
     def __init__(self, parent=None):
@@ -69,31 +70,29 @@ class WorkspaceView(QWidget):
         self.project_id = project_id
         self.project_name = project_name
         self.back_to_startup_callback = back_to_startup_callback
-
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_splitter = QSplitter(Qt.Orientation.Horizontal)
-
         toolbar = QToolBar("Main Toolbar")
         toolbar.setMovable(False)
         back_action = QAction("Projects", self)
         back_action.triggered.connect(self.back_to_startup_callback)
+        dashboard_action = QAction("Dashboard", self)
+        dashboard_action.triggered.connect(self.open_dashboard)
         settings_action = QAction("Settings", self)
         settings_action.triggered.connect(self.open_settings)
         toolbar.addAction(back_action)
+        toolbar.addAction(dashboard_action)
         toolbar.addAction(settings_action)
         main_layout.addWidget(toolbar)
-
         self.left_pane = QFrame()
         self.left_pane_layout = QVBoxLayout(self.left_pane)
         self.center_pane = ContentView(self.project_id)
         self.bottom_pane = CodedSegmentsView(self.project_id)
-
         self.participant_manager = ParticipantManager(self.project_id)
         self.node_tree_manager = NodeTreeManager(self.project_id)
         self.left_pane_layout.addWidget(self.participant_manager)
         self.left_pane_layout.addWidget(self.node_tree_manager)
-
         export_button = QPushButton("Export All Coded Data")
         export_button.setToolTip("Export all coded data for the project")
         export_menu = QMenu(self)
@@ -101,33 +100,25 @@ class WorkspaceView(QWidget):
         self.action_export_word = export_menu.addAction("Export as Word (.docx)")
         self.action_export_excel = export_menu.addAction("Export as Excel (.xlsx)")
         export_button.setMenu(export_menu)
-
         self.left_pane_layout.addStretch()
         self.left_pane_layout.addWidget(export_button)
-
         self.left_pane_layout.setStretchFactor(self.participant_manager, 2)
         self.left_pane_layout.setStretchFactor(self.node_tree_manager, 5)
-
         right_splitter = QSplitter(Qt.Orientation.Vertical)
         right_splitter.addWidget(self.center_pane)
         right_splitter.addWidget(self.bottom_pane)
         right_splitter.setSizes([400, 400])
-
         main_splitter.addWidget(self.left_pane)
         main_splitter.addWidget(right_splitter)
         main_splitter.setSizes([350, 700])
         main_layout.addWidget(main_splitter)
-
-        # Signal connections
         self.center_pane.doc_selector.currentIndexChanged.connect(
             self.on_document_changed
         )
         self.center_pane.document_deleted.connect(self.on_data_changed)
         self.center_pane.document_added.connect(self.on_data_changed)
         self.center_pane.segment_clicked.connect(self.bottom_pane.select_segment_by_id)
-        self.bottom_pane.segment_deleted.connect(
-            self.on_segment_deleted
-        )  # BUG FIX RELATED
+        self.bottom_pane.segment_deleted.connect(self.on_segment_deleted)
         self.action_export_json.triggered.connect(self.export_as_json)
         self.action_export_word.triggered.connect(self.export_as_word)
         self.action_export_excel.triggered.connect(self.export_as_excel)
@@ -142,22 +133,22 @@ class WorkspaceView(QWidget):
         self.center_pane.text_selection_changed.connect(
             self.node_tree_manager.set_selection_mode
         )
-        self.node_tree_manager.node_selected_for_coding.connect(
-            self.code_selection
-        )  # BUG FIX RELATED
-
+        self.node_tree_manager.node_selected_for_coding.connect(self.code_selection)
         self.center_pane.load_document_content()
         self.on_document_changed()
+
+    def open_dashboard(self):
+        current_doc_id = self.center_pane.current_document_id
+        dialog = DashboardView(self.project_id, self.project_name, current_doc_id, self)
+        dialog.exec()
 
     def open_settings(self):
         dialog = SettingsDialog(self)
         dialog.exec()
 
-    # MODIFIED: Added node tree refresh
     def on_segment_deleted(self):
-        """Called when a segment is deleted from the CodedSegmentsView."""
         self.center_pane.apply_all_highlights()
-        self.node_tree_manager.load_nodes()  # Refresh stats
+        self.node_tree_manager.load_nodes()
 
     def on_node_data_updated(self):
         self.node_tree_manager.load_nodes()
@@ -170,13 +161,13 @@ class WorkspaceView(QWidget):
         self.bottom_pane.load_segments(new_doc_id)
 
     def export_as_word(self):
-        export_manager.export_to_word(self.project_id, self)
+        export_to_word(self.project_id, self)
 
     def export_as_json(self):
-        export_manager.export_to_json(self.project_id, self)
+        export_to_json(self.project_id, self)
 
     def export_as_excel(self):
-        export_manager.export_to_excel(self.project_id, self)
+        export_to_excel(self.project_id, self)
 
     def on_document_changed(self):
         QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
@@ -188,28 +179,19 @@ class WorkspaceView(QWidget):
         finally:
             QApplication.restoreOverrideCursor()
 
-    # MODIFIED: Added node tree refresh
     def code_selection(self, node_id):
-        """Called when a node is selected from the tree in 'coding mode'."""
         cursor = self.center_pane.text_edit.textCursor()
         if not cursor.hasSelection():
             return
-
-        start = cursor.selectionStart()
-        end = cursor.selectionEnd()
+        start, end = cursor.selectionStart(), cursor.selectionEnd()
         text = cursor.selectedText()
         doc_id = self.center_pane.current_document_id
         participant_id = self.center_pane.current_participant_id
-
         if not doc_id:
             return
-
         database.add_coded_segment(doc_id, node_id, participant_id, start, end, text)
-
         cursor.clearSelection()
         self.center_pane.text_edit.setTextCursor(cursor)
-
-        # Refresh views
         self.bottom_pane.reload_view()
         self.center_pane.apply_all_highlights()
-        self.node_tree_manager.load_nodes()  # Refresh stats
+        self.node_tree_manager.load_nodes()

@@ -1,7 +1,11 @@
+# Replace the contents of managers/theme_manager.py with this updated code.
+
 import json
 import os
 
-SETTINGS_FILE = "settings.json"
+# Define the data directory and the settings file path
+DATA_DIR = "data"
+SETTINGS_FILE = os.path.join(DATA_DIR, "settings.json")
 
 
 def get_dark_theme_stylesheet():
@@ -75,6 +79,8 @@ def load_settings():
 
 def save_settings(settings):
     """Saves settings to the JSON file."""
+    # Ensure the data directory exists before saving
+    os.makedirs(DATA_DIR, exist_ok=True)
     with open(SETTINGS_FILE, "w") as f:
         json.dump(settings, f, indent=4)
 

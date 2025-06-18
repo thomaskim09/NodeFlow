@@ -1,13 +1,17 @@
+# Replace the contents of main.py
+
 import sys
 from PySide6.QtWidgets import QApplication, QMainWindow
 from PySide6.QtCore import QSize
 from PySide6.QtGui import QIcon
-
-from ui_startup_view import StartupView
-from ui_workspace_view import WorkspaceView
-from theme_manager import apply_theme  # Import the theme manager
-import database
 import os
+
+from ui.startup_view import StartupView
+from ui.workspace.workspace_view import WorkspaceView
+
+# Updated import
+from managers.theme_manager import apply_theme
+import database
 
 
 class MainWindow(QMainWindow):
@@ -18,11 +22,9 @@ class MainWindow(QMainWindow):
 
     def __init__(self):
         super().__init__()
-
         self.setWindowTitle("NodeFlow")
         if os.path.exists("icon.png"):
             self.setWindowIcon(QIcon("icon.png"))
-
         database.create_tables()
         self.show_startup_view()
 
@@ -33,7 +35,7 @@ class MainWindow(QMainWindow):
             frame_geometry = self.frameGeometry()
             frame_geometry.moveCenter(center_point)
             self.move(frame_geometry.topLeft())
-        except AttributeError:  # Handle cases where screen is not available yet
+        except AttributeError:
             pass
 
     def show_startup_view(self):
@@ -41,7 +43,6 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("NodeFlow - Select Project")
         self.setMinimumSize(QSize(500, 400))
         self.resize(500, 400)
-
         startup_view = StartupView(self.show_workspace_view)
         self.setCentralWidget(startup_view)
         self.center_window()
@@ -51,19 +52,14 @@ class MainWindow(QMainWindow):
         self.setWindowTitle(f"NodeFlow - {project_name}")
         self.setMinimumSize(QSize(1000, 700))
         self.resize(1200, 800)
-
         workspace_view = WorkspaceView(project_id, project_name, self.show_startup_view)
         self.setCentralWidget(workspace_view)
         self.center_window()
 
 
-# Main execution block
 if __name__ == "__main__":
     app = QApplication(sys.argv)
-
-    # Apply the saved theme at startup
     apply_theme(app)
-
     window = MainWindow()
     window.show()
     sys.exit(app.exec())

@@ -15,7 +15,11 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt, Signal, QTimer
 from PySide6.QtGui import QDropEvent, QKeyEvent
-import export_manager
+from managers.export_manager import (
+    export_node_family_to_word,
+    export_node_family_to_excel,
+    export_node_family_to_excel_multi_sheet,
+)
 import database
 
 PRESET_COLORS = [
@@ -438,9 +442,7 @@ class NodeTreeManager(QWidget):
         action_export_word = menu.addAction("Export as Word (.docx)")
         action_export_excel = menu.addAction("Export as Excel (.xlsx)")
         action_export_word.triggered.connect(
-            lambda: export_manager.export_node_family_to_word(
-                self.project_id, node_id, self
-            )
+            lambda: export_node_family_to_word(self.project_id, node_id, self)
         )
         action_export_excel.triggered.connect(
             lambda: self.export_node_family_to_excel_handler(node_id)
@@ -464,8 +466,6 @@ class NodeTreeManager(QWidget):
         msg_box.exec()
         clicked_button = msg_box.clickedButton()
         if clicked_button == single_sheet_button:
-            export_manager.export_node_family_to_excel(self.project_id, node_id, self)
+            export_node_family_to_excel(self.project_id, node_id, self)
         elif clicked_button == multi_sheet_button:
-            export_manager.export_node_family_to_excel_multi_sheet(
-                self.project_id, node_id, self
-            )
+            export_node_family_to_excel_multi_sheet(self.project_id, node_id, self)

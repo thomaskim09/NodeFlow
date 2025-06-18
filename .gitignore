@@ -1,9 +1,9 @@
 # Virtual Environment
 venv/
 
-# Database file
-data.db
-nodeflow.db
+# Application Data
+/data/nodeflow.db
+/data/settings.json
 
 # Python cache
 __pycache__/
