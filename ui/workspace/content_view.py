@@ -47,6 +47,8 @@ class ContentView(QWidget):
         self.current_participant_id = None
         self.is_dirty = False
         self._coded_segments_cache = []
+        # ADDED: State to handle highlighting after a document switch
+        self._pending_highlight = None
         self.setAcceptDrops(True)
         main_layout = QVBoxLayout(self)
         top_bar_layout = QHBoxLayout()
@@ -120,6 +122,28 @@ class ContentView(QWidget):
         self.text_edit.cursorPositionChanged.connect(self.on_cursor_position_changed)
         self.text_edit.selectionChanged.connect(self.on_selection_changed_for_coding)
         self.load_document_list()
+
+    # ADDED: Helper method to perform the actual selection and scroll
+    def _select_and_scroll(self, start, end):
+        cursor = self.text_edit.textCursor()
+        cursor.setPosition(start)
+        cursor.setPosition(end, QTextCursor.MoveMode.KeepAnchor)
+        self.text_edit.setTextCursor(cursor)
+        self.text_edit.ensureCursorVisible()
+
+    # ADDED: Public method to be called from the workspace to initiate navigation
+    def go_to_segment(self, document_id, start, end):
+        if document_id == self.current_document_id:
+            self._select_and_scroll(start, end)
+        else:
+            # If the document isn't active, queue the highlight and switch docs
+            self._pending_highlight = (start, end)
+            id_to_display_text = {v: k for k, v in self.documents_map.items()}
+            display_text = id_to_display_text.get(document_id)
+            if display_text:
+                index = self.doc_selector.findText(display_text)
+                if index != -1:
+                    self.doc_selector.setCurrentIndex(index)
 
     def open_import_dialog(self):
         file_paths, _ = QFileDialog.getOpenFileNames(
@@ -271,6 +295,7 @@ class ContentView(QWidget):
         elif self.doc_selector.count() > 0:
             self.doc_selector.setCurrentIndex(0)
         else:
+            # This will trigger handle_document_switch with index -1
             self.doc_selector.setCurrentIndex(-1)
             self.load_document_content()
 
@@ -284,7 +309,6 @@ class ContentView(QWidget):
                 with open(file_path, "r", encoding="utf-8") as f:
                     content = f.read()
             title = os.path.basename(file_path)
-            # --- FIXED: Unused variable removed ---
             database.add_document(self.project_id, title, content, participant_id)
             self.is_dirty = False
             self.save_button.setEnabled(False)
@@ -308,7 +332,6 @@ class ContentView(QWidget):
             self.is_dirty = False
             database.delete_document(self.current_document_id)
             self.load_document_list()
-            self.load_document_content()
             self.document_deleted.emit()
 
     def on_text_changed(self):
@@ -389,6 +412,13 @@ class ContentView(QWidget):
                 self.apply_all_highlights()
                 word_count = len(content.split())
                 self.word_count_label.setText(f"Word Count: {word_count}")
+
+            # ADDED: Check for and apply a pending highlight after content is loaded
+            if self._pending_highlight:
+                start, end = self._pending_highlight
+                self._select_and_scroll(start, end)
+                self._pending_highlight = None  # Clear the pending action
+
             self.text_edit.textChanged.connect(self.on_text_changed)
         finally:
             QApplication.restoreOverrideCursor()
@@ -404,6 +434,7 @@ class ContentView(QWidget):
             if not self.current_document_id:
                 self.segment_count_label.setText("Coded Segments: 0")
                 return
+            # --- MODIFIED: Get full segment data needed for highlighting ---
             self._coded_segments_cache = database.get_coded_segments_for_document(
                 self.current_document_id
             )

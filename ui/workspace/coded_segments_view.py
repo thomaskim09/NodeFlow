@@ -1,4 +1,4 @@
-# Replace the contents of ui/workspace/coded_segments_view.py
+# In file: ui/workspace/coded_segments_view.py
 
 from PySide6.QtWidgets import (
     QWidget,
@@ -41,6 +41,7 @@ class DeletableTreeWidget(QTreeWidget):
 
 class CodedSegmentsView(QWidget):
     segment_deleted = Signal()
+    segment_activated = Signal(int, int, int)  # document_id, start, end
 
     def __init__(self, project_id):
         super().__init__()
@@ -85,9 +86,32 @@ class CodedSegmentsView(QWidget):
         self.search_input.textChanged.connect(self.filter_tree)
         self.search_scope_combo.currentTextChanged.connect(self.filter_tree)
         self.tree_widget.currentItemChanged.connect(self.on_selection_changed)
+        self.tree_widget.itemActivated.connect(self.on_segment_activated)
 
         self.scope_combo.setCurrentText("Current Document")
         self.reload_view()
+
+    def on_segment_activated(self, item: QTreeWidgetItem, column: int):
+        segment_id = item.data(0, 1)
+        if segment_id is None:
+            return
+
+        segment_data = next(
+            (s for s in self.all_segments if s["id"] == segment_id), None
+        )
+        if not segment_data:
+            return
+
+        doc_id = None
+        if self.scope_combo.currentText() == "Current Document":
+            doc_id = self.current_document_id
+        else:
+            doc_id = segment_data.get("document_id")
+
+        if doc_id is not None:
+            self.segment_activated.emit(
+                doc_id, segment_data["segment_start"], segment_data["segment_end"]
+            )
 
     def select_segment_by_id(self, segment_id):
         if not segment_id:
@@ -163,7 +187,7 @@ class CodedSegmentsView(QWidget):
             self.reload_view()
 
     def reload_view(self):
-        # --- FIXED: Suppress RuntimeWarning ---
+        # FIXED: Safely disconnect to prevent RuntimeWarning
         try:
             self.tree_widget.currentItemChanged.disconnect(self.on_selection_changed)
         except RuntimeError:
@@ -203,6 +227,7 @@ class CodedSegmentsView(QWidget):
             self.all_segments = database.get_coded_segments_for_project(self.project_id)
 
         self.populate_tree(self.all_segments)
+        # Reconnect the signal after populating
         self.tree_widget.currentItemChanged.connect(self.on_selection_changed)
 
         if self._last_active_node_filter is not None:
@@ -213,15 +238,17 @@ class CodedSegmentsView(QWidget):
     def populate_tree(self, segments):
         scope = self.scope_combo.currentText()
         for segment in segments:
-            # --- FIXED: Remove leading/trailing spaces ---
             preview = segment["content_preview"].strip()
             if len(preview) > 100:
                 preview = preview[:100] + "..."
 
+            # This line should now work correctly as `segment` is a dict
+            participant_name = segment.get("participant_name") or "N/A"
+
             item_data = [
                 preview,
                 segment["node_name"],
-                segment["participant_name"] or "N/A",
+                participant_name,
             ]
             if scope == "Entire Project":
                 item_data.append(segment["document_title"])
@@ -235,7 +262,6 @@ class CodedSegmentsView(QWidget):
         scope = self.search_scope_combo.currentText()
         view_scope = self.scope_combo.currentText()
 
-        # --- FIXED: Suppress RuntimeWarning ---
         try:
             self.tree_widget.currentItemChanged.disconnect(self.on_selection_changed)
         except RuntimeError:
@@ -259,7 +285,8 @@ class CodedSegmentsView(QWidget):
         text_match = search_text in seg["content_preview"].lower()
         node_match = search_text in seg["node_name"].lower()
         participant_match = (
-            seg["participant_name"] and search_text in seg["participant_name"].lower()
+            seg.get("participant_name")
+            and search_text in seg.get("participant_name", "").lower()
         )
         doc_match = (
             view_scope == "Entire Project"
@@ -283,7 +310,6 @@ class CodedSegmentsView(QWidget):
         self.search_input.clear()
         self._last_active_node_filter = node_ids
 
-        # --- FIXED: Suppress RuntimeWarning ---
         try:
             self.tree_widget.currentItemChanged.disconnect(self.on_selection_changed)
         except RuntimeError:
@@ -305,7 +331,6 @@ class CodedSegmentsView(QWidget):
         self.search_input.clear()
         self._last_active_node_filter = [node_id]
 
-        # --- FIXED: Suppress RuntimeWarning ---
         try:
             self.tree_widget.currentItemChanged.disconnect(self.on_selection_changed)
         except RuntimeError:
@@ -322,35 +347,3 @@ class CodedSegmentsView(QWidget):
             self.populate_tree(node_filtered_segments)
 
         self.tree_widget.currentItemChanged.connect(self.on_selection_changed)
-
-    # def refresh_coded_segments(self):
-    #     """
-    #     Clears and re-populates the tree widget with coded segments for the
-    #     currently selected document.
-    #     """
-    #     # Safer way to disconnect a signal to avoid RuntimeWarning
-    #     try:
-    #         self.tree_widget.currentItemChanged.disconnect(self.on_selection_changed)
-    #     except RuntimeError:
-    #         # This exception is raised if the signal was not connected, which is fine.
-    #         pass
-
-    #     self.tree_widget.clear()
-
-    #     doc_id = self.parent_view.get_current_document_id()
-    #     if not doc_id:
-    #         return
-
-    #     segments = database.get_coded_segments_for_document(doc_id)
-    #     if segments:
-    #         for segment in segments:
-    #             node_item = QTreeWidgetItem(self.tree_widget)
-    #             node_item.setText(0, segment["node_name"])
-    #             node_item.setText(1, segment["content_preview"])
-    #             node_item.setData(0, Qt.ItemDataRole.UserRole, segment["id"])
-    #             pixmap = QPixmap(16, 16)
-    #             pixmap.fill(QColor(segment["node_color"]))
-    #             node_item.setIcon(0, QIcon(pixmap))
-
-    #     # Re-connect the signal after populating the tree
-    #     self.tree_widget.currentItemChanged.connect(self.on_selection_changed)
