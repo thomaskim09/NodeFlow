@@ -34,6 +34,7 @@ from managers import excel_import_manager
 class ContentView(QWidget):
     document_deleted = Signal()
     document_added = Signal(int)
+    bulk_documents_added = Signal()
     segment_clicked = Signal(int)
     text_selection_changed = Signal(bool)
 
@@ -187,7 +188,7 @@ class ContentView(QWidget):
             QApplication.restoreOverrideCursor()
 
             if docs_imported > 0:
-                self.document_added.emit()
+                self.bulk_documents_added.emit()
 
             summary_message = f"Successfully imported {docs_imported} document(s) from '{os.path.basename(file_path)}'."
             if errors:

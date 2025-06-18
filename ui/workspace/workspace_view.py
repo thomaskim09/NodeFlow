@@ -118,6 +118,7 @@ class WorkspaceView(QWidget):
         )
         self.center_pane.document_added.connect(self.on_document_added)
         self.center_pane.document_deleted.connect(self.on_document_deleted)
+        self.center_pane.bulk_documents_added.connect(self.on_document_deleted)
         self.center_pane.segment_clicked.connect(self.bottom_pane.select_segment_by_id)
         self.bottom_pane.segment_deleted.connect(self.on_segment_deleted)
         # ADDED: Connect the new activation signal to its handler
