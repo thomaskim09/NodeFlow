@@ -35,7 +35,7 @@ class ProjectItemWidget(QWidget):
         font = self.edit_button.font()
         font.setPointSize(12)
         self.edit_button.setFont(font)
-        self.edit_button.setFixedSize(24, 24)  # <-- FIX: Reduced size
+        self.edit_button.setFixedSize(24, 24)
         self.edit_button.setToolTip("Rename Project")
         self.edit_button.clicked.connect(self.on_rename_clicked)
         self.edit_button.setVisible(False)
@@ -45,7 +45,7 @@ class ProjectItemWidget(QWidget):
         font = self.delete_button.font()
         font.setPointSize(12)
         self.delete_button.setFont(font)
-        self.delete_button.setFixedSize(24, 24)  # <-- FIX: Reduced size
+        self.delete_button.setFixedSize(24, 24)
         self.delete_button.setToolTip("Delete Project")
         self.delete_button.clicked.connect(self.on_delete_clicked)
         self.delete_button.setVisible(False)
@@ -89,7 +89,6 @@ class StartupView(QWidget):
         title_label.setFont(title_font)
         title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        # --- NEW: Tagline ---
         tagline_label = QLabel("Your compass for qualitative data.")
         tagline_font = QFont()
         tagline_font.setPointSize(10)
@@ -98,30 +97,30 @@ class StartupView(QWidget):
         tagline_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         tagline_label.setStyleSheet("color: #555;")
 
-        subtitle_label = QLabel("Select a project to open or create a new one.")
+        self.subtitle_label = QLabel("Select a project to open or create a new one.")
         subtitle_font = QFont()
         subtitle_font.setPointSize(12)
-        subtitle_label.setFont(subtitle_font)
-        subtitle_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.subtitle_label.setFont(subtitle_font)
+        self.subtitle_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         self.project_list_widget = QListWidget()
         self.project_list_widget.setMaximumWidth(500)
         self.project_list_widget.itemDoubleClicked.connect(self.open_selected_project)
         self.project_list_widget.currentItemChanged.connect(self.on_selection_changed)
 
-        open_button = QPushButton("Open Selected Project")
-        open_button.clicked.connect(self.open_selected_project)
-        new_button = QPushButton("Create New Project")
-        new_button.clicked.connect(self.open_new_project_dialog)
+        self.open_button = QPushButton("Open Selected Project")
+        self.open_button.clicked.connect(self.open_selected_project)
+        self.new_button = QPushButton("Create New Project")
+        self.new_button.clicked.connect(self.open_new_project_dialog)
 
         main_layout.addWidget(icon_label)
         main_layout.addWidget(title_label)
-        main_layout.addWidget(tagline_label)  # <-- ADDED
+        main_layout.addWidget(tagline_label)
         main_layout.addSpacing(10)
-        main_layout.addWidget(subtitle_label)
+        main_layout.addWidget(self.subtitle_label)
         main_layout.addWidget(self.project_list_widget)
-        button_layout.addWidget(open_button)
-        button_layout.addWidget(new_button)
+        button_layout.addWidget(self.open_button)
+        button_layout.addWidget(self.new_button)
         main_layout.addLayout(button_layout)
         self.load_projects()
 
@@ -144,13 +143,15 @@ class StartupView(QWidget):
         projects = database.get_all_projects()
 
         if not projects:
-            no_projects_item = QListWidgetItem(
-                "No projects found. Create one to begin!", self.project_list_widget
-            )
-            no_projects_item.setFlags(
-                no_projects_item.flags() & ~Qt.ItemFlag.ItemIsSelectable
-            )
+            # If no projects exist, hide the list and "Open" button for a clean UI
+            self.subtitle_label.setText("Create a new project to begin.")
+            self.project_list_widget.setVisible(False)
+            self.open_button.setVisible(False)
         else:
+            # If projects exist, ensure the UI elements are visible
+            self.subtitle_label.setText("Select a project to open or create a new one.")
+            self.project_list_widget.setVisible(True)
+            self.open_button.setVisible(True)
             for project in sorted(projects, key=lambda p: p["name"]):
                 list_item = QListWidgetItem(self.project_list_widget)
                 item_widget = ProjectItemWidget(project["id"], project["name"], self)
@@ -161,6 +162,8 @@ class StartupView(QWidget):
         self.project_list_widget.currentItemChanged.connect(self.on_selection_changed)
 
     def open_selected_project(self, item=None):
+        if not self.open_button.isVisible():
+            return  # Don't do anything if the button is hidden
         selected_item = self.project_list_widget.currentItem()
         if not selected_item:
             QMessageBox.warning(
