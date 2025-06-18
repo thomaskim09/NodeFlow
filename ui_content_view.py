@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (
     QDialogButtonBox,
     QApplication,
     QFrame,
-    QToolTip,
+    QInputDialog,
 )
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import (
@@ -28,7 +28,8 @@ import docx
 
 class ContentView(QWidget):
     document_deleted = Signal()
-    segment_clicked = Signal(int)  # Signal to emit the ID of the clicked segment
+    segment_clicked = Signal(int)
+    text_selection_changed = Signal(bool)
 
     def __init__(self, project_id):
         super().__init__()
@@ -37,7 +38,7 @@ class ContentView(QWidget):
         self.current_document_id = None
         self.current_participant_id = None
         self.is_dirty = False
-        self._coded_segments_cache = []  # Cache for faster lookups
+        self._coded_segments_cache = []
 
         main_layout = QVBoxLayout(self)
         top_bar_layout = QHBoxLayout()
@@ -48,10 +49,11 @@ class ContentView(QWidget):
         title_label.setFont(font)
 
         self.doc_selector = QComboBox()
+        self.doc_selector.setMinimumWidth(300)
 
-        import_button = QPushButton("⬆️")
-        import_button.setToolTip("Import Document (.txt, .docx)")
-        import_button.setFixedSize(28, 28)
+        self.import_button = QPushButton("⬆️")
+        self.import_button.setToolTip("Import Document (.txt, .docx)")
+        self.import_button.setFixedSize(28, 28)
 
         self.save_button = QPushButton("💾")
         self.save_button.setToolTip(
@@ -80,7 +82,7 @@ class ContentView(QWidget):
         top_bar_layout.addWidget(title_label)
         top_bar_layout.addWidget(self.doc_selector)
         top_bar_layout.addStretch()
-        top_bar_layout.addWidget(import_button)
+        top_bar_layout.addWidget(self.import_button)
         top_bar_layout.addWidget(self.save_button)
         top_bar_layout.addWidget(delete_button)
 
@@ -89,14 +91,19 @@ class ContentView(QWidget):
         main_layout.addWidget(info_bar)
 
         # Connect signals
-        import_button.clicked.connect(self.import_document)
+        self.import_button.clicked.connect(self.import_document)
         self.save_button.clicked.connect(self.save_document_content)
         delete_button.clicked.connect(self.delete_current_document)
         self.doc_selector.currentIndexChanged.connect(self.load_document_content)
         self.text_edit.textChanged.connect(self.on_text_changed)
         self.text_edit.cursorPositionChanged.connect(self.on_cursor_position_changed)
+        self.text_edit.selectionChanged.connect(self.on_selection_changed_for_coding)
 
         self.load_document_list()
+
+    def on_selection_changed_for_coding(self):
+        has_selection = self.text_edit.textCursor().hasSelection()
+        self.text_selection_changed.emit(has_selection)
 
     def load_document_list(self):
         current_doc_id = self.current_document_id
@@ -133,12 +140,18 @@ class ContentView(QWidget):
 
         participants = database.get_participants_for_project(self.project_id)
         if not participants:
-            QMessageBox.warning(
+            name, ok = QInputDialog.getText(
                 self,
-                "No Participants",
-                "Please add a participant before importing a document.",
+                "Create First Participant",
+                "No participants exist. Enter a name for the first participant:",
             )
-            return
+            if ok and name.strip():
+                database.add_participant(self.project_id, name.strip())
+                participants = database.get_participants_for_project(self.project_id)
+                parent_workspace = self.parent().parent().parent()
+                parent_workspace.participant_manager.load_participants()
+            else:
+                return
 
         dialog = AssignParticipantDialog(participants, self)
         if dialog.exec() == QDialog.DialogCode.Accepted:
@@ -166,6 +179,8 @@ class ContentView(QWidget):
                 )
                 if new_doc_display_text:
                     self.doc_selector.setCurrentText(new_doc_display_text)
+                    self.load_document_content()
+
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Failed to import file: {e}")
 
@@ -187,6 +202,7 @@ class ContentView(QWidget):
             doc_id_to_delete = self.current_document_id
             database.delete_document(doc_id_to_delete)
             self.load_document_list()
+            self.load_document_content()
             self.document_deleted.emit()
 
     def on_text_changed(self):
@@ -225,11 +241,13 @@ class ContentView(QWidget):
     def load_document_content(self, index=None):
         QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
         try:
-            self.text_edit.textChanged.disconnect(self.on_text_changed)
+            # This is the main try block that pairs with the finally block
+            try:
+                self.text_edit.textChanged.disconnect(self.on_text_changed)
+            except RuntimeError:
+                pass  # Was not connected
 
-            # --- FIX for RuntimeError: Create a new document with a parent ---
             self.text_edit.setDocument(QTextDocument(self))
-
             self.is_dirty = False
             self.save_button.setEnabled(False)
 
@@ -239,23 +257,26 @@ class ContentView(QWidget):
                 self.current_participant_id = None
                 self._coded_segments_cache = []
                 self.text_edit.setReadOnly(True)
-                self.text_edit.setPlainText("No document selected.")
+                self.text_edit.clear()
+                self.import_button.setStyleSheet(
+                    "QPushButton { border: 2px solid #0078d7; }"
+                )
                 self.word_count_label.setText("Word Count: 0")
                 self.segment_count_label.setText("Coded Segments: 0")
-                self.text_edit.textChanged.connect(self.on_text_changed)
-                return
+            else:
+                self.text_edit.setReadOnly(False)
+                self.import_button.setStyleSheet("")
+                self.text_edit.setAlignment(Qt.AlignmentFlag.AlignLeft)
+                self.current_document_id = self.documents_map[selected_display_text]
+                content, participant_id = database.get_document_content(
+                    self.current_document_id
+                )
+                self.current_participant_id = participant_id
+                self.text_edit.setPlainText(content)
+                self.apply_all_highlights()
 
-            self.text_edit.setReadOnly(False)
-            self.current_document_id = self.documents_map[selected_display_text]
-            content, participant_id = database.get_document_content(
-                self.current_document_id
-            )
-            self.current_participant_id = participant_id
-            self.text_edit.setPlainText(content)
-            self.apply_all_highlights()
-
-            word_count = len(content.split())
-            self.word_count_label.setText(f"Word Count: {word_count}")
+                word_count = len(content.split())
+                self.word_count_label.setText(f"Word Count: {word_count}")
 
             self.text_edit.textChanged.connect(self.on_text_changed)
         finally:
@@ -271,6 +292,12 @@ class ContentView(QWidget):
         self.segment_count_label.setText(
             f"Coded Segments: {len(self._coded_segments_cache)}"
         )
+
+        cursor = self.text_edit.textCursor()
+        cursor.select(QTextCursor.SelectionType.Document)
+        cursor.setCharFormat(QTextCharFormat())
+        cursor.clearSelection()
+        self.text_edit.setTextCursor(cursor)
 
         for segment in self._coded_segments_cache:
             self.highlight_text(
@@ -291,14 +318,13 @@ class ContentView(QWidget):
 
         fmt.setBackground(bg_color)
         fmt.setForeground(text_color)
-        cursor.mergeCharFormat(fmt)
+        cursor.setCharFormat(fmt)
 
         cursor.clearSelection()
         self.text_edit.setTextCursor(cursor)
 
     def on_cursor_position_changed(self):
         pos = self.text_edit.textCursor().position()
-
         found_segment = None
         for segment in self._coded_segments_cache:
             if segment["segment_start"] <= pos < segment["segment_end"]:
@@ -306,12 +332,6 @@ class ContentView(QWidget):
                 break
 
         if found_segment:
-            tooltip_text = f"<b>Node:</b> {found_segment['node_name']}"
-            QToolTip.showText(
-                self.mapToGlobal(self.text_edit.cursorRect().topRight()),
-                tooltip_text,
-                self.text_edit,
-            )
             self.segment_clicked.emit(found_segment["id"])
 
 

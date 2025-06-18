@@ -14,7 +14,6 @@ from PySide6.QtCore import Signal, Qt
 import database
 
 
-# --- Custom Widget for each participant item ---
 class ParticipantItemWidget(QWidget):
     def __init__(self, participant_id, participant_name, parent_manager):
         super().__init__()
@@ -67,7 +66,6 @@ class ParticipantManager(QWidget):
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(5)
 
-        # --- Header ---
         header_layout = QHBoxLayout()
         header_label = QLabel("Participants")
         font = header_label.font()
@@ -83,7 +81,6 @@ class ParticipantManager(QWidget):
         header_layout.addWidget(add_button)
         main_layout.addLayout(header_layout)
 
-        # --- List Widget ---
         self.list_widget = QListWidget()
         self.list_widget.currentItemChanged.connect(self.on_selection_changed)
         main_layout.addWidget(self.list_widget)
@@ -102,7 +99,12 @@ class ParticipantManager(QWidget):
                 widget.set_icons_visible(True)
 
     def load_participants(self):
-        self.list_widget.currentItemChanged.disconnect(self.on_selection_changed)
+        # Safely disconnect to prevent warnings
+        try:
+            self.list_widget.currentItemChanged.disconnect(self.on_selection_changed)
+        except RuntimeError:
+            pass  # Signal was not connected
+
         self.list_widget.clear()
         participants = database.get_participants_for_project(self.project_id)
 
@@ -116,6 +118,7 @@ class ParticipantManager(QWidget):
                 list_item.setSizeHint(item_widget.sizeHint())
                 self.list_widget.addItem(list_item)
                 self.list_widget.setItemWidget(list_item, item_widget)
+
         self.list_widget.currentItemChanged.connect(self.on_selection_changed)
 
     def add_participant(self):

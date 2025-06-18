@@ -68,8 +68,6 @@ class DraggableTreeWidget(QTreeWidget):
         ]
 
         database.update_node_order(db_order_updates)
-
-        # --- FIX for Drag-and-Drop Crash: Defer the tree rebuild ---
         QTimer.singleShot(0, self.parent_manager.refresh_tree_and_emit_update)
 
 
@@ -171,11 +169,13 @@ class NodeTreeManager(QWidget):
     filter_by_node_family_signal = Signal(list)
     filter_by_single_node_signal = Signal(int)
     node_updated = Signal()
+    node_selected_for_coding = Signal(int)
 
     def __init__(self, project_id):
         super().__init__()
         self.project_id = project_id
         self.nodes_map = {}
+        self._is_selection_mode = False
 
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(0, 0, 0, 0)
@@ -208,7 +208,23 @@ class NodeTreeManager(QWidget):
         main_layout.addWidget(self.tree_widget)
 
         self.tree_widget.currentItemChanged.connect(self.on_selection_changed)
+        self.tree_widget.itemClicked.connect(self.on_item_clicked)
         self.load_nodes()
+
+    def set_selection_mode(self, enabled: bool):
+        self._is_selection_mode = enabled
+        if enabled:
+            self.tree_widget.setStyleSheet("QTreeWidget { border: 2px solid #0078d7; }")
+        else:
+            self.tree_widget.setStyleSheet("")
+
+    def on_item_clicked(self, item: QTreeWidgetItem, column: int):
+        if self._is_selection_mode and item:
+            self.tree_widget.blockSignals(True)
+            node_id = item.data(0, 1)
+            if node_id is not None:
+                self.node_selected_for_coding.emit(node_id)
+            self.tree_widget.blockSignals(False)
 
     def refresh_tree_and_emit_update(self):
         self.load_nodes()
@@ -232,7 +248,6 @@ class NodeTreeManager(QWidget):
             node_id = current_item.data(0, 1)
             descendants = self.get_all_descendant_ids(node_id)
             self.filter_by_node_family_signal.emit([node_id] + descendants)
-
         else:
             self.filter_by_node_family_signal.emit([])
 
@@ -244,7 +259,11 @@ class NodeTreeManager(QWidget):
         return descendants
 
     def load_nodes(self):
-        self.tree_widget.currentItemChanged.disconnect(self.on_selection_changed)
+        try:
+            self.tree_widget.currentItemChanged.disconnect(self.on_selection_changed)
+        except RuntimeError:
+            pass
+
         current_selection_id = None
         if self.tree_widget.currentItem():
             current_selection_id = self.tree_widget.currentItem().data(0, 1)
@@ -321,8 +340,23 @@ class NodeTreeManager(QWidget):
                     new_color = color
                     break
 
-            database.add_node(self.project_id, name.strip(), parent_id, new_color)
-            self.refresh_tree_and_emit_update()
+            # Defensively ensure project_id is an integer before passing to DB layer
+            try:
+                pid = int(self.project_id)
+                database.add_node(pid, name.strip(), parent_id, new_color)
+                self.refresh_tree_and_emit_update()
+            except (ValueError, TypeError) as e:
+                QMessageBox.critical(
+                    self,
+                    "Error",
+                    (
+                        str(e)
+                        if isinstance(e, ValueError)
+                        else f"Invalid Project ID: {self.project_id}"
+                    ),
+                )
+            except Exception as e:
+                QMessageBox.critical(self, "Error", f"Failed to add node: {str(e)}")
 
     def delete_node(self, node_id):
         node_data = self.nodes_map.get(node_id)

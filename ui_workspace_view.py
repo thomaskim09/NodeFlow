@@ -27,10 +27,6 @@ from theme_manager import save_settings, load_settings
 
 
 class SettingsDialog(QDialog):
-    """
-    A dialog to manage application settings, like the theme.
-    """
-
     theme_changed = Signal()
 
     def __init__(self, parent=None):
@@ -128,15 +124,13 @@ class WorkspaceView(QWidget):
         self.center_pane.doc_selector.currentIndexChanged.connect(
             self.on_document_changed
         )
-        self.center_pane.text_edit.setContextMenuPolicy(
-            Qt.ContextMenuPolicy.CustomContextMenu
-        )
-        self.center_pane.text_edit.customContextMenuRequested.connect(
-            self.show_text_edit_context_menu
-        )
+        # REMOVED: Context menu logic is no longer needed
+        # self.center_pane.text_edit.setContextMenuPolicy(...)
+        # self.center_pane.text_edit.customContextMenuRequested.connect(...)
+
         self.center_pane.document_deleted.connect(self.on_data_changed)
-        # Connect the new click-to-select signal
         self.center_pane.segment_clicked.connect(self.bottom_pane.select_segment_by_id)
+        self.bottom_pane.segment_deleted.connect(self.on_segment_deleted)
 
         self.action_export_json.triggered.connect(self.export_as_json)
         self.action_export_word.triggered.connect(self.export_as_word)
@@ -152,6 +146,11 @@ class WorkspaceView(QWidget):
         self.participant_manager.participant_updated.connect(self.on_data_changed)
         self.node_tree_manager.node_updated.connect(self.on_node_data_updated)
 
+        self.center_pane.text_selection_changed.connect(
+            self.node_tree_manager.set_selection_mode
+        )
+        self.node_tree_manager.node_selected_for_coding.connect(self.code_selection)
+
         self.center_pane.load_document_content()
         self.on_document_changed()
 
@@ -159,8 +158,10 @@ class WorkspaceView(QWidget):
         dialog = SettingsDialog(self)
         dialog.exec()
 
+    def on_segment_deleted(self):
+        self.center_pane.apply_all_highlights()
+
     def on_node_data_updated(self):
-        """Specifically handle node updates to refresh highlights."""
         self.node_tree_manager.load_nodes()
         self.center_pane.apply_all_highlights()
         self.on_data_changed()
@@ -187,50 +188,7 @@ class WorkspaceView(QWidget):
         finally:
             QApplication.restoreOverrideCursor()
 
-    def show_text_edit_context_menu(self, position):
-        text_edit = self.center_pane.text_edit
-        if not text_edit.textCursor().hasSelection():
-            return
-        menu = QMenu(text_edit)
-        code_menu = menu.addMenu("Code selection with...")
-
-        nodes_by_parent = self.node_tree_manager.nodes_by_parent
-
-        def populate_menu(parent_menu, parent_id, prefix=""):
-            children = nodes_by_parent.get(parent_id, [])
-            for i, node_data in enumerate(children):
-                current_prefix = f"{prefix}{i + 1}."
-                full_node_name = f"{current_prefix} {node_data['name']}"
-
-                child_nodes = nodes_by_parent.get(node_data["id"], [])
-                if child_nodes:
-                    submenu = parent_menu.addMenu(full_node_name)
-                    parent_action = QAction(f"Code with '{node_data['name']}'", self)
-                    parent_action.triggered.connect(
-                        lambda checked=False, n_id=node_data["id"]: self.code_selection(
-                            n_id
-                        )
-                    )
-                    submenu.addAction(parent_action)
-                    submenu.addSeparator()
-                    populate_menu(submenu, node_data["id"], current_prefix)
-                else:
-                    action = QAction(full_node_name, self)
-                    action.triggered.connect(
-                        lambda checked=False, n_id=node_data["id"]: self.code_selection(
-                            n_id
-                        )
-                    )
-                    parent_menu.addAction(action)
-
-        if not self.node_tree_manager.nodes_map:
-            action = QAction("No nodes created", self)
-            action.setEnabled(False)
-            code_menu.addAction(action)
-        else:
-            populate_menu(code_menu, None)
-
-        menu.exec(text_edit.viewport().mapToGlobal(position))
+    # REMOVED: The entire show_text_edit_context_menu method is gone.
 
     def code_selection(self, node_id):
         cursor = self.center_pane.text_edit.textCursor()
@@ -248,11 +206,13 @@ class WorkspaceView(QWidget):
 
         database.add_coded_segment(doc_id, node_id, participant_id, start, end, text)
 
-        node_color = self.node_tree_manager.nodes_map.get(node_id, {}).get(
-            "color", "#FFFF00"
-        )
+        node_data = self.node_tree_manager.nodes_map.get(node_id)
+        node_color = node_data["color"] if node_data else "#FFFF00"
+
         self.center_pane.highlight_text(start, end, node_color)
 
-        # Refresh bottom pane and center pane info
+        cursor.clearSelection()
+        self.center_pane.text_edit.setTextCursor(cursor)
+
         self.bottom_pane.reload_view()
         self.center_pane.apply_all_highlights()

@@ -12,10 +12,14 @@ from PySide6.QtWidgets import (
     QTreeWidgetItemIterator,
     QAbstractItemView,
 )
+from PySide6.QtCore import Signal
 import database
 
 
 class CodedSegmentsView(QWidget):
+    # Signal to notify when a segment is deleted
+    segment_deleted = Signal()
+
     def __init__(self, project_id):
         super().__init__()
         self.project_id = project_id
@@ -60,16 +64,14 @@ class CodedSegmentsView(QWidget):
         self.search_scope_combo.currentTextChanged.connect(self.filter_tree)
         self.tree_widget.currentItemChanged.connect(self.on_selection_changed)
 
-        self.scope_combo.setCurrentText("Entire Project")
+        self.scope_combo.setCurrentText("Current Document")
         self.reload_view()
 
     def select_segment_by_id(self, segment_id):
         if not segment_id:
             return
 
-        # Block signals to prevent feedback loops if selection triggers other events
         self.tree_widget.blockSignals(True)
-
         it = QTreeWidgetItemIterator(self.tree_widget)
         while it.value():
             item = it.value()
@@ -80,7 +82,6 @@ class CodedSegmentsView(QWidget):
                 )
                 break
             it += 1
-
         self.tree_widget.blockSignals(False)
 
     def on_selection_changed(self, current, previous):
@@ -131,6 +132,8 @@ class CodedSegmentsView(QWidget):
             (current_item.parent() or self.tree_widget.invisibleRootItem()).removeChild(
                 current_item
             )
+            # Emit signal so the workspace can refresh other views
+            self.segment_deleted.emit()
 
     def load_segments(self, document_id):
         self.search_input.clear()
@@ -139,7 +142,12 @@ class CodedSegmentsView(QWidget):
             self.reload_view()
 
     def reload_view(self):
-        self.tree_widget.currentItemChanged.disconnect(self.on_selection_changed)
+        # Safely disconnect signal to prevent runtime warnings
+        try:
+            self.tree_widget.currentItemChanged.disconnect(self.on_selection_changed)
+        except RuntimeError:
+            pass  # Signal was not connected
+
         self.tree_widget.clear()
         self.all_segments = []
         scope = self.scope_combo.currentText()
@@ -149,6 +157,7 @@ class CodedSegmentsView(QWidget):
             self.tree_widget.setHeaderLabels(headers)
             self.tree_widget.setColumnWidth(0, 300)
             self.tree_widget.setColumnWidth(1, 150)
+            self.tree_widget.setColumnWidth(2, 150)
             self.tree_widget.setColumnWidth(3, 50)
             self.search_scope_combo.clear()
             self.search_scope_combo.addItems(
@@ -164,6 +173,7 @@ class CodedSegmentsView(QWidget):
             self.tree_widget.setColumnWidth(0, 300)
             self.tree_widget.setColumnWidth(1, 150)
             self.tree_widget.setColumnWidth(2, 150)
+            self.tree_widget.setColumnWidth(3, 200)  # Set Document column width
             self.tree_widget.setColumnWidth(4, 50)
             self.search_scope_combo.clear()
             self.search_scope_combo.addItems(
@@ -180,7 +190,11 @@ class CodedSegmentsView(QWidget):
             self.filter_tree()
 
     def populate_tree(self, segments):
-        self.tree_widget.currentItemChanged.disconnect(self.on_selection_changed)
+        try:
+            self.tree_widget.currentItemChanged.disconnect(self.on_selection_changed)
+        except RuntimeError:
+            pass
+
         self.tree_widget.clear()
         scope = self.scope_combo.currentText()
         for segment in segments:

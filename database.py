@@ -172,16 +172,51 @@ def delete_participant(participant_id):
 
 def add_node(project_id, name, parent_id, color):
     """
-    Adds a new node. Note the corrected parameter order.
+    Adds a new node robustly within a transaction. This version contains a final
+    fix for the persistent foreign key error when adding root nodes.
     """
+    # This assertion will immediately fail if project_id is not an integer,
+    # providing a clearer error than the database's FOREIGN KEY constraint.
+    assert isinstance(
+        project_id, int
+    ), f"project_id must be an integer, but was {type(project_id)}"
+
     conn = get_db_connection()
-    # The tuple now correctly matches the INSERT statement order
-    conn.execute(
-        "INSERT INTO nodes (project_id, name, parent_id, color) VALUES (?, ?, ?, ?)",
-        (project_id, name, parent_id, color),
-    )
-    conn.commit()
-    conn.close()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("BEGIN TRANSACTION")
+
+        # First verify that the project exists
+        cursor.execute("SELECT id FROM projects WHERE id = ?", (project_id,))
+        if not cursor.fetchone():
+            raise ValueError(f"Project with ID {project_id} does not exist")
+
+        # Determine position
+        if parent_id is None:
+            # For root node, count existing root nodes in the project
+            sql = (
+                "SELECT COUNT(*) FROM nodes WHERE project_id = ? AND parent_id IS NULL"
+            )
+            params = (project_id,)
+        else:
+            # For child node, count siblings
+            sql = "SELECT COUNT(*) FROM nodes WHERE parent_id = ?"
+            params = (parent_id,)
+
+        cursor.execute(sql, params)
+        position = cursor.fetchone()[0]
+
+        # The INSERT statement itself.
+        cursor.execute(
+            "INSERT INTO nodes (project_id, name, parent_id, color, position) VALUES (?, ?, ?, ?, ?)",
+            (project_id, name, parent_id, color, position),
+        )
+        cursor.execute("COMMIT")
+    except Exception as e:
+        cursor.execute("ROLLBACK")
+        raise e
+    finally:
+        conn.close()
 
 
 def get_nodes_for_project(project_id):
