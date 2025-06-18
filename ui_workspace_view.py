@@ -37,11 +37,11 @@ class WorkspaceView(QWidget):
         self.left_pane_layout.addWidget(self.participant_manager)
         self.left_pane_layout.addWidget(self.node_tree_manager)
 
-        export_button = QPushButton("Export Coded Data")
-        export_button.setToolTip("Export coded data for the project")
+        export_button = QPushButton("Export All Coded Data")
+        export_button.setToolTip("Export all coded data for the project")
         export_menu = QMenu(self)
-        self.action_export_word = export_menu.addAction("Export as Word (.docx)")
         self.action_export_json = export_menu.addAction("Export as JSON (.json)")
+        self.action_export_word = export_menu.addAction("Export as Word (.docx)")
         self.action_export_excel = export_menu.addAction("Export as Excel (.xlsx)")
         export_button.setMenu(export_menu)
 
@@ -72,8 +72,8 @@ class WorkspaceView(QWidget):
             self.show_text_edit_context_menu
         )
 
-        self.action_export_word.triggered.connect(self.export_as_word)
         self.action_export_json.triggered.connect(self.export_as_json)
+        self.action_export_word.triggered.connect(self.export_as_word)
         self.action_export_excel.triggered.connect(self.export_as_excel)
 
         # Connect the NEW filter signals
@@ -92,14 +92,10 @@ class WorkspaceView(QWidget):
         self.bottom_pane.reload_view()
 
     def export_as_word(self):
-        export_manager.export_to_word(
-            self.project_id, self.center_pane.current_document_id, self
-        )
+        export_manager.export_to_word(self.project_id, self)
 
     def export_as_json(self):
-        export_manager.export_to_json(
-            self.project_id, self.center_pane.current_document_id, self
-        )
+        export_manager.export_to_json(self.project_id, self)
 
     def export_as_excel(self):
         export_manager.export_to_excel(self.project_id, self)

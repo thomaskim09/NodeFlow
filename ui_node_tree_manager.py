@@ -66,7 +66,7 @@ class NodeItemWidget(QWidget):
         self.parent_manager = parent_manager
 
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(0, 0, 5, 0)
+        layout.setContentsMargins(0, 0, 5, 1)
         layout.setSpacing(5)
 
         name_label = QLabel(display_text)
@@ -155,7 +155,7 @@ class NodeTreeManager(QWidget):
         add_root_button.clicked.connect(self.add_node)
 
         # --- NEW: Clear filter button ---
-        clear_filter_button = QPushButton("🔄 Show All")
+        clear_filter_button = QPushButton("▼ Show All")
         clear_filter_button.setToolTip(
             "Clear the current node filter in the Coded Segments view"
         )
@@ -178,6 +178,7 @@ class NodeTreeManager(QWidget):
 
     def clear_all_filters(self):
         self.tree_widget.clearSelection()
+        self.filter_by_node_family_signal.emit([])
 
     def on_selection_changed(self, current_item, previous_item):
         if previous_item:
@@ -297,9 +298,32 @@ class NodeTreeManager(QWidget):
             )
         )
         action_export_excel.triggered.connect(
-            lambda: export_manager.export_node_family_to_excel(
-                self.project_id, node_id, self
-            )
+            lambda: self.export_node_family_to_excel_handler(node_id)
         )
 
         menu.exec(button.mapToGlobal(button.rect().bottomLeft()))
+
+    def export_node_family_to_excel_handler(self, node_id):
+        msg_box = QMessageBox(self)
+        msg_box.setWindowTitle("Excel Export Option")
+        msg_box.setText("How would you like to export the Excel report?")
+        msg_box.setInformativeText(
+            "Choose whether to combine all data into a single sheet or create a separate sheet for each parent node."
+        )
+        single_sheet_button = msg_box.addButton(
+            "Single Sheet", QMessageBox.ButtonRole.ActionRole
+        )
+        multi_sheet_button = msg_box.addButton(
+            "Multiple Sheets", QMessageBox.ButtonRole.ActionRole
+        )
+        msg_box.addButton(QMessageBox.StandardButton.Cancel)
+
+        msg_box.exec()
+
+        clicked_button = msg_box.clickedButton()
+        if clicked_button == single_sheet_button:
+            export_manager.export_node_family_to_excel(self.project_id, node_id, self)
+        elif clicked_button == multi_sheet_button:
+            export_manager.export_node_family_to_excel_multi_sheet(
+                self.project_id, node_id, self
+            )

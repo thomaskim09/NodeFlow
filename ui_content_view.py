@@ -10,9 +10,9 @@ from PySide6.QtWidgets import (
     QDialog,
     QLabel,
     QDialogButtonBox,
-    QApplication,  # <-- Import QApplication
+    QApplication,
 )
-from PySide6.QtCore import Qt  # <-- Import Qt
+from PySide6.QtCore import Qt
 from PySide6.QtGui import QTextCursor, QColor, QTextCharFormat
 import os
 import database
@@ -31,19 +31,42 @@ class ContentView(QWidget):
         main_layout = QVBoxLayout(self)
         top_bar_layout = QHBoxLayout()
 
+        # --- NEW: Area Title ---
+        title_label = QLabel("Document View")
+        font = title_label.font()
+        font.setBold(True)
+        title_label.setFont(font)
+
+        # Document selector
         self.doc_selector = QComboBox()
-        import_button = QPushButton("Import Document")
-        self.save_button = QPushButton("Save Changes")
+
+        # --- NEW: Icon Buttons ---
+        import_button = QPushButton("📥")
+        import_button.setToolTip("Import Document (.txt, .docx)")
+        import_button.setFixedSize(28, 28)
+
+        self.save_button = QPushButton("💾")
+        self.save_button.setToolTip(
+            "Save Changes (clears existing codes for this document)"
+        )
+        self.save_button.setFixedSize(28, 28)
         self.save_button.setEnabled(False)  # Disabled by default
-        delete_button = QPushButton("Delete Document")
+
+        delete_button = QPushButton("🗑️")
+        delete_button.setToolTip("Delete Current Document")
+        delete_button.setFixedSize(28, 28)
 
         self.text_edit = QTextEdit()
         self.text_edit.setReadOnly(False)  # Allow editing
 
+        # --- NEW: Layout setup ---
+        top_bar_layout.addWidget(title_label)
         top_bar_layout.addWidget(self.doc_selector)
+        top_bar_layout.addStretch()  # Spacer
         top_bar_layout.addWidget(import_button)
         top_bar_layout.addWidget(self.save_button)
         top_bar_layout.addWidget(delete_button)
+
         main_layout.addLayout(top_bar_layout)
         main_layout.addWidget(self.text_edit)
 
