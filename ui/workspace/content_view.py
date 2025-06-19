@@ -237,6 +237,19 @@ class ContentView(QWidget):
             self.handle_file_import(path)
 
     def _process_text_document(self, file_path):
+        title = os.path.basename(file_path)
+        docs = database.get_documents_for_project(self.project_id)
+        existing_titles = {doc["title"] for doc in docs}
+        if title in existing_titles:
+            reply = QMessageBox.question(
+                self,
+                "Duplicate Document",
+                f"A document named '{title}' already exists in this project.\n\nDo you want to import it as a new copy?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if reply == QMessageBox.StandardButton.No:
+                return
         participants = database.get_participants_for_project(self.project_id)
         if not participants:
             QMessageBox.warning(
