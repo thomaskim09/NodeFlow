@@ -27,6 +27,7 @@ import os
 import database
 import docx
 
+from managers.export_manager import export_annotated_document
 from managers.theme_manager import load_settings
 from .excel_import_dialog import ExcelImportDialog
 from managers import excel_import_manager
@@ -78,6 +79,11 @@ class ContentView(QWidget):
         delete_button.setIcon(delete_icon)
         delete_button.setToolTip("Delete Current Document")
         delete_button.setFixedSize(28, 28)
+        self.export_annotated_button = QPushButton()
+        export_annotated_icon = MaterialIcon("description")
+        self.export_annotated_button.setIcon(export_annotated_icon)
+        self.export_annotated_button.setToolTip("Export Annotated Document")
+        self.export_annotated_button.setFixedSize(28, 28)
 
         self.text_edit = QTextEdit()
         self.text_edit.setReadOnly(False)
@@ -117,6 +123,7 @@ class ContentView(QWidget):
         top_bar_layout.addStretch()
         top_bar_layout.addWidget(self.import_button)
         top_bar_layout.addWidget(self.save_button)
+        top_bar_layout.addWidget(self.export_annotated_button)
         top_bar_layout.addWidget(delete_button)
         main_layout.addLayout(top_bar_layout)
         main_layout.addLayout(self.stacked_layout)
@@ -124,6 +131,7 @@ class ContentView(QWidget):
 
         self.import_button.clicked.connect(self.open_import_dialog)
         self.save_button.clicked.connect(self.save_document)
+        self.export_annotated_button.clicked.connect(self.export_annotated)
         delete_button.clicked.connect(self.delete_current_document)
         self.doc_selector.currentIndexChanged.connect(self.handle_document_switch)
         self.text_edit.textChanged.connect(self.on_text_changed)
@@ -393,6 +401,19 @@ class ContentView(QWidget):
         if show_success_prompt:
             QMessageBox.information(
                 self, "Success", "Document text saved successfully."
+            )
+
+    def export_annotated(self):
+        if self.current_document_id:
+            export_annotated_document(
+                self.project_id,
+                self.current_document_id,
+                self.doc_selector.currentText(),
+                self,
+            )
+        else:
+            QMessageBox.warning(
+                self, "No Document Selected", "Please select a document to export."
             )
 
     def handle_document_switch(self, new_index):

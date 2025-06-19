@@ -21,6 +21,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QPixmap, QColor, QIcon
 from PySide6.QtCharts import QChart
 
+from managers.export_manager import export_co_occurrence_to_gexf
 from managers.theme_manager import load_settings
 from .charts_widget import ChartsWidget
 from .crosstab_widget import CrosstabWidget
@@ -97,6 +98,9 @@ class DashboardView(QDialog):
         export_menu.addAction("Export Data Table as CSV", self.export_data_as_csv)
         export_menu.addAction(
             "Export Co-occurrence Matrix as CSV", self.export_co_occurrence_as_csv
+        )
+        export_menu.addAction(
+            "Export Co-occurrence as GEXF", self.export_co_occurrence_as_gexf
         )
         export_menu.addAction("Export Cross-Tab as CSV", self.export_crosstab_as_csv)
         self.export_button.setMenu(export_menu)
@@ -605,6 +609,17 @@ class DashboardView(QDialog):
                     writer.writerow(row_data)
         except Exception as e:
             QMessageBox.critical(self, "Export Failed", f"An error occurred: {e}")
+
+    def export_co_occurrence_as_gexf(self):
+        """Exports the co-occurrence data as a GEXF file."""
+        if self.tabs.currentWidget() != self.co_occurrence_widget:
+            QMessageBox.warning(
+                self,
+                "Not on Co-occurrence Tab",
+                "Please switch to the 'Code Co-occurrence' tab to export.",
+            )
+            return
+        export_co_occurrence_to_gexf(self.project_id, self)
 
     def export_crosstab_as_csv(self):
         if self.tabs.currentIndex() != 2:

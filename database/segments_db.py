@@ -44,24 +44,34 @@ def get_coded_segments_for_nodes(project_id, node_ids, document_id=None):
     return [dict(row) for row in segments_rows]
 
 
+# Replace the existing get_coded_segments_for_document function
+# in database/segments_db.py with this corrected version.
+
+
 def get_coded_segments_for_document(document_id):
     """
-    Retrieves all coded segments for a specific document, including node, participant, and document info.
+    Retrieves all coded segments for a specific document, including associated
+    node and participant info.
     """
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute(
         """
-        SELECT s.id, s.document_id, s.node_id, s.content_preview, s.segment_start, s.segment_end,
-               n.name as node_name, n.color as node_color, s.participant_id,
-               p.name as participant_name,
-               d.title as document_title
-        FROM coded_segments s
+        SELECT
+            s.id, s.document_id, s.segment_start, s.segment_end, s.content_preview,
+            n.id as node_id, n.name as node_name, n.color as node_color,
+            d.participant_id,
+            p.name as participant_name,
+            d.title as document_title
+        FROM
+            coded_segments s
         JOIN nodes n ON s.node_id = n.id
-        LEFT JOIN participants p ON s.participant_id = p.id
         JOIN documents d ON s.document_id = d.id
-        WHERE s.document_id = ?
-        ORDER BY s.segment_start
+        LEFT JOIN participants p ON d.participant_id = p.id
+        WHERE
+            s.document_id = ?
+        ORDER BY
+            s.segment_start
     """,
         (document_id,),
     )

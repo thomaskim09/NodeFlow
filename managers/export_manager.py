@@ -1,3 +1,5 @@
+# managers/export_manager.py
+
 from PySide6.QtWidgets import QFileDialog, QMessageBox
 from docx import Document
 from openpyxl.styles import Font
@@ -5,6 +7,8 @@ import json
 import re
 import database
 import openpyxl
+import networkx as nx
+from docx.shared import RGBColor
 
 
 def export_to_word(project_id, parent_widget=None):
@@ -536,6 +540,173 @@ def export_node_family_to_excel_multi_sheet(
             f"Could not save the file to:\n{file_path}\n\nPlease make sure you have permissions to write to this location and that the file is not currently open in another program.",
         )
     except Exception as e:
+        QMessageBox.critical(
+            parent_widget,
+            "Export Error",
+            f"An unexpected error occurred while saving the file:\n{e}",
+        )
+
+
+def export_co_occurrence_to_gexf(project_id, parent_widget=None):
+    """Exports the code co-occurrence data to a GEXF file for network analysis."""
+    file_path, _ = QFileDialog.getSaveFileName(
+        parent_widget, "Save GEXF File", "", "GEXF Files (*.gexf)"
+    )
+    if not file_path:
+        return
+
+    try:
+        nodes = database.get_nodes_for_project(project_id)
+        segments = database.get_coded_segments_for_project(project_id)
+
+        node_map = {node["id"]: node["name"] for node in nodes}
+        co_occurrence_matrix = {}
+
+        segments_by_content = {}
+        for seg in segments:
+            seg_key = (
+                seg["document_id"],
+                seg["segment_start"],
+                seg["segment_end"],
+            )
+            if seg_key not in segments_by_content:
+                segments_by_content[seg_key] = []
+            segments_by_content[seg_key].append(seg["node_id"])
+
+        for seg_key, node_ids in segments_by_content.items():
+            unique_node_ids = sorted(list(set(node_ids)))
+            for i in range(len(unique_node_ids)):
+                for j in range(i, len(unique_node_ids)):
+                    node1_id = unique_node_ids[i]
+                    node2_id = unique_node_ids[j]
+
+                    if node1_id == node2_id:
+                        continue
+
+                    node1_name = node_map.get(node1_id)
+                    node2_name = node_map.get(node2_id)
+
+                    if not node1_name or not node2_name:
+                        continue
+
+                    co_occurrence_matrix.setdefault(node1_name, {})
+                    co_occurrence_matrix[node1_name].setdefault(node2_name, 0)
+                    co_occurrence_matrix[node1_name][node2_name] += 1
+
+                    co_occurrence_matrix.setdefault(node2_name, {})
+                    co_occurrence_matrix[node2_name].setdefault(node1_name, 0)
+                    co_occurrence_matrix[node2_name][node1_name] += 1
+
+        G = nx.Graph()
+        for node1, connections in co_occurrence_matrix.items():
+            for node2, weight in connections.items():
+                if weight > 0 and node1 != node2:
+                    G.add_edge(node1, node2, weight=weight)
+
+        if not G.nodes():
+            for node in nodes:
+                G.add_node(node["name"])
+
+        nx.write_gexf(G, file_path)
+
+        QMessageBox.information(
+            parent_widget,
+            "Export Successful",
+            f"GEXF file successfully saved to:\n{file_path}",
+        )
+    except Exception as e:
+        import traceback
+
+        traceback.print_exc()
+        QMessageBox.critical(
+            parent_widget,
+            "Export Error",
+            f"An unexpected error occurred while saving the file:\n{e}",
+        )
+
+
+def export_annotated_document(
+    project_id, document_id, document_title, parent_widget=None
+):
+    """Exports a single document with its coded segments highlighted."""
+    if not document_id:
+        QMessageBox.warning(
+            parent_widget, "No Document", "No document is currently loaded."
+        )
+        return
+
+    file_path, _ = QFileDialog.getSaveFileName(
+        parent_widget,
+        f"Save Annotated Document '{document_title}'",
+        "",
+        "Word Documents (*.docx)",
+    )
+    if not file_path:
+        return
+
+    try:
+        content, _ = database.get_document_content(document_id)
+        segments = database.get_coded_segments_for_document(document_id)
+        segments.sort(key=lambda s: s["segment_start"])
+
+        doc = Document()
+        doc.add_heading(f"Annotated Document: {document_title}", 0)
+
+        p = doc.add_paragraph()
+        last_pos = 0
+        for seg in segments:
+            # Add text before the segment
+            p.add_run(content[last_pos : seg["segment_start"]])
+
+            # Add the segment with background color for highlight
+            run = p.add_run(seg["content_preview"])
+            hex_color = seg["node_color"].lstrip("#")
+            rgb = tuple(int(hex_color[i : i + 2], 16) for i in (0, 2, 4))
+            # Set background color using shading (python-docx)
+            run.font.highlight_color = None  # Remove any highlight
+            rPr = run._element.get_or_add_rPr()
+            shd = rPr.xpath("./w:shd")
+            from docx.oxml.ns import qn
+            from docx.oxml import OxmlElement
+
+            if not shd:
+                shd_elem = OxmlElement("w:shd")
+                shd_elem.set(qn("w:fill"), f"{hex_color}")
+                shd_elem.set(qn("w:val"), "clear")
+                shd_elem.set(qn("w:color"), "auto")
+                rPr.append(shd_elem)
+            else:
+                shd[0].set(qn("w:fill"), f"{hex_color}")
+                shd[0].set(qn("w:val"), "clear")
+                shd[0].set(qn("w:color"), "auto")
+            # Set font color for contrast
+            brightness = (rgb[0] * 299 + rgb[1] * 587 + rgb[2] * 114) / 1000
+            if brightness > 128:
+                run.font.color.rgb = RGBColor(0, 0, 0)  # black
+            else:
+                run.font.color.rgb = RGBColor(255, 255, 255)  # white
+
+            # Add remark as [<node>, <participant>] (no field name prefix)
+            info_run = p.add_run(f" [{seg['node_name']}, {seg['participant_name']}] ")
+            info_run.italic = True
+            info_run.font.size = run.font.size
+
+            last_pos = seg["segment_end"]
+
+        # Add remaining text
+        p.add_run(content[last_pos:])
+
+        doc.save(file_path)
+
+        QMessageBox.information(
+            parent_widget,
+            "Export Successful",
+            f"Annotated document successfully saved to:\n{file_path}",
+        )
+    except Exception as e:
+        import traceback
+
+        traceback.print_exc()
         QMessageBox.critical(
             parent_widget,
             "Export Error",
