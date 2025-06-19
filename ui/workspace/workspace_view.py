@@ -131,11 +131,9 @@ class WorkspaceView(QWidget):
         )
         self.bottom_pane.segment_deleted.connect(self.on_segment_deleted)
         self.bottom_pane.segment_activated.connect(self.on_segment_navigation_requested)
-
         self.action_export_json.triggered.connect(self.export_as_json)
         self.action_export_word.triggered.connect(self.export_as_word)
         self.action_export_excel.triggered.connect(self.export_as_excel)
-
         self.node_tree_manager.filter_by_node_family_signal.connect(
             self.bottom_pane.filter_by_node_family
         )
@@ -146,9 +144,7 @@ class WorkspaceView(QWidget):
             self.bottom_pane.filter_segments_by_participant
         )
         self.center_pane.segments_changed.connect(self.on_segments_changed)
-
         self.participant_manager.participant_updated.connect(self.refresh_all_views)
-
         self.node_tree_manager.node_updated.connect(self.on_node_data_updated)
         self.center_pane.text_selection_changed.connect(
             self.node_tree_manager.set_selection_mode
@@ -199,16 +195,10 @@ class WorkspaceView(QWidget):
     def refresh_all_views(self):
         """A single, reliable method to refresh the entire workspace."""
         self.participant_manager.load_participants()
-
-        # Pass the stored ID to the content view's loader
         self.center_pane.load_document_list(doc_id_to_select=self._last_added_doc_id)
-
-        # Refresh the other panes
         new_doc_id = self.center_pane.current_document_id
         self.bottom_pane.load_segments(new_doc_id)
         self.node_tree_manager.load_nodes()
-
-        # Clear the temporary ID after use
         self._last_added_doc_id = None
 
     def export_as_word(self):
@@ -245,26 +235,18 @@ class WorkspaceView(QWidget):
         Reloads all relevant views.
         """
         doc_id = self.center_pane.current_document_id
-        # Reloads the bottom pane (Coded Segments)
         self.bottom_pane.load_segments(doc_id)
-        # Reload the stats in the Node Tree and Participant list
         self.node_tree_manager.load_nodes()
         self.participant_manager.load_participants()
 
     def code_selection(self, node_id):
-        # Get the text edit widget for easier access
         text_edit = self.center_pane.text_edit
-
         cursor = text_edit.textCursor()
         if not cursor.hasSelection():
             return
-
-        # Save the scrollbar's value and selection end point BEFORE any changes
         selection_end_pos = cursor.selectionEnd()
         scrollbar = text_edit.verticalScrollBar()
         original_scroll_value = scrollbar.value()
-
-        # Perform database operation
         start, end = cursor.selectionStart(), cursor.selectionEnd()
         text = cursor.selectedText()
         doc_id = self.center_pane.current_document_id
@@ -272,18 +254,12 @@ class WorkspaceView(QWidget):
         if not doc_id:
             return
         database.add_coded_segment(doc_id, node_id, participant_id, start, end, text)
-
-        # Refresh all other UI components
         self.bottom_pane.reload_view()
         self.center_pane.apply_all_highlights()
         self.node_tree_manager.load_nodes()
         self.participant_manager.load_participants()
-
-        # Restore cursor and then immediately restore scrollbar to prevent scrolling
         new_cursor = text_edit.textCursor()
         new_cursor.setPosition(selection_end_pos)
         text_edit.setTextCursor(new_cursor)
         scrollbar.setValue(original_scroll_value)
-
-        # Ensure the editor remains focused
         text_edit.setFocus()

@@ -1,15 +1,16 @@
 import sys
-from PySide6.QtWidgets import QApplication, QMainWindow
+import time
+from PySide6.QtWidgets import QApplication, QMainWindow, QSplashScreen
 from PySide6.QtCore import QSize
-from PySide6.QtGui import QIcon
+from PySide6.QtGui import QIcon, QPixmap
 import os
 
 from ui.startup_view import StartupView
 from ui.workspace.workspace_view import WorkspaceView
 
-# Updated import
 from managers.theme_manager import apply_theme
 import database
+from utils.common import get_resource_path
 
 
 class MainWindow(QMainWindow):
@@ -21,9 +22,8 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("NodeFlow")
-        if os.path.exists("icon.png"):
-            self.setWindowIcon(QIcon("icon.png"))
-        database.create_tables()
+        if os.path.exists(get_resource_path("icon.png")):
+            self.setWindowIcon(QIcon(get_resource_path("icon.png")))
         self.show_startup_view()
 
     def center_window(self):
@@ -46,7 +46,7 @@ class MainWindow(QMainWindow):
         self.center_window()
 
     def show_workspace_view(self, project_id, project_name):
-        """Displays the main workspace for the selected project."""
+        """Displays the main workspace, deferring data load to a background thread."""
         self.setWindowTitle(f"NodeFlow - {project_name}")
         self.setMinimumSize(QSize(1000, 700))
         self.resize(1200, 800)
@@ -57,7 +57,14 @@ class MainWindow(QMainWindow):
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
+    pixmap = QPixmap(get_resource_path("splashscreen.png"))
+    splash = QSplashScreen(pixmap)
+    splash.show()
+    app.processEvents()
     apply_theme(app)
+    database.create_tables()
+    time.sleep(2)
     window = MainWindow()
     window.show()
+    splash.finish(window)
     sys.exit(app.exec())

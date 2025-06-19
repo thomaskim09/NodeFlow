@@ -91,3 +91,9 @@ class CrosstabWidget(QWidget):
     def get_table_for_export(self):
         """Returns the table widget for the main view to export."""
         return self.table
+
+    def clear_crosstab(self):
+        """Clears the crosstab table."""
+        self.table.clear()
+        self.table.setRowCount(0)
+        self.table.setColumnCount(0)

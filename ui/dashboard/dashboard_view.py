@@ -1,3 +1,4 @@
+# MODIFIED: Add new imports
 import csv
 from PySide6.QtWidgets import (
     QDialog,
@@ -16,7 +17,7 @@ from PySide6.QtWidgets import (
     QHeaderView,
     QFrame,
 )
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QThreadPool  # MODIFIED: Import QThreadPool
 from PySide6.QtGui import QPixmap, QColor, QIcon
 
 from managers.theme_manager import load_settings
@@ -25,6 +26,7 @@ from .crosstab_widget import CrosstabWidget
 from .wordcloud_widget import WordCloudWidget
 import database
 from qt_material_icons import MaterialIcon
+from utils.worker import Worker  # NEW: Import our new Worker class
 
 
 class DashboardView(QDialog):
@@ -38,6 +40,10 @@ class DashboardView(QDialog):
         self.participants = database.get_participants_for_project(self.project_id)
         self.settings = load_settings()
         self.is_dark = self.settings.get("theme") == "Dark"
+
+        # NEW: Initialize a thread pool for running workers
+        self.threadpool = QThreadPool()
+        print(f"Multithreading with maximum {self.threadpool.maxThreadCount()} threads")
 
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(15, 15, 15, 15)
@@ -142,6 +148,217 @@ class DashboardView(QDialog):
         else:
             self.load_dashboard_data()
 
+    # MODIFIED: This function now triggers the background worker
+    def load_dashboard_data(self):
+        """
+        Sets up and runs the background worker to load and process dashboard data.
+        """
+        doc_id = self.doc_scope_combo.currentData()
+        part_id = self.part_scope_combo.currentData()
+        node_id = self.node_scope_combo.currentData()
+        if node_id is None:
+            return
+
+        # 1. Show a loading state in the UI
+        self._set_loading_state(True)
+
+        # 2. Create the worker and connect signals
+        worker = Worker(self._get_data_from_db, doc_id, part_id, node_id)
+        worker.signals.result.connect(self._update_ui_with_results)
+        worker.signals.error.connect(self._on_loading_error)
+        worker.signals.finished.connect(lambda: self._set_loading_state(False))
+
+        # 3. Execute the worker in the thread pool
+        self.threadpool.start(worker)
+
+    # NEW: Function to show a "loading" state
+    def _set_loading_state(self, is_loading):
+        if is_loading:
+            self.tree_widget.clear()
+            self._update_stat_label(
+                self.total_words_label, "Scope Words", "Calculating..."
+            )
+            self._update_stat_label(
+                self.coded_segments_label, "Coded Segments", "Calculating..."
+            )
+            self._update_stat_label(
+                self.coded_words_label, "Coded Words", "Calculating..."
+            )
+            self.charts_widget.clear_charts()
+            self.crosstab_widget.clear_crosstab()
+            self.wordcloud_widget.clear_wordcloud()
+
+        self.export_button.setEnabled(not is_loading)
+
+    # NEW: Function to handle errors from the worker
+    def _on_loading_error(self, error_tuple):
+        print("Error in worker thread:", error_tuple)
+        exctype, value, tb = error_tuple
+        QMessageBox.critical(
+            self,
+            f"Error: {exctype.__name__}",
+            f"An error occurred while loading data:\n{value}",
+        )
+        self._set_loading_state(False)
+
+    # NEW: This is the function that runs in the background. It only fetches and processes data.
+    def _get_data_from_db(self, doc_id, part_id, node_id, progress_callback):
+        """
+        Fetches all data from the database and performs calculations.
+        This function runs in the background and returns a dictionary of results.
+        It does NOT interact with the UI.
+        """
+        results = {}
+        nodes = database.get_nodes_for_project(self.project_id)
+        nodes_map, nodes_by_parent = self._build_node_hierarchy(nodes)
+
+        results["nodes"] = nodes
+        results["nodes_map"] = nodes_map
+        results["nodes_by_parent"] = nodes_by_parent
+
+        if node_id != -1:
+            all_project_segments = database.get_coded_segments_for_project(
+                self.project_id
+            )
+            node_stats, _ = self._calculate_direct_stats(all_project_segments)
+            aggregated_stats = self._calculate_aggregated_stats(
+                nodes_by_parent, node_stats
+            )
+
+            results["node_id"] = node_id
+            results["aggregated_stats"] = aggregated_stats
+            results["all_project_segments"] = all_project_segments
+
+        else:
+            total_words, segments = self._get_scoped_data(doc_id, part_id)
+            node_stats, coded_words = self._calculate_direct_stats(segments)
+            aggregated_stats = self._calculate_aggregated_stats(
+                nodes_by_parent, node_stats
+            )
+
+            results["total_words"] = total_words
+            results["segments"] = segments
+            results["coded_words"] = coded_words
+            results["aggregated_stats"] = aggregated_stats
+
+        return results
+
+    # NEW: This function takes the results from the background worker and updates the UI
+    def _update_ui_with_results(self, results):
+        """
+        This function is called when the worker is finished.
+        It populates all the UI widgets with the pre-calculated data.
+        """
+        nodes = results.get("nodes", [])
+        nodes_map = results.get("nodes_map", {})
+        nodes_by_parent = results.get("nodes_by_parent", {})
+        aggregated_stats = results.get("aggregated_stats", {})
+
+        # Check if we are in "Node Scope" mode
+        if "node_id" in results:
+            node_id = results["node_id"]
+            all_project_segments = results.get("all_project_segments", [])
+
+            parent_stats = aggregated_stats.get(
+                node_id, {"word_count": 0, "segment_count": 0}
+            )
+            parent_total_words = parent_stats.get("word_count", 0)
+            parent_segment_count = parent_stats.get("segment_count", 0)
+
+            self._update_stat_label(
+                self.total_words_label,
+                f"Words in '{nodes_map[node_id]['name']}'",
+                f"{parent_total_words:,}",
+            )
+            self._update_stat_label(
+                self.coded_segments_label,
+                "Segments in Node",
+                f"{parent_segment_count:,}",
+            )
+            self._update_stat_label(
+                self.coded_words_label, "Coded Words", f"{parent_total_words:,}"
+            )
+
+            self.tree_widget.clear()
+            direct_children_nodes = nodes_by_parent.get(node_id, [])
+
+            if direct_children_nodes:
+                children_data_for_charts = []
+                for child_node in direct_children_nodes:
+                    child_stats = aggregated_stats.get(
+                        child_node["id"], {"word_count": 0, "segment_count": 0}
+                    )
+                    wc, sc = child_stats.get("word_count", 0), child_stats.get(
+                        "segment_count", 0
+                    )
+                    p = (wc / parent_total_words * 100) if parent_total_words > 0 else 0
+                    children_data_for_charts.append((child_node["name"], p, wc, sc))
+                    self._populate_tree_item(self.tree_widget, child_node, wc, sc, p)
+                self.charts_widget.update_charts(children_data_for_charts)
+            else:  # Leaf node
+                wc, sc = parent_total_words, parent_segment_count
+                leaf_node_data = [(nodes_map[node_id]["name"], 100.0, wc, sc)]
+                self._populate_tree_item(
+                    self.tree_widget, nodes_map[node_id], wc, sc, 100.0
+                )
+                self.charts_widget.update_charts(leaf_node_data)
+
+            self.tree_widget.expandAll()
+
+            descendants = database.get_node_descendants(node_id)
+            family_node_ids = [node_id] + descendants
+            family_segments = [
+                s for s in all_project_segments if s["node_id"] in family_node_ids
+            ]
+
+            self.crosstab_widget.update_crosstab(family_segments, nodes)
+            self.wordcloud_widget.update_wordcloud(family_segments)
+
+        # Otherwise, we are in regular project/doc/participant scope
+        else:
+            total_words = results.get("total_words", 0)
+            segments = results.get("segments", [])
+            coded_words = results.get("coded_words", 0)
+
+            coded_percentage = (
+                (coded_words / total_words * 100) if total_words > 0 else 0
+            )
+            percent_html = f"{coded_words:,} <span style='font-size: 11pt; font-weight: normal;'>({coded_percentage:.1f}%)</span>"
+
+            self._update_stat_label(
+                self.total_words_label, "Scope Words", f"{total_words:,}"
+            )
+            self._update_stat_label(
+                self.coded_segments_label, "Coded Segments", f"{len(segments):,}"
+            )
+            self._update_stat_label(self.coded_words_label, "Coded Words", percent_html)
+
+            self.tree_widget.clear()
+            root_nodes_data = self._populate_tree_widget(
+                nodes_by_parent, nodes_map, aggregated_stats, total_words
+            )
+            self.tree_widget.expandAll()
+
+            self.charts_widget.update_charts(root_nodes_data)
+            self.crosstab_widget.update_crosstab(segments, nodes)
+            self.wordcloud_widget.update_wordcloud(segments)
+
+    # NEW: Helper function to create a tree item, reducing code duplication
+    def _populate_tree_item(
+        self, parent_item, node, word_count, segment_count, percentage
+    ):
+        item = QTreeWidgetItem(parent_item)
+        pixmap = QPixmap(16, 16)
+        pixmap.fill(QColor(node["color"]))
+        item.setIcon(0, QIcon(pixmap))
+        item.setText(0, f" {node['name']}")
+        item.setText(1, f"{word_count:,}")
+        item.setText(2, f"{percentage:.1f}%")
+        item.setText(3, f"{segment_count:,}")
+        for col in [1, 2, 3]:
+            item.setTextAlignment(col, Qt.AlignmentFlag.AlignRight)
+        return item
+
     def _populate_node_scope_combo(self):
         """Populates the node scope dropdown with a node hierarchy."""
         self.node_scope_combo.blockSignals(True)
@@ -162,7 +379,6 @@ class DashboardView(QDialog):
                 if parent_id not in nodes_by_parent:
                     return
 
-                # Sorting by position is important if you have it, otherwise by name
                 def key(x):
                     return x.get("position", 0) or 0
 
@@ -196,130 +412,6 @@ class DashboardView(QDialog):
         value_color = "#eceff4" if self.is_dark else "#2e3440"
         html = f"<div style='color: {title_color}; font-size: 9pt;'>{title}</div><div style='color: {value_color}; font-size: 18pt; font-weight: 600;'>{value}</div>"
         label.setText(html)
-
-    def load_dashboard_data(self):
-        doc_id = self.doc_scope_combo.currentData()
-        part_id = self.part_scope_combo.currentData()
-        node_id = self.node_scope_combo.currentData()
-        if node_id is None:
-            return
-
-        nodes = database.get_nodes_for_project(self.project_id)
-        nodes_map, nodes_by_parent = self._build_node_hierarchy(nodes)
-
-        if node_id != -1:
-            all_project_segments = database.get_coded_segments_for_project(
-                self.project_id
-            )
-            node_stats, _ = self._calculate_direct_stats(all_project_segments)
-            aggregated_stats = self._calculate_aggregated_stats(
-                nodes_by_parent, node_stats
-            )
-
-            parent_stats = aggregated_stats.get(
-                node_id, {"word_count": 0, "segment_count": 0}
-            )
-            parent_total_words = parent_stats.get("word_count", 0)
-            parent_segment_count = parent_stats.get("segment_count", 0)
-
-            self._update_stat_label(
-                self.total_words_label,
-                f"Words in '{nodes_map[node_id]['name']}'",
-                f"{parent_total_words:,}",
-            )
-            self._update_stat_label(
-                self.coded_segments_label,
-                "Segments in Node",
-                f"{parent_segment_count:,}",
-            )
-            self._update_stat_label(
-                self.coded_words_label, "Coded Words", f"{parent_total_words:,}"
-            )
-
-            self.tree_widget.clear()
-            direct_children_nodes = nodes_by_parent.get(node_id, [])
-
-            if direct_children_nodes:
-                # --- PARENT NODE LOGIC ---
-                children_data_for_charts = []
-                for child_node in direct_children_nodes:
-                    child_stats = aggregated_stats.get(
-                        child_node["id"], {"word_count": 0, "segment_count": 0}
-                    )
-                    wc, sc = child_stats.get("word_count", 0), child_stats.get(
-                        "segment_count", 0
-                    )
-                    p = (wc / parent_total_words * 100) if parent_total_words > 0 else 0
-                    children_data_for_charts.append((child_node["name"], p, wc, sc))
-                    # Populate tree with children
-                    item = QTreeWidgetItem(self.tree_widget)
-                    pixmap = QPixmap(16, 16)
-                    pixmap.fill(QColor(child_node["color"]))
-                    item.setIcon(0, QIcon(pixmap))
-                    item.setText(0, f" {child_node['name']}")
-                    item.setText(1, f"{wc:,}")
-                    item.setText(2, f"{p:.1f}%")
-                    item.setText(3, f"{sc:,}")
-                    for col in [1, 2, 3]:
-                        item.setTextAlignment(col, Qt.AlignmentFlag.AlignRight)
-                self.charts_widget.update_charts(children_data_for_charts)
-            else:
-                # --- LEAF NODE LOGIC ---
-                wc, sc = parent_total_words, parent_segment_count
-                # Chart data is just the node itself, representing 100%
-                leaf_node_data = [(nodes_map[node_id]["name"], 100.0, wc, sc)]
-                # Populate tree with just the single node
-                item = QTreeWidgetItem(self.tree_widget)
-                pixmap = QPixmap(16, 16)
-                pixmap.fill(QColor(nodes_map[node_id]["color"]))
-                item.setIcon(0, QIcon(pixmap))
-                item.setText(0, f" {nodes_map[node_id]['name']}")
-                item.setText(1, f"{wc:,}")
-                item.setText(2, "100.0%")
-                item.setText(3, f"{sc:,}")
-                for col in [1, 2, 3]:
-                    item.setTextAlignment(col, Qt.AlignmentFlag.AlignRight)
-                self.charts_widget.update_charts(leaf_node_data)
-
-            self.tree_widget.expandAll()
-
-            descendants = database.get_node_descendants(node_id)
-            family_node_ids = [node_id] + descendants
-            family_segments = [
-                s for s in all_project_segments if s["node_id"] in family_node_ids
-            ]
-
-            self.crosstab_widget.update_crosstab(family_segments, nodes)
-            self.wordcloud_widget.update_wordcloud(family_segments)
-        else:
-            # --- REGULAR PROJECT/DOCUMENT/PARTICIPANT SCOPE ---
-            total_words, segments = self._get_scoped_data(doc_id, part_id)
-            node_stats, coded_words = self._calculate_direct_stats(segments)
-            coded_percentage = (
-                (coded_words / total_words * 100) if total_words > 0 else 0
-            )
-            percent_html = f"{coded_words:,} <span style='font-size: 11pt; font-weight: normal;'>({coded_percentage:.1f}%)</span>"
-
-            self._update_stat_label(
-                self.total_words_label, "Scope Words", f"{total_words:,}"
-            )
-            self._update_stat_label(
-                self.coded_segments_label, "Coded Segments", f"{len(segments):,}"
-            )
-            self._update_stat_label(self.coded_words_label, "Coded Words", percent_html)
-
-            aggregated_stats = self._calculate_aggregated_stats(
-                nodes_by_parent, node_stats
-            )
-            self.tree_widget.clear()
-            root_nodes_data = self._populate_tree_widget(
-                nodes_by_parent, nodes_map, aggregated_stats, total_words
-            )
-            self.tree_widget.expandAll()
-
-            self.charts_widget.update_charts(root_nodes_data)
-            self.crosstab_widget.update_crosstab(segments, nodes)
-            self.wordcloud_widget.update_wordcloud(segments)
 
     def export_chart_as_image(self):
         current_tab_index = self.tabs.currentIndex()
@@ -457,16 +549,12 @@ class DashboardView(QDialog):
                 stats = agg_stats.get(node_data["id"], {})
                 wc, sc = stats.get("word_count", 0), stats.get("segment_count", 0)
                 p = (wc / total_words * 100) if total_words > 0 else 0
-                item = QTreeWidgetItem(p_item)
-                pixmap = QPixmap(16, 16)
-                pixmap.fill(QColor(nodes_map[node_data["id"]]["color"]))
-                item.setIcon(0, QIcon(pixmap))
+
+                # MODIFIED: Use the new helper function
+                item = self._populate_tree_item(p_item, node_data, wc, sc, p)
+                # Manually set the hierarchical text
                 item.setText(0, f" {prefix}{i + 1}. {node_data['name']}")
-                item.setText(1, f"{wc:,}")
-                item.setText(2, f"{p:.1f}%")
-                item.setText(3, f"{sc:,}")
-                for col in [1, 2, 3]:
-                    item.setTextAlignment(col, Qt.AlignmentFlag.AlignRight)
+
                 if p_id is None:
                     root_nodes_data.append((node_data["name"], p, wc, sc))
                 recurse(item, node_data["id"], f"{prefix}{i + 1}.")
@@ -478,4 +566,7 @@ class DashboardView(QDialog):
         # Safely clear charts to release resources
         if hasattr(self, "charts_widget"):
             self.charts_widget.clear_charts()
+        # NEW: Stop all running threads when closing the dialog
+        self.threadpool.clear()
+        self.threadpool.waitForDone()
         super().closeEvent(event)

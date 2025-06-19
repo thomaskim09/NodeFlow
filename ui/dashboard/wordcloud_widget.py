@@ -160,3 +160,8 @@ class WordCloudWidget(QWidget):
         """Handles widget resizing to ensure the image scales properly."""
         self._update_scaled_pixmap()
         super().resizeEvent(event)
+
+    def clear_wordcloud(self):
+        """Clears the word cloud image."""
+        self.image_label.clear()
+        self.image_label.setText("Calculating...")

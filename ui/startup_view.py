@@ -14,6 +14,7 @@ from PySide6.QtGui import QFont, QPixmap, QKeyEvent
 from qt_material_icons import MaterialIcon
 
 import database
+from utils.common import get_resource_path
 
 
 class ProjectListWidget(QListWidget):
@@ -115,7 +116,7 @@ class StartupView(QWidget):
         button_layout = QHBoxLayout()
 
         icon_label = QLabel()
-        pixmap = QPixmap("icon.png")
+        pixmap = QPixmap(get_resource_path("icon.png"))
         icon_label.setPixmap(
             pixmap.scaledToWidth(64, Qt.TransformationMode.SmoothTransformation)
         )
