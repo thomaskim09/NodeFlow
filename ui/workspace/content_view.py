@@ -67,7 +67,6 @@ class ContentView(QWidget):
         import_icon = MaterialIcon("upload")
         self.import_button.setIcon(import_icon)
         self.import_button.setToolTip("Import Document (.txt, .docx, .xlsx)")
-
         self.save_button = QPushButton()
         save_icon = MaterialIcon("save")
         self.save_button.setIcon(save_icon)
@@ -143,7 +142,6 @@ class ContentView(QWidget):
         if document_id == self.current_document_id:
             self._select_and_scroll(start, end)
         else:
-            # If the document isn't active, queue the highlight and switch docs
             self._pending_highlight = (start, end)
             id_to_display_text = {v: k for k, v in self.documents_map.items()}
             display_text = id_to_display_text.get(document_id)
@@ -176,7 +174,6 @@ class ContentView(QWidget):
     def _import_from_excel(self, file_path):
         participants = database.get_participants_for_project(self.project_id)
         dialog = ExcelImportDialog(file_path, participants, self)
-
         if not dialog.valid_headers:
             QMessageBox.critical(
                 self,
@@ -184,20 +181,15 @@ class ContentView(QWidget):
                 f"Could not read headers from '{os.path.basename(file_path)}'. Please ensure it is a valid .xlsx file with a header row.",
             )
             return
-
         if dialog.exec() == QDialog.DialogCode.Accepted:
             QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
             mappings = dialog.get_column_mappings()
-
             docs_imported, errors = excel_import_manager.import_data(
                 self.project_id, file_path, mappings
             )
-
             QApplication.restoreOverrideCursor()
-
             if docs_imported > 0:
                 self.bulk_documents_added.emit()
-
             summary_message = f"Successfully imported {docs_imported} document(s) from '{os.path.basename(file_path)}'."
             if errors:
                 detailed_errors = "\n".join(errors[:5])
@@ -242,7 +234,6 @@ class ContentView(QWidget):
 
     def _process_text_document(self, file_path):
         try:
-            # First, read the content of the document
             content = ""
             if file_path.lower().endswith(".docx"):
                 doc = docx.Document(file_path)
@@ -250,10 +241,7 @@ class ContentView(QWidget):
             else:
                 with open(file_path, "r", encoding="utf-8") as f:
                     content = f.read()
-
             title = os.path.basename(file_path)
-
-            # Now, check if a document with the same name AND content exists
             if database.check_document_exists(self.project_id, title, content):
                 reply = QMessageBox.question(
                     self,
@@ -263,12 +251,9 @@ class ContentView(QWidget):
                     QMessageBox.StandardButton.No,
                 )
                 if reply == QMessageBox.StandardButton.No:
-                    return  # Abort the import for this file
-
-            # --- The rest of the logic for assigning a participant ---
+                    return
             participants = database.get_participants_for_project(self.project_id)
             if not participants:
-                # Prompt for participant name
                 name, ok = QInputDialog.getText(
                     self,
                     "Create Participant",
@@ -290,16 +275,13 @@ class ContentView(QWidget):
                         "Failed to create participant. Please try again.",
                     )
                     return
-
             if len(participants) == 1:
-                # Pass the content we already read to the next method
                 self._import_and_add_document(participants[0]["id"], title, content)
             else:
                 dialog = AssignParticipantDialog(participants, self)
                 if dialog.exec() == QDialog.DialogCode.Accepted:
                     participant_id = dialog.get_selected_participant_id()
                     if participant_id:
-                        # Pass the content we already read to the next method
                         self._import_and_add_document(participant_id, title, content)
         except Exception as e:
             QMessageBox.critical(
@@ -333,47 +315,48 @@ class ContentView(QWidget):
 
     def load_document_list(self, doc_id_to_select=None):
         self.doc_selector.blockSignals(True)
-
         self.doc_selector.clear()
         docs = database.get_documents_for_project(self.project_id)
-        self.documents_map = {
-            f"{doc['title']} ({doc['participant_name'] or 'Unassigned'})": doc["id"]
-            for doc in docs
-        }
-        for display_text in sorted(self.documents_map.keys()):
+        display_count = {}
+        display_texts = []
+        for doc in docs:
+            key = (doc["title"], doc["participant_name"] or "Unassigned")
+            display_count[key] = display_count.get(key, 0) + 1
+        seen = {}
+        self.documents_map = {}
+        for doc in docs:
+            title = doc["title"]
+            participant = doc["participant_name"] or "Unassigned"
+            key = (title, participant)
+            seen[key] = seen.get(key, 0) + 1
+            if display_count[key] > 1:
+                display_text = f"{title} ({participant}) [{seen[key]}]"
+            else:
+                display_text = f"{title} ({participant})"
+            self.documents_map[display_text] = doc["id"]
+            display_texts.append(display_text)
+        for display_text in sorted(display_texts):
             self.doc_selector.addItem(display_text)
-
         self.doc_selector.blockSignals(False)
-
         new_index = -1
         if doc_id_to_select:
-            # Find the dropdown item that matches the new document ID
             id_to_display_text = {v: k for k, v in self.documents_map.items()}
             display_text = id_to_display_text.get(doc_id_to_select)
             if display_text:
                 new_index = self.doc_selector.findText(display_text)
-
-        # Fallback for deletion or if the new doc isn't found for some reason
         if new_index == -1 and self.doc_selector.count() > 0:
             new_index = 0
-
-        # Set the current index and manually call the handler to ensure the view updates
         self.doc_selector.setCurrentIndex(new_index)
         self.handle_document_switch(new_index)
 
     def _import_and_add_document(self, participant_id, title, content):
         try:
-            # The content is now passed in directly, so we don't need to read the file again.
             new_doc_id = database.add_document(
                 self.project_id, title, content, participant_id
             )
-
             self.is_dirty = False
             self.save_button.setEnabled(False)
-
-            # Emit the new ID with the signal
             self.document_added.emit(new_doc_id)
-
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to import file: {e}")
 
@@ -476,7 +459,7 @@ class ContentView(QWidget):
             if self._pending_highlight:
                 start, end = self._pending_highlight
                 self._select_and_scroll(start, end)
-                self._pending_highlight = None  # Clear the pending action
+                self._pending_highlight = None
 
             self.text_edit.textChanged.connect(self.on_text_changed)
         finally:
@@ -484,28 +467,22 @@ class ContentView(QWidget):
 
     def apply_all_highlights(self):
         self.text_edit.blockSignals(True)
-
-        # Save the cursor's current position before making changes.
         original_position = self.text_edit.textCursor().position()
-
         try:
             cursor = self.text_edit.textCursor()
             cursor.select(QTextCursor.SelectionType.Document)
             cursor.setCharFormat(QTextCharFormat())
             cursor.clearSelection()
             self.text_edit.setTextCursor(cursor)
-
             if not self.current_document_id:
                 self.segment_count_label.setText("Coded Segments: 0")
                 return
-
             self._coded_segments_cache = database.get_coded_segments_for_document(
                 self.current_document_id
             )
             self.segment_count_label.setText(
                 f"Coded Segments: {len(self._coded_segments_cache)}"
             )
-
             for segment in self._coded_segments_cache:
                 self.highlight_text(
                     segment["segment_start"],
@@ -513,7 +490,6 @@ class ContentView(QWidget):
                     segment["node_color"],
                 )
         finally:
-            # Restore the cursor to its original position after all changes.
             cursor = self.text_edit.textCursor()
             cursor.setPosition(original_position)
             self.text_edit.setTextCursor(cursor)
@@ -551,10 +527,6 @@ class ContentView(QWidget):
                 )
 
     def on_segment_coded(self):
-        """
-        This handler is called when the TextEditor signals a new segment has been coded.
-        It emits the segments_changed signal for the WorkspaceView to catch.
-        """
         self.segments_changed.emit()
 
 
