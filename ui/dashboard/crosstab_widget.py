@@ -1,5 +1,3 @@
-# Create this new file at: ui/dashboard/crosstab_widget.py
-
 import itertools
 from collections import defaultdict
 from PySide6.QtWidgets import (

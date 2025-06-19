@@ -1,5 +1,3 @@
-# Create this file at: database/projects_db.py
-
 import sqlite3
 from .db_core import get_db_connection
 

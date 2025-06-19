@@ -1,5 +1,3 @@
-# Create this file at: database/documents_db.py
-
 from .db_core import get_db_connection
 
 

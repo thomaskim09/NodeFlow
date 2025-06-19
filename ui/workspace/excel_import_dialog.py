@@ -1,5 +1,3 @@
-# Create new file: ui/workspace/excel_import_dialog.py
-
 from PySide6.QtWidgets import (
     QDialog,
     QVBoxLayout,

@@ -1,5 +1,3 @@
-# Create this new file at: ui/dashboard/charts_widget.py
-
 from PySide6.QtWidgets import QWidget, QHBoxLayout
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QPainter, QColor

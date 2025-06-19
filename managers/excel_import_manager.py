@@ -1,5 +1,3 @@
-# Create new file: managers/excel_import_manager.py
-
 import openpyxl
 import database
 from PySide6.QtWidgets import QApplication
@@ -42,6 +40,8 @@ def import_data(project_id, file_path, mappings, progress_callback=None):
     participants_in_db = {
         p["name"]: p["id"] for p in database.get_participants_for_project(project_id)
     }
+    existing_docs = database.get_documents_for_project(project_id)
+    existing_titles = {doc["title"] for doc in existing_docs}
 
     docs_imported = 0
     errors = []
@@ -59,6 +59,12 @@ def import_data(project_id, file_path, mappings, progress_callback=None):
             continue
 
         title = str(title).strip()
+        if title in existing_titles:
+            original_title = title
+            counter = 1
+            while title in existing_titles:
+                title = f"{original_title} (copy {counter})"
+                counter += 1
         content = str(content).strip()
         participant_id = None
 
@@ -87,6 +93,7 @@ def import_data(project_id, file_path, mappings, progress_callback=None):
         try:
             database.add_document(project_id, title, content, participant_id)
             docs_imported += 1
+            existing_titles.add(title)
         except Exception as e:
             errors.append(
                 f"Row {row_idx}: Failed to import document '{title}'. Error: {e}"
