@@ -206,7 +206,7 @@ class CodedSegmentsView(QWidget):
     def reload_view(self):
         try:
             self.tree_widget.currentItemChanged.disconnect(self.on_selection_changed)
-        except RuntimeError:
+        except (TypeError, RuntimeError):
             pass
 
         self.tree_widget.clear()
@@ -280,7 +280,7 @@ class CodedSegmentsView(QWidget):
 
         try:
             self.tree_widget.currentItemChanged.disconnect(self.on_selection_changed)
-        except RuntimeError:
+        except (TypeError, RuntimeError):
             pass
 
         self.tree_widget.clear()
@@ -328,7 +328,7 @@ class CodedSegmentsView(QWidget):
 
         try:
             self.tree_widget.currentItemChanged.disconnect(self.on_selection_changed)
-        except RuntimeError:
+        except (TypeError, RuntimeError):
             pass
 
         self.tree_widget.clear()
@@ -349,7 +349,7 @@ class CodedSegmentsView(QWidget):
 
         try:
             self.tree_widget.currentItemChanged.disconnect(self.on_selection_changed)
-        except RuntimeError:
+        except (TypeError, RuntimeError):
             pass
 
         self.tree_widget.clear()

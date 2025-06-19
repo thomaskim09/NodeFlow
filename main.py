@@ -6,7 +6,6 @@ from PySide6.QtGui import QIcon, QPixmap
 import os
 
 from ui.startup_view import StartupView
-from ui.workspace.workspace_view import WorkspaceView
 
 from managers.theme_manager import apply_theme
 import database
@@ -15,8 +14,7 @@ from utils.common import get_resource_path
 
 class MainWindow(QMainWindow):
     """
-    The main window of the application. It acts as a controller to switch
-    between the startup view and the main workspace view.
+    The main window of the application. It acts as a controller to show the startup view only.
     """
 
     def __init__(self):
@@ -41,17 +39,8 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("NodeFlow - Select Project")
         self.setMinimumSize(QSize(500, 400))
         self.resize(500, 400)
-        startup_view = StartupView(self.show_workspace_view)
+        startup_view = StartupView()
         self.setCentralWidget(startup_view)
-        self.center_window()
-
-    def show_workspace_view(self, project_id, project_name):
-        """Displays the main workspace, deferring data load to a background thread."""
-        self.setWindowTitle(f"NodeFlow - {project_name}")
-        self.setMinimumSize(QSize(1000, 700))
-        self.resize(1200, 800)
-        workspace_view = WorkspaceView(project_id, project_name, self.show_startup_view)
-        self.setCentralWidget(workspace_view)
         self.center_window()
 
 

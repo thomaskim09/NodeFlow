@@ -17,8 +17,9 @@ from PySide6.QtWidgets import (
     QHeaderView,
     QFrame,
 )
-from PySide6.QtCore import Qt, QThreadPool  # MODIFIED: Import QThreadPool
+from PySide6.QtCore import Qt
 from PySide6.QtGui import QPixmap, QColor, QIcon
+from PySide6.QtCharts import QChart
 
 from managers.theme_manager import load_settings
 from .charts_widget import ChartsWidget
@@ -26,7 +27,6 @@ from .crosstab_widget import CrosstabWidget
 from .wordcloud_widget import WordCloudWidget
 import database
 from qt_material_icons import MaterialIcon
-from utils.worker import Worker  # NEW: Import our new Worker class
 
 
 class DashboardView(QDialog):
@@ -40,11 +40,6 @@ class DashboardView(QDialog):
         self.participants = database.get_participants_for_project(self.project_id)
         self.settings = load_settings()
         self.is_dark = self.settings.get("theme") == "Dark"
-
-        # NEW: Initialize a thread pool for running workers
-        self.threadpool = QThreadPool()
-        print(f"Multithreading with maximum {self.threadpool.maxThreadCount()} threads")
-
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(15, 15, 15, 15)
         main_layout.setSpacing(10)
@@ -148,30 +143,20 @@ class DashboardView(QDialog):
         else:
             self.load_dashboard_data()
 
-    # MODIFIED: This function now triggers the background worker
     def load_dashboard_data(self):
-        """
-        Sets up and runs the background worker to load and process dashboard data.
-        """
         doc_id = self.doc_scope_combo.currentData()
         part_id = self.part_scope_combo.currentData()
         node_id = self.node_scope_combo.currentData()
         if node_id is None:
             return
-
-        # 1. Show a loading state in the UI
         self._set_loading_state(True)
+        try:
+            results = self._get_data_from_db(doc_id, part_id, node_id, None)
+            self._update_ui_with_results(results)
+        except Exception as e:
+            self._on_loading_error((type(e), e, e.__traceback__))
+        self._set_loading_state(False)
 
-        # 2. Create the worker and connect signals
-        worker = Worker(self._get_data_from_db, doc_id, part_id, node_id)
-        worker.signals.result.connect(self._update_ui_with_results)
-        worker.signals.error.connect(self._on_loading_error)
-        worker.signals.finished.connect(lambda: self._set_loading_state(False))
-
-        # 3. Execute the worker in the thread pool
-        self.threadpool.start(worker)
-
-    # NEW: Function to show a "loading" state
     def _set_loading_state(self, is_loading):
         if is_loading:
             self.tree_widget.clear()
@@ -190,9 +175,7 @@ class DashboardView(QDialog):
 
         self.export_button.setEnabled(not is_loading)
 
-    # NEW: Function to handle errors from the worker
     def _on_loading_error(self, error_tuple):
-        print("Error in worker thread:", error_tuple)
         exctype, value, tb = error_tuple
         QMessageBox.critical(
             self,
@@ -201,21 +184,13 @@ class DashboardView(QDialog):
         )
         self._set_loading_state(False)
 
-    # NEW: This is the function that runs in the background. It only fetches and processes data.
     def _get_data_from_db(self, doc_id, part_id, node_id, progress_callback):
-        """
-        Fetches all data from the database and performs calculations.
-        This function runs in the background and returns a dictionary of results.
-        It does NOT interact with the UI.
-        """
         results = {}
         nodes = database.get_nodes_for_project(self.project_id)
         nodes_map, nodes_by_parent = self._build_node_hierarchy(nodes)
-
         results["nodes"] = nodes
         results["nodes_map"] = nodes_map
         results["nodes_by_parent"] = nodes_by_parent
-
         if node_id != -1:
             all_project_segments = database.get_coded_segments_for_project(
                 self.project_id
@@ -224,37 +199,26 @@ class DashboardView(QDialog):
             aggregated_stats = self._calculate_aggregated_stats(
                 nodes_by_parent, node_stats
             )
-
             results["node_id"] = node_id
             results["aggregated_stats"] = aggregated_stats
             results["all_project_segments"] = all_project_segments
-
         else:
             total_words, segments = self._get_scoped_data(doc_id, part_id)
             node_stats, coded_words = self._calculate_direct_stats(segments)
             aggregated_stats = self._calculate_aggregated_stats(
                 nodes_by_parent, node_stats
             )
-
             results["total_words"] = total_words
             results["segments"] = segments
             results["coded_words"] = coded_words
             results["aggregated_stats"] = aggregated_stats
-
         return results
 
-    # NEW: This function takes the results from the background worker and updates the UI
     def _update_ui_with_results(self, results):
-        """
-        This function is called when the worker is finished.
-        It populates all the UI widgets with the pre-calculated data.
-        """
         nodes = results.get("nodes", [])
         nodes_map = results.get("nodes_map", {})
         nodes_by_parent = results.get("nodes_by_parent", {})
         aggregated_stats = results.get("aggregated_stats", {})
-
-        # Check if we are in "Node Scope" mode
         if "node_id" in results:
             node_id = results["node_id"]
             all_project_segments = results.get("all_project_segments", [])
@@ -295,7 +259,7 @@ class DashboardView(QDialog):
                     children_data_for_charts.append((child_node["name"], p, wc, sc))
                     self._populate_tree_item(self.tree_widget, child_node, wc, sc, p)
                 self.charts_widget.update_charts(children_data_for_charts)
-            else:  # Leaf node
+            else:
                 wc, sc = parent_total_words, parent_segment_count
                 leaf_node_data = [(nodes_map[node_id]["name"], 100.0, wc, sc)]
                 self._populate_tree_item(
@@ -313,8 +277,6 @@ class DashboardView(QDialog):
 
             self.crosstab_widget.update_crosstab(family_segments, nodes)
             self.wordcloud_widget.update_wordcloud(family_segments)
-
-        # Otherwise, we are in regular project/doc/participant scope
         else:
             total_words = results.get("total_words", 0)
             segments = results.get("segments", [])
@@ -343,7 +305,6 @@ class DashboardView(QDialog):
             self.crosstab_widget.update_crosstab(segments, nodes)
             self.wordcloud_widget.update_wordcloud(segments)
 
-    # NEW: Helper function to create a tree item, reducing code duplication
     def _populate_tree_item(
         self, parent_item, node, word_count, segment_count, percentage
     ):
@@ -550,9 +511,7 @@ class DashboardView(QDialog):
                 wc, sc = stats.get("word_count", 0), stats.get("segment_count", 0)
                 p = (wc / total_words * 100) if total_words > 0 else 0
 
-                # MODIFIED: Use the new helper function
                 item = self._populate_tree_item(p_item, node_data, wc, sc, p)
-                # Manually set the hierarchical text
                 item.setText(0, f" {prefix}{i + 1}. {node_data['name']}")
 
                 if p_id is None:
@@ -563,10 +522,11 @@ class DashboardView(QDialog):
         return root_nodes_data
 
     def closeEvent(self, event):
-        # Safely clear charts to release resources
         if hasattr(self, "charts_widget"):
             self.charts_widget.clear_charts()
-        # NEW: Stop all running threads when closing the dialog
-        self.threadpool.clear()
-        self.threadpool.waitForDone()
+            try:
+                self.charts_widget.bar_chart_view.setChart(QChart())
+                self.charts_widget.pie_chart_view.setChart(QChart())
+            except Exception as e:
+                print(f"Error clearing chart views: {e}")
         super().closeEvent(event)

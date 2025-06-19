@@ -8,13 +8,16 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QMessageBox,
     QInputDialog,
+    QProgressDialog,
 )
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont, QPixmap, QKeyEvent
 from qt_material_icons import MaterialIcon
+from PySide6.QtWidgets import QApplication
 
 import database
 from utils.common import get_resource_path
+from ui.workspace.workspace_main_window import WorkspaceMainWindow
 
 
 class ProjectListWidget(QListWidget):
@@ -106,10 +109,10 @@ class ProjectItemWidget(QWidget):
 
 
 class StartupView(QWidget):
-    def __init__(self, show_workspace_callback):
+    def __init__(self):
         super().__init__()
-        self.show_workspace_callback = show_workspace_callback
         self._current_selected_widget = None
+        self.workspace_window = None
 
         main_layout = QVBoxLayout(self)
         main_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -203,7 +206,7 @@ class StartupView(QWidget):
 
     def open_selected_project(self, item=None):
         if not self.open_button.isVisible():
-            return  # Don't do anything if the button is hidden
+            return
         selected_item = self.project_list_widget.currentItem()
         if not selected_item:
             QMessageBox.warning(
@@ -215,7 +218,17 @@ class StartupView(QWidget):
 
         widget = self.project_list_widget.itemWidget(selected_item)
         if isinstance(widget, ProjectItemWidget):
-            self.show_workspace_callback(widget.project_id, widget.project_name)
+            loading = QProgressDialog("Loading workspace...", None, 0, 0, self)
+            loading.setWindowFlags(Qt.FramelessWindowHint | Qt.Dialog)
+            loading.setCancelButton(None)
+            loading.show()
+            QApplication.processEvents()
+            self.workspace_window = WorkspaceMainWindow(
+                widget.project_id, widget.project_name, self
+            )
+            loading.close()
+            self.window().hide()
+            self.workspace_window.show()
 
     def rename_project(self, project_id, current_name):
         new_name, ok = QInputDialog.getText(
