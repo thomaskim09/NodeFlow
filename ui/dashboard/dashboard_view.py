@@ -26,6 +26,7 @@ from .charts_widget import ChartsWidget
 from .crosstab_widget import CrosstabWidget
 from .wordcloud_widget import WordCloudWidget
 import database
+from qt_material_icons import MaterialIcon
 
 
 class DashboardView(QDialog):
@@ -87,7 +88,10 @@ class DashboardView(QDialog):
         self.node_scope_combo = QComboBox()
         node_scope_layout.addWidget(self.node_scope_combo)
 
-        self.export_button = QPushButton("Export Options")
+        export_icon = MaterialIcon("download")
+        self.export_button = QPushButton()
+        self.export_button.setIcon(export_icon)
+        self.export_button.setText("Export Options")
         export_menu = QMenu(self)
         export_menu.addAction("Export Chart as Image", self.export_chart_as_image)
         export_menu.addAction("Export Data Table as CSV", self.export_data_as_csv)

@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Signal, Qt
 from PySide6.QtGui import QKeyEvent
+from qt_material_icons import MaterialIcon
 
 import database
 
@@ -59,16 +60,18 @@ class ParticipantItemWidget(QWidget):
         layout.setContentsMargins(5, 2, 5, 11)
         name_label = QLabel(participant_name)
 
-        self.edit_button = QPushButton("✎")
+        self.edit_button = QPushButton()
+        edit_icon = MaterialIcon("edit")
+        self.edit_button.setIcon(edit_icon)
         self.edit_button.setFixedSize(24, 24)
-        self.edit_button.setToolTip("Edit Participant Name")
         self.edit_button.setToolTip("Edit Participant Name (F2)")
         self.edit_button.clicked.connect(self.on_edit_clicked)
         self.edit_button.setVisible(False)
 
-        self.delete_button = QPushButton("🗑")
+        self.delete_button = QPushButton()
+        delete_icon = MaterialIcon("delete")
+        self.delete_button.setIcon(delete_icon)
         self.delete_button.setFixedSize(24, 24)
-        self.delete_button.setToolTip("Delete Participant")
         self.delete_button.setToolTip("Delete Participant (Delete)")
         self.delete_button.clicked.connect(self.on_delete_clicked)
         self.delete_button.setVisible(False)
@@ -108,7 +111,9 @@ class ParticipantManager(QWidget):
         font.setBold(True)
         header_label.setFont(font)
 
-        add_button = QPushButton("＋ Add")
+        add_button = QPushButton()
+        add_icon = MaterialIcon("add")
+        add_button.setIcon(add_icon)
         add_button.setToolTip("Add a new participant")
         add_button.clicked.connect(self.add_participant)
 

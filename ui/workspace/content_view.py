@@ -29,6 +29,7 @@ import docx
 from managers.theme_manager import load_settings
 from .excel_import_dialog import ExcelImportDialog
 from managers import excel_import_manager
+from qt_material_icons import MaterialIcon
 
 
 class ContentView(QWidget):
@@ -57,14 +58,20 @@ class ContentView(QWidget):
         self.doc_selector = QComboBox()
         self.doc_selector.setMinimumWidth(300)
 
-        self.import_button = QPushButton("📤 Import")
+        self.import_button = QPushButton()
+        import_icon = MaterialIcon("upload")
+        self.import_button.setIcon(import_icon)
         self.import_button.setToolTip("Import Document (.txt, .docx, .xlsx)")
 
-        self.save_button = QPushButton("💾")
+        self.save_button = QPushButton()
+        save_icon = MaterialIcon("save")
+        self.save_button.setIcon(save_icon)
         self.save_button.setToolTip("Save Changes")
         self.save_button.setFixedSize(28, 28)
         self.save_button.setEnabled(False)
-        delete_button = QPushButton("🗑️")
+        delete_button = QPushButton()
+        delete_icon = MaterialIcon("delete")
+        delete_button.setIcon(delete_icon)
         delete_button.setToolTip("Delete Current Document")
         delete_button.setFixedSize(28, 28)
 
@@ -76,10 +83,9 @@ class ContentView(QWidget):
         overlay_layout = QVBoxLayout(self.drop_overlay)
         overlay_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
         overlay_layout.setSpacing(10)
-        icon_label = QLabel("📤")
-        icon_font = QFont()
-        icon_font.setPointSize(48)
-        icon_label.setFont(icon_font)
+        icon_label = QLabel()
+        upload_icon = MaterialIcon("upload")
+        icon_label.setPixmap(upload_icon.pixmap(48, 48))
         icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         text_label = QLabel("Drop document file(s) here\n(.txt, .docx, .xlsx)")

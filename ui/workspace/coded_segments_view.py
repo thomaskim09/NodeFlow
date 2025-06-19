@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QKeyEvent
 import database
+from qt_material_icons import MaterialIcon
 
 
 class DeletableTreeWidget(QTreeWidget):
@@ -67,7 +68,16 @@ class CodedSegmentsView(QWidget):
         )
 
         self.search_input = QLineEdit()
-        self.search_input.setPlaceholderText("Filter segments...")
+        search_icon = MaterialIcon("search")
+        search_icon_label = QLabel()
+        search_icon_label.setPixmap(search_icon.pixmap(16, 16))
+        search_layout = QHBoxLayout()
+        search_layout.setContentsMargins(0, 0, 0, 0)
+        search_layout.setSpacing(4)
+        search_layout.addWidget(search_icon_label)
+        search_layout.addWidget(self.search_input)
+        search_container = QWidget()
+        search_container.setLayout(search_layout)
 
         self.search_scope_combo = QComboBox()
         self.search_scope_combo.setToolTip("Filter segments by the selected field")
@@ -75,7 +85,7 @@ class CodedSegmentsView(QWidget):
         controls_layout.addWidget(header_label)
         controls_layout.addWidget(self.scope_combo)
         controls_layout.addStretch()
-        controls_layout.addWidget(self.search_input)
+        controls_layout.addWidget(search_container)
         controls_layout.addWidget(self.search_scope_combo)
         main_layout.addLayout(controls_layout)
 
@@ -140,7 +150,9 @@ class CodedSegmentsView(QWidget):
             segment_id = current.data(0, 1)
             preview = current.text(0)
 
-            delete_button = QPushButton("🗑️")
+            delete_button = QPushButton()
+            delete_icon = MaterialIcon("delete")
+            delete_button.setIcon(delete_icon)
             delete_button.setObjectName("codedSegmentDeleteButton")
             delete_button.setFixedSize(20, 20)
             delete_button.setToolTip("Delete this coded segment (Delete)")

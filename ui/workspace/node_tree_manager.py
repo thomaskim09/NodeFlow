@@ -21,6 +21,7 @@ from managers.export_manager import (
     export_node_family_to_excel_multi_sheet,
 )
 import database
+from qt_material_icons import MaterialIcon
 
 PRESET_COLORS = [
     "#FFB3BA",
@@ -108,31 +109,41 @@ class NodeItemWidget(QWidget):
         stats_label = QLabel(stats_text)
         stats_label.setStyleSheet("color: #888;")
 
-        self.export_button = QPushButton("↓")
+        self.export_button = QPushButton()
+        export_icon = MaterialIcon("download")
+        self.export_button.setIcon(export_icon)
         self.export_button.setFixedSize(24, 24)
         self.export_button.setToolTip("Export this node and its children")
         self.export_button.clicked.connect(self.on_export)
         self.export_button.setVisible(False)
 
-        self.filter_button = QPushButton("▼")
+        self.filter_button = QPushButton()
+        filter_icon = MaterialIcon("filter_list")
+        self.filter_button.setIcon(filter_icon)
         self.filter_button.setFixedSize(24, 24)
         self.filter_button.setToolTip("Filter by this node only")
         self.filter_button.clicked.connect(self.on_filter)
         self.filter_button.setVisible(False)
 
-        self.add_button = QPushButton("＋")
+        self.add_button = QPushButton()
+        add_icon = MaterialIcon("add")
+        self.add_button.setIcon(add_icon)
         self.add_button.setFixedSize(24, 24)
         self.add_button.setToolTip("Add a child node")
         self.add_button.clicked.connect(self.on_add_child)
         self.add_button.setVisible(False)
 
-        self.edit_button = QPushButton("✎")
+        self.edit_button = QPushButton()
+        edit_icon = MaterialIcon("edit")
+        self.edit_button.setIcon(edit_icon)
         self.edit_button.setFixedSize(24, 24)
         self.edit_button.setToolTip("Rename node (F2)")
         self.edit_button.clicked.connect(self.on_rename)
         self.edit_button.setVisible(False)
 
-        self.delete_button = QPushButton("🗑")
+        self.delete_button = QPushButton()
+        delete_icon = MaterialIcon("delete")
+        self.delete_button.setIcon(delete_icon)
         self.delete_button.setFixedSize(24, 24)
         self.delete_button.setToolTip("Delete node and its children (Delete)")
         self.delete_button.clicked.connect(self.on_delete)
@@ -204,12 +215,17 @@ class NodeTreeManager(QWidget):
         font = header_label.font()
         font.setBold(True)
         header_label.setFont(font)
-        add_root_button = QPushButton("＋ Add Root Node")
-        add_root_button.clicked.connect(lambda: self.add_node())
-        clear_filter_button = QPushButton("▼ Show All")
-        clear_filter_button.setToolTip(
-            "Clear the current node filter in the Coded Segments view"
-        )
+        add_root_button = QPushButton()
+        add_root_icon = MaterialIcon("add")
+        add_root_button.setIcon(add_root_icon)
+        add_root_button.setText("Add Root Node")
+        add_root_button.setToolTip("Add a new root node")
+        add_root_button.clicked.connect(self.add_root_node)
+        clear_filter_button = QPushButton()
+        clear_filter_icon = MaterialIcon("filter_list")
+        clear_filter_button.setIcon(clear_filter_icon)
+        clear_filter_button.setText("Show All")
+        clear_filter_button.setToolTip("Show all nodes")
         clear_filter_button.clicked.connect(self.clear_all_filters)
         self.scope_combo = QComboBox()
         self.scope_combo.addItems(["Current Document", "Project Total"])
@@ -475,3 +491,33 @@ class NodeTreeManager(QWidget):
             export_node_family_to_excel(self.project_id, node_id, self)
         elif clicked_button == multi_sheet_button:
             export_node_family_to_excel_multi_sheet(self.project_id, node_id, self)
+
+    def add_root_node(self):
+        name, ok = QInputDialog.getText(
+            self, "Add Root Node", "Enter name for the new root node:"
+        )
+        if ok and name.strip():
+            existing_colors = {node["color"] for node in self.nodes_map.values()}
+            new_color = PRESET_COLORS[0]
+            for color in PRESET_COLORS:
+                if color not in existing_colors:
+                    new_color = color
+                    break
+            try:
+                pid = int(self.project_id)
+                database.add_node(pid, name.strip(), None, new_color)
+                self.refresh_tree_and_emit_update(node_id_to_reselect=None)
+            except (ValueError, TypeError) as e:
+                QMessageBox.critical(
+                    self,
+                    "Error",
+                    (
+                        str(e)
+                        if isinstance(e, ValueError)
+                        else f"Invalid Project ID: {self.project_id}"
+                    ),
+                )
+            except Exception as e:
+                QMessageBox.critical(
+                    self, "Error", f"Failed to add root node: {str(e)}"
+                )

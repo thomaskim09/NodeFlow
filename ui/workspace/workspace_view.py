@@ -26,6 +26,7 @@ from ui.dashboard.dashboard_view import DashboardView
 from managers.export_manager import export_to_word, export_to_json, export_to_excel
 from managers.theme_manager import save_settings, load_settings
 import database
+from qt_material_icons import MaterialIcon
 
 
 class SettingsDialog(QDialog):
@@ -92,7 +93,10 @@ class WorkspaceView(QWidget):
         self.node_tree_manager = NodeTreeManager(self.project_id)
         self.left_pane_layout.addWidget(self.participant_manager)
         self.left_pane_layout.addWidget(self.node_tree_manager)
-        export_button = QPushButton("Export All Coded Data")
+        export_icon = MaterialIcon("download")
+        export_button = QPushButton()
+        export_button.setIcon(export_icon)
+        export_button.setText("Export All Coded Data")
         export_button.setToolTip("Export all coded data for the project")
         export_menu = QMenu(self)
         self.action_export_json = export_menu.addAction("Export as JSON (.json)")

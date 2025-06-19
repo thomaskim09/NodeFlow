@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont, QPixmap, QKeyEvent
+from qt_material_icons import MaterialIcon
 
 import database
 
@@ -64,23 +65,25 @@ class ProjectItemWidget(QWidget):
         name_label.setFont(font)
 
         # Edit button with pencil icon
-        self.edit_button = QPushButton("✎")
+        self.edit_button = QPushButton()
+        pencil_icon = MaterialIcon("edit")
+        self.edit_button.setIcon(pencil_icon)
         font = self.edit_button.font()
         font.setPointSize(12)
         self.edit_button.setFont(font)
         self.edit_button.setFixedSize(24, 24)
-        self.edit_button.setToolTip("Rename Project")
         self.edit_button.setToolTip("Rename Project (F2)")
         self.edit_button.clicked.connect(self.on_rename_clicked)
         self.edit_button.setVisible(False)
 
-        # Delete button with icon
-        self.delete_button = QPushButton("🗑")
+        # Delete button with trash icon
+        self.delete_button = QPushButton()
+        trash_icon = MaterialIcon("delete")
+        self.delete_button.setIcon(trash_icon)
         font = self.delete_button.font()
         font.setPointSize(12)
         self.delete_button.setFont(font)
         self.delete_button.setFixedSize(24, 24)
-        self.delete_button.setToolTip("Delete Project")
         self.delete_button.setToolTip("Delete Project (Delete)")
         self.delete_button.clicked.connect(self.on_delete_clicked)
         self.delete_button.setVisible(False)
