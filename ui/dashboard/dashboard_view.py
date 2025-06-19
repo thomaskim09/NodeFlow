@@ -164,16 +164,18 @@ class DashboardView(QDialog):
         self.tabs.addTab(self.wordcloud_widget, "Word Cloud")
 
         self._populate_node_scope_combo()
-        self.doc_scope_combo.currentIndexChanged.connect(self.load_dashboard_data)
-        self.part_scope_combo.currentIndexChanged.connect(self.load_dashboard_data)
-        self.node_scope_combo.currentIndexChanged.connect(self.load_dashboard_data)
+        self.doc_scope_combo.currentIndexChanged.connect(self.reload_active_tab)
+        self.part_scope_combo.currentIndexChanged.connect(self.reload_active_tab)
+        self.node_scope_combo.currentIndexChanged.connect(self.reload_active_tab)
+
+        self.tabs.currentChanged.connect(self.on_tab_changed)
 
         if self.initial_document_id:
             index = self.doc_scope_combo.findData(self.initial_document_id)
             if index != -1:
                 self.doc_scope_combo.setCurrentIndex(index)
         else:
-            self.load_dashboard_data()
+            self.reload_active_tab()
 
     def _calculate_participant_stats(self, segments):
         participant_stats = {}
@@ -210,7 +212,7 @@ class DashboardView(QDialog):
             for col in [1, 2, 3]:
                 item.setTextAlignment(col, Qt.AlignmentFlag.AlignRight)
 
-    def load_dashboard_data(self):
+    def reload_active_tab(self):
         doc_id = self.doc_scope_combo.currentData()
         part_id = self.part_scope_combo.currentData()
         node_id = self.node_scope_combo.currentData()
@@ -219,13 +221,187 @@ class DashboardView(QDialog):
         self._set_loading_state(True)
         try:
             results = self._get_data_from_db(doc_id, part_id, node_id, None)
-            self._update_ui_with_results(results)
+            tab_index = self.tabs.currentIndex()
+            # Always update stat labels for all tabs
+            self._update_stat_labels_from_results(results)
+            # 0: Breakdown, 1: Charts, 2: Cross-Tabulation, 3: Code Co-occurrence, 4: Word Cloud
+            if tab_index == 0:
+                self._update_breakdown_tab(results)
+            elif tab_index == 1:
+                self._update_charts_tab(results)
+            elif tab_index == 2:
+                self._update_crosstab_tab(results)
+            elif tab_index == 3:
+                self._update_cooccurrence_tab(results)
+            elif tab_index == 4:
+                self._update_wordcloud_tab(results)
         except Exception as e:
             import traceback
 
             traceback.print_exc()
             self._on_loading_error((type(e), e, e.__traceback__))
         self._set_loading_state(False)
+
+    def _update_stat_labels_from_results(self, results):
+        nodes_map = results.get("nodes_map", {})
+        aggregated_stats = results.get("aggregated_stats", {})
+        if "node_id" in results:
+            node_id = results["node_id"]
+            parent_stats = aggregated_stats.get(
+                node_id, {"word_count": 0, "segment_count": 0}
+            )
+            parent_total_words = parent_stats.get("word_count", 0)
+            parent_segment_count = parent_stats.get("segment_count", 0)
+            self._update_stat_label(
+                self.total_words_label,
+                f"Words in '{nodes_map[node_id]['name']}'",
+                f"{parent_total_words:,}",
+            )
+            self._update_stat_label(
+                self.coded_segments_label,
+                "Segments in Node",
+                f"{parent_segment_count:,}",
+            )
+            self._update_stat_label(
+                self.coded_words_label, "Coded Words", f"{parent_total_words:,}"
+            )
+        else:
+            total_words = results.get("total_words", 0)
+            segments = results.get("segments", [])
+            coded_words = results.get("coded_words", 0)
+            coded_percentage = (
+                (coded_words / total_words * 100) if total_words > 0 else 0
+            )
+            percent_html = f"{coded_words:,} <span style='font-size: 11pt; font-weight: normal;'>({coded_percentage:.1f}%)</span>"
+            self._update_stat_label(
+                self.total_words_label, "Scope Words", f"{total_words:,}"
+            )
+            self._update_stat_label(
+                self.coded_segments_label, "Coded Segments", f"{len(segments):,}"
+            )
+            self._update_stat_label(self.coded_words_label, "Coded Words", percent_html)
+
+    def _update_breakdown_tab(self, results):
+        nodes_map = results.get("nodes_map", {})
+        nodes_by_parent = results.get("nodes_by_parent", {})
+        aggregated_stats = results.get("aggregated_stats", {})
+        if "node_id" in results:
+            node_id = results["node_id"]
+            parent_stats = aggregated_stats.get(
+                node_id, {"word_count": 0, "segment_count": 0}
+            )
+            self.participant_tree_widget.clear()
+            self.tree_widget.clear()
+            direct_children_nodes = nodes_by_parent.get(node_id, [])
+            if direct_children_nodes:
+                for child_node in direct_children_nodes:
+                    child_stats = aggregated_stats.get(
+                        child_node["id"], {"word_count": 0, "segment_count": 0}
+                    )
+                    wc, sc = child_stats.get("word_count", 0), child_stats.get(
+                        "segment_count", 0
+                    )
+                    p = (
+                        (wc / parent_stats.get("word_count", 1) * 100)
+                        if parent_stats.get("word_count", 1) > 0
+                        else 0
+                    )
+                    self._populate_tree_item(self.tree_widget, child_node, wc, sc, p)
+            else:
+                wc, sc = parent_stats.get("word_count", 0), parent_stats.get(
+                    "segment_count", 0
+                )
+                self._populate_tree_item(
+                    self.tree_widget, nodes_map[node_id], wc, sc, 100.0
+                )
+            self.tree_widget.expandAll()
+        else:
+            total_words = results.get("total_words", 0)
+            participant_stats = results.get("participant_stats", {})
+            self._populate_participant_tree(participant_stats, total_words)
+            self.tree_widget.clear()
+            self._populate_tree_widget(
+                nodes_by_parent, nodes_map, aggregated_stats, total_words
+            )
+            self.tree_widget.expandAll()
+
+    def _update_charts_tab(self, results):
+        nodes_map = results.get("nodes_map", {})
+        nodes_by_parent = results.get("nodes_by_parent", {})
+        aggregated_stats = results.get("aggregated_stats", {})
+        if "node_id" in results:
+            node_id = results["node_id"]
+            parent_stats = aggregated_stats.get(
+                node_id, {"word_count": 0, "segment_count": 0}
+            )
+            parent_total_words = parent_stats.get("word_count", 0)
+            direct_children_nodes = nodes_by_parent.get(node_id, [])
+            if direct_children_nodes:
+                children_data_for_charts = []
+                for child_node in direct_children_nodes:
+                    child_stats = aggregated_stats.get(
+                        child_node["id"], {"word_count": 0, "segment_count": 0}
+                    )
+                    wc, sc = child_stats.get("word_count", 0), child_stats.get(
+                        "segment_count", 0
+                    )
+                    p = (wc / parent_total_words * 100) if parent_total_words > 0 else 0
+                    children_data_for_charts.append((child_node["name"], p, wc, sc))
+                self.charts_widget.update_charts(children_data_for_charts)
+            else:
+                wc, sc = parent_total_words, parent_stats.get("segment_count", 0)
+                leaf_node_data = [(nodes_map[node_id]["name"], 100.0, wc, sc)]
+                self.charts_widget.update_charts(leaf_node_data)
+        else:
+            total_words = results.get("total_words", 0)
+            nodes_by_parent = results.get("nodes_by_parent", {})
+            nodes_map = results.get("nodes_map", {})
+            aggregated_stats = results.get("aggregated_stats", {})
+            self.charts_widget.update_charts(
+                self._populate_tree_widget(
+                    nodes_by_parent, nodes_map, aggregated_stats, total_words
+                )
+            )
+
+    def _update_crosstab_tab(self, results):
+        nodes = results.get("nodes", [])
+        if "node_id" in results:
+            node_id = results["node_id"]
+            all_project_segments = results.get("all_project_segments", [])
+            descendants = database.get_node_descendants(node_id)
+            family_node_ids = [node_id] + descendants
+            family_segments = [
+                s for s in all_project_segments if s["node_id"] in family_node_ids
+            ]
+            self.crosstab_widget.update_crosstab(family_segments, nodes)
+        else:
+            segments = results.get("segments", [])
+            self.crosstab_widget.update_crosstab(segments, nodes)
+
+    def _update_cooccurrence_tab(self, results):
+        if "node_id" in results:
+            # Not available for node-specific view
+            self.co_occurrence_widget.clear_views()
+        else:
+            co_occurrence_matrix = results.get("co_occurrence_matrix", {})
+            co_occurrence_headers = results.get("co_occurrence_headers", [])
+            self.co_occurrence_widget.update_data(
+                co_occurrence_matrix, co_occurrence_headers
+            )
+
+    def _update_wordcloud_tab(self, results):
+        if "node_id" in results:
+            node_id = results["node_id"]
+            all_project_segments = results.get("all_project_segments", [])
+            descendants = database.get_node_descendants(node_id)
+            family_node_ids = [node_id] + descendants
+            family_segments = [
+                s for s in all_project_segments if s["node_id"] in family_node_ids
+            ]
+            self.wordcloud_widget.update_wordcloud(family_segments)
+        else:
+            segments = results.get("segments", [])
+            self.wordcloud_widget.update_wordcloud(segments)
 
     def _set_loading_state(self, is_loading):
         if is_loading:
@@ -293,106 +469,6 @@ class DashboardView(QDialog):
             results["co_occurrence_matrix"] = co_occurrence_matrix
             results["co_occurrence_headers"] = co_occurrence_headers
         return results
-
-    def _update_ui_with_results(self, results):
-        nodes = results.get("nodes", [])
-        nodes_map = results.get("nodes_map", {})
-        nodes_by_parent = results.get("nodes_by_parent", {})
-        aggregated_stats = results.get("aggregated_stats", {})
-        if "node_id" in results:
-            node_id = results["node_id"]
-            all_project_segments = results.get("all_project_segments", [])
-
-            parent_stats = aggregated_stats.get(
-                node_id, {"word_count": 0, "segment_count": 0}
-            )
-            parent_total_words = parent_stats.get("word_count", 0)
-            parent_segment_count = parent_stats.get("segment_count", 0)
-
-            self._update_stat_label(
-                self.total_words_label,
-                f"Words in '{nodes_map[node_id]['name']}'",
-                f"{parent_total_words:,}",
-            )
-            self._update_stat_label(
-                self.coded_segments_label,
-                "Segments in Node",
-                f"{parent_segment_count:,}",
-            )
-            self._update_stat_label(
-                self.coded_words_label, "Coded Words", f"{parent_total_words:,}"
-            )
-
-            self.participant_tree_widget.clear()
-            self.co_occurrence_widget.clear_views()
-            self.tree_widget.clear()
-            direct_children_nodes = nodes_by_parent.get(node_id, [])
-
-            if direct_children_nodes:
-                children_data_for_charts = []
-                for child_node in direct_children_nodes:
-                    child_stats = aggregated_stats.get(
-                        child_node["id"], {"word_count": 0, "segment_count": 0}
-                    )
-                    wc, sc = child_stats.get("word_count", 0), child_stats.get(
-                        "segment_count", 0
-                    )
-                    p = (wc / parent_total_words * 100) if parent_total_words > 0 else 0
-                    children_data_for_charts.append((child_node["name"], p, wc, sc))
-                    self._populate_tree_item(self.tree_widget, child_node, wc, sc, p)
-                self.charts_widget.update_charts(children_data_for_charts)
-            else:
-                wc, sc = parent_total_words, parent_segment_count
-                leaf_node_data = [(nodes_map[node_id]["name"], 100.0, wc, sc)]
-                self._populate_tree_item(
-                    self.tree_widget, nodes_map[node_id], wc, sc, 100.0
-                )
-                self.charts_widget.update_charts(leaf_node_data)
-
-            self.tree_widget.expandAll()
-
-            descendants = database.get_node_descendants(node_id)
-            family_node_ids = [node_id] + descendants
-            family_segments = [
-                s for s in all_project_segments if s["node_id"] in family_node_ids
-            ]
-
-            self.crosstab_widget.update_crosstab(family_segments, nodes)
-            self.wordcloud_widget.update_wordcloud(family_segments)
-        else:
-            total_words = results.get("total_words", 0)
-            segments = results.get("segments", [])
-            coded_words = results.get("coded_words", 0)
-            participant_stats = results.get("participant_stats", {})
-            self._populate_participant_tree(participant_stats, total_words)
-
-            coded_percentage = (
-                (coded_words / total_words * 100) if total_words > 0 else 0
-            )
-            percent_html = f"{coded_words:,} <span style='font-size: 11pt; font-weight: normal;'>({coded_percentage:.1f}%)</span>"
-
-            self._update_stat_label(
-                self.total_words_label, "Scope Words", f"{total_words:,}"
-            )
-            self._update_stat_label(
-                self.coded_segments_label, "Coded Segments", f"{len(segments):,}"
-            )
-            self._update_stat_label(self.coded_words_label, "Coded Words", percent_html)
-
-            self.tree_widget.clear()
-            root_nodes_data = self._populate_tree_widget(
-                nodes_by_parent, nodes_map, aggregated_stats, total_words
-            )
-            self.tree_widget.expandAll()
-
-            self.charts_widget.update_charts(root_nodes_data)
-            self.crosstab_widget.update_crosstab(segments, nodes)
-            co_occurrence_matrix = results.get("co_occurrence_matrix", {})
-            co_occurrence_headers = results.get("co_occurrence_headers", [])
-            self.co_occurrence_widget.update_data(
-                co_occurrence_matrix, co_occurrence_headers
-            )
-            self.wordcloud_widget.update_wordcloud(segments)
 
     def _populate_tree_item(
         self, parent_item, node, word_count, segment_count, percentage
@@ -677,6 +753,9 @@ class DashboardView(QDialog):
 
         recurse(self.tree_widget.invisibleRootItem(), None)
         return root_nodes_data
+
+    def on_tab_changed(self, index):
+        self.reload_active_tab()
 
     def closeEvent(self, event):
         if hasattr(self, "charts_widget"):
