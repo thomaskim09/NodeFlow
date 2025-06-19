@@ -1,4 +1,4 @@
-<img src="icon.png" width="20%" alt="Description of image">
+<img src="resource/icon.png" width="20%" alt="Description of image">
 
 # NodeFlow - Qualitative Analysis Tool 
 
