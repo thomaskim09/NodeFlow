@@ -1,5 +1,3 @@
-# In file: database/__init__.py
-
 # Core
 from .db_core import get_db_connection, create_tables  # noqa: F401
 

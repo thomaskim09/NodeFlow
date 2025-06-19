@@ -1,5 +1,3 @@
-# In file: ui/dashboard/wordcloud_widget.py
-
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel, QApplication
 from PySide6.QtGui import QPixmap, QImage
 from PySide6.QtCore import Qt, QObject, Signal, QRunnable, QThreadPool

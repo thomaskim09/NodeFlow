@@ -580,6 +580,35 @@ def get_light_theme_stylesheet():
     """
 
 
+def get_default_theme_stylesheet():
+    """
+    Returns the QSS for a more obvious highlight color in the default theme.
+    This stylesheet only overrides selection colors for QListWidget and QTreeWidget.
+    """
+    return """
+        QListWidget::item:selected {
+            background-color: #4A90D9; /* A more obvious blue */
+            color: white; /* Ensure text is readable */
+            border: none; /* Maintain no border */
+        }
+        QTreeWidget::item:selected {
+            background-color: #4A90D9; /* A more obvious blue */
+            color: white; /* Ensure text is readable */
+            border: none; /* Maintain no border */
+        }
+        /* Ensure buttons/widgets within selected items also show the highlight */
+        QListWidget::item:selected QWidget, QTreeWidget::item:selected QWidget {
+            background-color: transparent;
+        }
+        QListWidget::item:selected QPushButton, QTreeWidget::item:selected QPushButton {
+            background-color: transparent;
+        }
+        QListWidget::item:selected QPushButton:hover, QTreeWidget::item:selected QPushButton:hover {
+            background-color: rgba(255, 255, 255, 0.2); /* Slight white overlay on hover for selected buttons */
+        }
+    """
+
+
 def load_settings():
     """Loads settings from the JSON file."""
     if os.path.exists(SETTINGS_FILE):
@@ -609,4 +638,6 @@ def apply_theme(app):
     elif theme_setting == "Light":
         app.setStyleSheet(get_light_theme_stylesheet())
     elif theme_setting == "Default":
-        app.setStyleSheet("")
+        app.setStyleSheet(
+            get_default_theme_stylesheet()
+        )  # Apply specific stylesheet for Default

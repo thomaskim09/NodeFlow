@@ -1,5 +1,3 @@
-# In file: ui/workspace/coded_segments_view.py
-
 from PySide6.QtWidgets import (
     QWidget,
     QVBoxLayout,

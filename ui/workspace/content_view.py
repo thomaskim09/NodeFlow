@@ -38,6 +38,7 @@ class ContentView(QWidget):
     bulk_documents_added = Signal()
     segment_clicked = Signal(int)
     text_selection_changed = Signal(bool)
+    node_clicked_in_content = Signal(int)
 
     def __init__(self, project_id):
         super().__init__()
@@ -437,8 +438,6 @@ class ContentView(QWidget):
         finally:
             QApplication.restoreOverrideCursor()
 
-    # In ui/workspace/content_view.py
-
     def apply_all_highlights(self):
         self.text_edit.blockSignals(True)
 
@@ -501,6 +500,7 @@ class ContentView(QWidget):
                 break
         if found_segment:
             self.segment_clicked.emit(found_segment["id"])
+            self.node_clicked_in_content.emit(found_segment["node_id"])
 
 
 class AssignParticipantDialog(QDialog):

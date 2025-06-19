@@ -1,5 +1,3 @@
-# In file: ui/dashboard/dashboard_view.py
-
 import csv
 from PySide6.QtWidgets import (
     QDialog,

@@ -124,6 +124,9 @@ class WorkspaceView(QWidget):
         self.center_pane.document_deleted.connect(self.on_document_deleted)
         self.center_pane.bulk_documents_added.connect(self.on_document_deleted)
         self.center_pane.segment_clicked.connect(self.bottom_pane.select_segment_by_id)
+        self.center_pane.node_clicked_in_content.connect(
+            self.node_tree_manager.select_node_by_id
+        )
         self.bottom_pane.segment_deleted.connect(self.on_segment_deleted)
         self.bottom_pane.segment_activated.connect(self.on_segment_navigation_requested)
 
@@ -215,8 +218,6 @@ class WorkspaceView(QWidget):
             self.node_tree_manager.set_current_document_id(doc_id)
         finally:
             QApplication.restoreOverrideCursor()
-
-    # In ui/workspace/workspace_view.py
 
     def code_selection(self, node_id):
         # Get the text edit widget for easier access

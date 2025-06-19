@@ -1,5 +1,3 @@
-# In file: database/nodes_db.py
-
 from .db_core import get_db_connection
 
 

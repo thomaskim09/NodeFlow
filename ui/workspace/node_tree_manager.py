@@ -4,6 +4,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QTreeWidget,
     QTreeWidgetItem,
+    QTreeWidgetItemIterator,
     QMessageBox,
     QInputDialog,
     QLabel,
@@ -105,9 +106,9 @@ class NodeItemWidget(QWidget):
         self.set_button_color(node_color)
         self.color_button.clicked.connect(self.on_color_change)
 
-        name_label = QLabel(name_text)
-        stats_label = QLabel(stats_text)
-        stats_label.setStyleSheet("color: #888;")
+        self.name_label = QLabel(name_text)
+        self.stats_label = QLabel(stats_text)
+        self.stats_label.setStyleSheet("color: #888;")
 
         self.export_button = QPushButton()
         export_icon = MaterialIcon("download")
@@ -150,9 +151,9 @@ class NodeItemWidget(QWidget):
         self.delete_button.setVisible(False)
 
         layout.addWidget(self.color_button)
-        layout.addWidget(name_label)
+        layout.addWidget(self.name_label)
         layout.addStretch()
-        layout.addWidget(stats_label)
+        layout.addWidget(self.stats_label)
         layout.addWidget(self.export_button)
         layout.addWidget(self.filter_button)
         layout.addWidget(self.add_button)
@@ -170,6 +171,12 @@ class NodeItemWidget(QWidget):
         self.add_button.setVisible(visible)
         self.edit_button.setVisible(visible)
         self.delete_button.setVisible(visible)
+
+    def set_selected_style(self, is_selected: bool):
+        if is_selected:
+            self.stats_label.setStyleSheet("color: white;")
+        else:
+            self.stats_label.setStyleSheet("color: #888;")
 
     def on_color_change(self):
         current_color = self.color_button.palette().button().color()
@@ -370,15 +377,21 @@ class NodeTreeManager(QWidget):
         self.tree_widget.clearSelection()
         self.filter_by_node_family_signal.emit([])
 
-    def on_selection_changed(self, current_item, previous_item):
+    def on_selection_changed(
+        self, current_item: QTreeWidgetItem, previous_item: QTreeWidgetItem
+    ):
         if previous_item:
             widget = self.tree_widget.itemWidget(previous_item, 0)
             if widget:
                 widget.set_icons_visible(False)
+                widget.set_selected_style(False)
+
         if current_item:
             widget = self.tree_widget.itemWidget(current_item, 0)
             if widget:
                 widget.set_icons_visible(True)
+                widget.set_selected_style(True)
+
             node_id = current_item.data(0, 1)
             descendants = self.get_all_descendant_ids(node_id)
             self.filter_by_node_family_signal.emit([node_id] + descendants)
@@ -521,3 +534,29 @@ class NodeTreeManager(QWidget):
                 QMessageBox.critical(
                     self, "Error", f"Failed to add root node: {str(e)}"
                 )
+
+    def select_node_by_id(self, node_id: int):
+        """
+        Navigates the tree widget to select and highlight the node with the given ID.
+        """
+        self.tree_widget.blockSignals(True)
+
+        it = QTreeWidgetItemIterator(self.tree_widget)
+        found_item = None
+        while it.value():
+            item = it.value()
+            if item.data(0, 1) == node_id:
+                found_item = item
+                break
+            it += 1
+
+        previous_item = self.tree_widget.currentItem()
+
+        if found_item:
+            self.tree_widget.setCurrentItem(found_item)
+            self.tree_widget.scrollToItem(
+                found_item, QAbstractItemView.ScrollHint.PositionAtCenter
+            )
+            self.on_selection_changed(found_item, previous_item)
+
+        self.tree_widget.blockSignals(False)
