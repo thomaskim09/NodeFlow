@@ -141,6 +141,7 @@ class CodedSegmentsView(QWidget):
             preview = current.text(0)
 
             delete_button = QPushButton("🗑️")
+            delete_button.setObjectName("codedSegmentDeleteButton")
             delete_button.setFixedSize(20, 20)
             delete_button.setToolTip("Delete this coded segment (Delete)")
             delete_button.clicked.connect(

@@ -98,6 +98,7 @@ class NodeItemWidget(QWidget):
         layout.setSpacing(5)
 
         self.color_button = QPushButton()
+        self.color_button.setObjectName("nodeColorButton")
         self.color_button.setFixedSize(18, 18)
         self.color_button.setToolTip("Click to change node color")
         self.set_button_color(node_color)

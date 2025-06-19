@@ -39,8 +39,8 @@ class SettingsDialog(QDialog):
         layout = QVBoxLayout(self)
         form_layout = QFormLayout()
         self.theme_combo = QComboBox()
-        self.theme_combo.addItems(["Light", "Dark"])
-        self.theme_combo.setCurrentText(self.settings.get("theme", "Light"))
+        self.theme_combo.addItems(["Default", "Light", "Dark"])
+        self.theme_combo.setCurrentText(self.settings.get("theme", "Default"))
         form_layout.addRow(QLabel("Application Theme:"), self.theme_combo)
         layout.addLayout(form_layout)
         button_box = QDialogButtonBox(
