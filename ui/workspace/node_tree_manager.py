@@ -600,3 +600,26 @@ class NodeTreeManager(QWidget):
             self.on_selection_changed(found_item, previous_item)
 
         self.tree_widget.blockSignals(False)
+
+    def highlight_node_by_id(self, node_id: int):
+        """
+        Highlights (selects and scrolls to) the node with the given ID in the tree widget,
+        but does NOT trigger filtering or emit any signals. Used for visual highlight only.
+        """
+        self.tree_widget.blockSignals(True)
+
+        it = QTreeWidgetItemIterator(self.tree_widget)
+        found_item = None
+        while it.value():
+            item = it.value()
+            if item.data(0, 1) == node_id:
+                found_item = item
+                break
+            it += 1
+
+        if found_item:
+            self.tree_widget.setCurrentItem(found_item)
+            self.tree_widget.scrollToItem(
+                found_item, QAbstractItemView.ScrollHint.PositionAtCenter
+            )
+        self.tree_widget.blockSignals(False)

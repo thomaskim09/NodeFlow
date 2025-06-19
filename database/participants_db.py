@@ -1,5 +1,6 @@
 # Create this file at: database/participants_db.py
 
+from contextlib import closing
 from .db_core import get_db_connection
 
 
@@ -20,6 +21,14 @@ def get_participants_for_project(project_id):
     ).fetchall()
     conn.close()
     return participants
+
+
+def get_participant_for_document(document_id: int) -> int | None:
+    query = "SELECT participant_id FROM participant_documents WHERE document_id = ?"
+    with closing(get_db_connection()) as conn:
+        with closing(conn.cursor()) as cursor:
+            result = cursor.execute(query, (document_id,)).fetchone()
+            return result[0] if result else None
 
 
 def update_participant(participant_id, name, details):

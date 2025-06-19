@@ -13,6 +13,7 @@ from .projects_db import (
 from .participants_db import (
     add_participant,
     get_participants_for_project,
+    get_participant_for_document,
     update_participant,
     delete_participant,
 )  # noqa: F401
@@ -26,6 +27,7 @@ from .documents_db import (
     delete_document,
     update_document_text_only,
     get_project_word_count,
+    check_document_exists,
 )  # noqa: F401
 
 # Nodes

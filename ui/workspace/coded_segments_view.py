@@ -46,6 +46,7 @@ class CodedSegmentsView(QWidget):
         super().__init__()
         self.project_id = project_id
         self.current_document_id = None
+        self.segments = []
         self.all_segments = []
         self._last_active_node_filter = None
 
@@ -357,3 +358,24 @@ class CodedSegmentsView(QWidget):
             self.populate_tree(node_filtered_segments)
 
         self.tree_widget.currentItemChanged.connect(self.on_selection_changed)
+
+    def filter_segments_by_participant(self, participant_id: int):
+        if not self.segments:
+            return
+
+        for i in range(self.list_widget.count()):
+            item = self.list_widget.item(i)
+            widget = self.list_widget.itemWidget(item)
+
+            if not widget:
+                continue
+
+            # If participant_id is 0, clear filter and show all items
+            if participant_id == 0:
+                item.setHidden(False)
+            else:
+                # Hide item if it doesn't match the participant ID
+                is_coded_by_participant = (
+                    widget.segment["participant_id"] == participant_id
+                )
+                item.setHidden(not is_coded_by_participant)

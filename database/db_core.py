@@ -46,6 +46,17 @@ def create_tables():
         );
     """
     )
+
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS participant_documents (
+            document_id INTEGER PRIMARY KEY,
+            participant_id INTEGER NOT NULL,
+            FOREIGN KEY (document_id) REFERENCES documents (id) ON DELETE CASCADE,
+            FOREIGN KEY (participant_id) REFERENCES participants (id) ON DELETE CASCADE
+        );
+        """
+    )
     # Documents Table
     cursor.execute(
         """

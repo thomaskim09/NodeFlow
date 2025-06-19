@@ -125,7 +125,7 @@ class WorkspaceView(QWidget):
         self.center_pane.bulk_documents_added.connect(self.on_document_deleted)
         self.center_pane.segment_clicked.connect(self.bottom_pane.select_segment_by_id)
         self.center_pane.node_clicked_in_content.connect(
-            self.node_tree_manager.select_node_by_id
+            self.node_tree_manager.highlight_node_by_id
         )
         self.bottom_pane.segment_deleted.connect(self.on_segment_deleted)
         self.bottom_pane.segment_activated.connect(self.on_segment_navigation_requested)
@@ -140,6 +140,10 @@ class WorkspaceView(QWidget):
         self.node_tree_manager.filter_by_single_node_signal.connect(
             self.bottom_pane.filter_by_single_node
         )
+        self.participant_manager.participant_selected.connect(
+            self.bottom_pane.filter_segments_by_participant
+        )
+        self.center_pane.segments_changed.connect(self.on_segments_changed)
 
         self.participant_manager.participant_updated.connect(self.refresh_all_views)
 
@@ -148,6 +152,11 @@ class WorkspaceView(QWidget):
             self.node_tree_manager.set_selection_mode
         )
         self.node_tree_manager.node_selected_for_coding.connect(self.code_selection)
+
+        # Allow external highlight of participant in listview
+        self.center_pane.participant_highlight_requested = (
+            self.participant_manager.highlight_participant_by_id
+        )
 
         # Initial Load
         self.center_pane.load_document_content()
@@ -216,8 +225,32 @@ class WorkspaceView(QWidget):
             self.bottom_pane.load_segments(doc_id)
             self.node_tree_manager.tree_widget.clearSelection()
             self.node_tree_manager.set_current_document_id(doc_id)
+            self.participant_manager.set_current_document_id(doc_id)
+
+            # Ensure participant list is up-to-date before selecting
+            self.participant_manager.load_participants()
+
+            # Add this logic to highlight the participant
+            participant_id = database.get_participant_for_document(doc_id)
+            if participant_id:
+                self.participant_manager.highlight_participant_by_id(participant_id)
+            else:
+                self.participant_manager.clear_selection()
+
         finally:
             QApplication.restoreOverrideCursor()
+
+    def on_segments_changed(self):
+        """
+        Called when segments are added or deleted.
+        Reloads all relevant views.
+        """
+        doc_id = self.center_pane.current_document_id
+        # Reloads the bottom pane (Coded Segments)
+        self.bottom_pane.load_segments(doc_id)
+        # Reload the stats in the Node Tree and Participant list
+        self.node_tree_manager.load_nodes()
+        self.participant_manager.load_participants()
 
     def code_selection(self, node_id):
         # Get the text edit widget for easier access
@@ -245,6 +278,7 @@ class WorkspaceView(QWidget):
         self.bottom_pane.reload_view()
         self.center_pane.apply_all_highlights()
         self.node_tree_manager.load_nodes()
+        self.participant_manager.load_participants()
 
         # Restore cursor and then immediately restore scrollbar to prevent scrolling
         new_cursor = text_edit.textCursor()

@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
     QApplication,
     QFrame,
     QStackedLayout,
+    QInputDialog,
 )
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import (
@@ -39,6 +40,8 @@ class ContentView(QWidget):
     segment_clicked = Signal(int)
     text_selection_changed = Signal(bool)
     node_clicked_in_content = Signal(int)
+    documents_changed = Signal()
+    segments_changed = Signal()
 
     def __init__(self, project_id):
         super().__init__()
@@ -237,36 +240,73 @@ class ContentView(QWidget):
             self.handle_file_import(path)
 
     def _process_text_document(self, file_path):
-        title = os.path.basename(file_path)
-        docs = database.get_documents_for_project(self.project_id)
-        existing_titles = {doc["title"] for doc in docs}
-        if title in existing_titles:
-            reply = QMessageBox.question(
-                self,
-                "Duplicate Document",
-                f"A document named '{title}' already exists in this project.\n\nDo you want to import it as a new copy?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.No,
-            )
-            if reply == QMessageBox.StandardButton.No:
-                return
-        participants = database.get_participants_for_project(self.project_id)
-        if not participants:
-            QMessageBox.warning(
-                self,
-                "No Participants",
-                "Please create at least one participant before importing documents.",
-            )
-            return
+        try:
+            # First, read the content of the document
+            content = ""
+            if file_path.lower().endswith(".docx"):
+                doc = docx.Document(file_path)
+                content = "\n\n".join([p.text for p in doc.paragraphs])
+            else:
+                with open(file_path, "r", encoding="utf-8") as f:
+                    content = f.read()
 
-        if len(participants) == 1:
-            self._import_and_add_document(participants[0]["id"], file_path)
-        else:
-            dialog = AssignParticipantDialog(participants, self)
-            if dialog.exec() == QDialog.DialogCode.Accepted:
-                participant_id = dialog.get_selected_participant_id()
-                if participant_id:
-                    self._import_and_add_document(participant_id, file_path)
+            title = os.path.basename(file_path)
+
+            # Now, check if a document with the same name AND content exists
+            if database.check_document_exists(self.project_id, title, content):
+                reply = QMessageBox.question(
+                    self,
+                    "Duplicate Document",
+                    f"The document '{title}' has been imported before.\n\nDo you want to add it as a new copy?",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                    QMessageBox.StandardButton.No,
+                )
+                if reply == QMessageBox.StandardButton.No:
+                    return  # Abort the import for this file
+
+            # --- The rest of the logic for assigning a participant ---
+            participants = database.get_participants_for_project(self.project_id)
+            if not participants:
+                # Prompt for participant name
+                name, ok = QInputDialog.getText(
+                    self,
+                    "Create Participant",
+                    "Enter a name for the first participant:",
+                )
+                if not ok or not name.strip():
+                    QMessageBox.warning(
+                        self,
+                        "No Participants",
+                        "You must create at least one participant to import documents.",
+                    )
+                    return
+                # Add participant and refresh list
+                database.add_participant(self.project_id, name.strip())
+                participants = database.get_participants_for_project(self.project_id)
+                if not participants:
+                    QMessageBox.critical(
+                        self,
+                        "Error",
+                        "Failed to create participant. Please try again.",
+                    )
+                    return
+
+            if len(participants) == 1:
+                # Pass the content we already read to the next method
+                self._import_and_add_document(participants[0]["id"], title, content)
+            else:
+                dialog = AssignParticipantDialog(participants, self)
+                if dialog.exec() == QDialog.DialogCode.Accepted:
+                    participant_id = dialog.get_selected_participant_id()
+                    if participant_id:
+                        # Pass the content we already read to the next method
+                        self._import_and_add_document(participant_id, title, content)
+        except Exception as e:
+            QMessageBox.critical(
+                self,
+                "Error",
+                f"Failed to process file '{os.path.basename(file_path)}': {e}",
+            )
 
     def dragLeaveEvent(self, event):
         self.hide_drop_overlay()
@@ -321,18 +361,9 @@ class ContentView(QWidget):
         self.doc_selector.setCurrentIndex(new_index)
         self.handle_document_switch(new_index)
 
-    def _import_and_add_document(self, participant_id, file_path):
+    def _import_and_add_document(self, participant_id, title, content):
         try:
-            content = ""
-            if file_path.lower().endswith(".docx"):
-                doc = docx.Document(file_path)
-                content = "\n\n".join([p.text for p in doc.paragraphs])
-            else:
-                with open(file_path, "r", encoding="utf-8") as f:
-                    content = f.read()
-            title = os.path.basename(file_path)
-
-            # Capture the returned ID
+            # The content is now passed in directly, so we don't need to read the file again.
             new_doc_id = database.add_document(
                 self.project_id, title, content, participant_id
             )
@@ -514,6 +545,13 @@ class ContentView(QWidget):
         if found_segment:
             self.segment_clicked.emit(found_segment["id"])
             self.node_clicked_in_content.emit(found_segment["node_id"])
+
+    def on_segment_coded(self):
+        """
+        This handler is called when the TextEditor signals a new segment has been coded.
+        It emits the segments_changed signal for the WorkspaceView to catch.
+        """
+        self.segments_changed.emit()
 
 
 class AssignParticipantDialog(QDialog):

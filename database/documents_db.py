@@ -1,3 +1,4 @@
+from contextlib import closing
 from .db_core import get_db_connection
 
 
@@ -87,3 +88,22 @@ def get_project_word_count(project_id):
             if doc and doc["content"]:
                 total_words += len(doc["content"].split())
     return total_words
+
+
+def check_document_exists(project_id: int, title: str, content: str) -> bool:
+    """
+    Checks if a document with the same title and content already exists for a project.
+
+    Args:
+        project_id: The ID of the project.
+        title: The title of the document.
+        content: The content of the document.
+
+    Returns:
+        True if an identical document exists, False otherwise.
+    """
+    query = "SELECT 1 FROM documents WHERE project_id = ? AND title = ? AND content = ?"
+    with closing(get_db_connection()) as conn:
+        with closing(conn.cursor()) as cursor:
+            cursor.execute(query, (project_id, title, content))
+            return cursor.fetchone() is not None
