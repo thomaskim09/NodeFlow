@@ -131,3 +131,8 @@ class ChartsWidget(QWidget):
 
         self.pie_chart_view.setRenderHint(QPainter.RenderHint.Antialiasing)
         self.pie_chart_view.setChart(chart)
+
+    def clear_charts(self):
+        # Set charts to empty QChart instances to safely release resources
+        self.bar_chart_view.setChart(QChart())
+        self.pie_chart_view.setChart(QChart())

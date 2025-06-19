@@ -323,7 +323,6 @@ class DashboardView(QDialog):
             self.crosstab_widget.update_crosstab(segments, nodes)
             self.wordcloud_widget.update_wordcloud(segments)
 
-    # ... (rest of the file is unchanged) ...
     def export_chart_as_image(self):
         current_tab_index = self.tabs.currentIndex()
         if current_tab_index not in [1, 3]:
@@ -476,3 +475,9 @@ class DashboardView(QDialog):
 
         recurse(self.tree_widget.invisibleRootItem(), None)
         return root_nodes_data
+
+    def closeEvent(self, event):
+        # Safely clear charts to release resources
+        if hasattr(self, "charts_widget"):
+            self.charts_widget.clear_charts()
+        super().closeEvent(event)
