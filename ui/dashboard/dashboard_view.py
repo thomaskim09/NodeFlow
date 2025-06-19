@@ -49,13 +49,13 @@ class DashboardView(QDialog):
 
         stats_container = QFrame()
         stats_container.setObjectName("statsContainer")
-        container_bg = "#2e3440" if self.is_dark else "#f2f2f2"
+        container_bg = "#2c2c2c" if self.is_dark else "#f2f2f2"
         stats_container.setStyleSheet(
             f"#statsContainer {{ background-color: {container_bg}; border-radius: 8px; }}"
         )
 
         overview_layout = QHBoxLayout(stats_container)
-        overview_layout.setContentsMargins(15, 15, 15, 15)
+        overview_layout.setContentsMargins(0, 0, 25, 0)
         overview_layout.setSpacing(15)
 
         self.total_words_label = self._create_stat_label("Scope Words")
@@ -182,7 +182,7 @@ class DashboardView(QDialog):
         label = QLabel()
         label.setTextFormat(Qt.RichText)
         label.setAlignment(Qt.AlignCenter)
-        bg_color = "#3b4252" if self.is_dark else "#ffffff"
+        bg_color = "#2c2c2c" if self.is_dark else "#ffffff"
         border_color = "#4c566a" if self.is_dark else "#d8dee9"
         title_color = "#d8dee9" if self.is_dark else "#4c566a"
         value_color = "#eceff4" if self.is_dark else "#2e3440"

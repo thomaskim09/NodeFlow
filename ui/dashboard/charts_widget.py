@@ -49,23 +49,32 @@ class ChartsWidget(QWidget):
 
     def _create_bar_chart(self, root_nodes_data):
         series = QBarSeries()
-        bar_set = QBarSet("Word Count %")
+        pie_colors = [
+            "#1f77b4",
+            "#ff7f0e",
+            "#2ca02c",
+            "#d62728",
+            "#9467bd",
+            "#8c564b",
+            "#e377c2",
+        ]
+        sorted_data = sorted(root_nodes_data, key=lambda x: x[1], reverse=True)
         categories = []
-        for node_name, percentage, _, _ in sorted(
-            root_nodes_data, key=lambda x: x[1], reverse=True
-        ):
-            bar_set.append(percentage)
-            categories.append(
+        for i, (node_name, percentage, _, _) in enumerate(sorted_data):
+            bar_set = QBarSet(
                 node_name[:15] + "..." if len(node_name) > 15 else node_name
             )
-        series.append(bar_set)
+            bar_set.append(percentage)
+            bar_set.setColor(QColor(pie_colors[i % len(pie_colors)]))
+            series.append(bar_set)
+            categories.append(bar_set.label())
 
         chart = QChart(title="Code Distribution (Bar)")
         chart.addSeries(series)
         chart.setAnimationOptions(QChart.AnimationOption.SeriesAnimations)
 
         axis_x = QBarCategoryAxis()
-        axis_x.append(categories)
+        axis_x.append([""])
         axis_y = QValueAxis()
         axis_y.setLabelFormat("%.1f%%")
 
@@ -73,7 +82,8 @@ class ChartsWidget(QWidget):
         chart.addAxis(axis_y, Qt.AlignmentFlag.AlignLeft)
         series.attachAxis(axis_x)
         series.attachAxis(axis_y)
-        chart.legend().setVisible(False)
+        chart.legend().setVisible(True)
+        chart.legend().setAlignment(Qt.AlignmentFlag.AlignBottom)
 
         self._apply_theme_to_chart(chart)
         self.bar_chart_view.setRenderHint(QPainter.RenderHint.Antialiasing)

@@ -61,7 +61,7 @@ class WordCloudWorker(QRunnable):
                 return
 
             frequencies = Counter(node_names)
-            bg_color = "#2b2b2b" if self.is_dark else "white"
+            bg_color = "#2c2c2c" if self.is_dark else "white"
             font_path = None
 
             if any(ord(char) > 127 for word in frequencies for char in word):
@@ -73,13 +73,14 @@ class WordCloudWorker(QRunnable):
                     )
                     return
 
+            colormap = "Pastel1" if self.is_dark else "viridis"
             wc_object = WordCloud(
                 font_path=font_path,
                 background_color=bg_color,
                 max_words=150,
                 width=1000,
                 height=600,
-                colormap="viridis",
+                colormap=colormap,
                 random_state=42,
                 prefer_horizontal=1,
             )
