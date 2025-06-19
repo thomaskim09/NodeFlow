@@ -35,7 +35,6 @@ class ExcelImportDialog(QDialog):
         self.content_combo.addItems(self.column_headers)
 
         self.participant_combo = QComboBox()
-        # Add a special option to handle assignment later or use a fixed participant
         self.participant_combo.addItem("<Assign Later>", None)
         self.participant_combo.addItems(self.column_headers)
 

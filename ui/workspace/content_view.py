@@ -40,6 +40,7 @@ class ContentView(QWidget):
     segment_clicked = Signal(int)
     text_selection_changed = Signal(bool)
     node_clicked_in_content = Signal(int)
+    participant_highlight_requested = Signal(int)
     documents_changed = Signal()
     segments_changed = Signal()
 
@@ -280,7 +281,6 @@ class ContentView(QWidget):
                         "You must create at least one participant to import documents.",
                     )
                     return
-                # Add participant and refresh list
                 database.add_participant(self.project_id, name.strip())
                 participants = database.get_participants_for_project(self.project_id)
                 if not participants:
@@ -545,6 +545,10 @@ class ContentView(QWidget):
         if found_segment:
             self.segment_clicked.emit(found_segment["id"])
             self.node_clicked_in_content.emit(found_segment["node_id"])
+            if found_segment.get("participant_id"):
+                self.participant_highlight_requested.emit(
+                    found_segment["participant_id"]
+                )
 
     def on_segment_coded(self):
         """

@@ -123,7 +123,9 @@ class WorkspaceView(QWidget):
         self.center_pane.document_added.connect(self.on_document_added)
         self.center_pane.document_deleted.connect(self.on_document_deleted)
         self.center_pane.bulk_documents_added.connect(self.on_document_deleted)
-        self.center_pane.segment_clicked.connect(self.bottom_pane.select_segment_by_id)
+        self.center_pane.segment_clicked.connect(
+            self.bottom_pane.highlight_segment_by_id
+        )
         self.center_pane.node_clicked_in_content.connect(
             self.node_tree_manager.highlight_node_by_id
         )
@@ -154,7 +156,7 @@ class WorkspaceView(QWidget):
         self.node_tree_manager.node_selected_for_coding.connect(self.code_selection)
 
         # Allow external highlight of participant in listview
-        self.center_pane.participant_highlight_requested = (
+        self.center_pane.participant_highlight_requested.connect(
             self.participant_manager.highlight_participant_by_id
         )
 
@@ -226,11 +228,8 @@ class WorkspaceView(QWidget):
             self.node_tree_manager.tree_widget.clearSelection()
             self.node_tree_manager.set_current_document_id(doc_id)
             self.participant_manager.set_current_document_id(doc_id)
-
-            # Ensure participant list is up-to-date before selecting
             self.participant_manager.load_participants()
 
-            # Add this logic to highlight the participant
             participant_id = database.get_participant_for_document(doc_id)
             if participant_id:
                 self.participant_manager.highlight_participant_by_id(participant_id)

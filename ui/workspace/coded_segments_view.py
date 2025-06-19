@@ -122,9 +122,14 @@ class CodedSegmentsView(QWidget):
                 doc_id, segment_data["segment_start"], segment_data["segment_end"]
             )
 
-    def select_segment_by_id(self, segment_id):
+    def highlight_segment_by_id(self, segment_id):
         if not segment_id:
             return
+
+        # Clear node filter
+        self._last_active_node_filter = None
+        self.search_input.clear()
+        self.filter_tree()
 
         self.tree_widget.blockSignals(True)
         it = QTreeWidgetItemIterator(self.tree_widget)

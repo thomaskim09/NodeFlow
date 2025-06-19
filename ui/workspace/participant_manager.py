@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (
     QInputDialog,
     QLabel,
     QComboBox,
+    QAbstractItemView,
 )
 from PySide6.QtCore import Signal, Qt
 from PySide6.QtGui import QKeyEvent
@@ -272,19 +273,6 @@ class ParticipantManager(QWidget):
             self.load_participants()
             self.participant_updated.emit()
 
-    def select_participant(self, participant_id: int):
-        """Finds and selects a participant by their ID."""
-        if not participant_id:
-            self.clear_selection()
-            return
-
-        for i in range(self.list_widget.count()):
-            item = self.list_widget.item(i)
-            widget = self.list_widget.itemWidget(item)
-            if widget and widget.participant_id == participant_id:
-                self.list_widget.setCurrentItem(item)
-                return
-
     def clear_selection(self):
         """Clears the current selection in the list widget."""
         self.list_widget.clearSelection()
@@ -295,11 +283,31 @@ class ParticipantManager(QWidget):
         but does NOT trigger filtering or emit any signals. Used for visual highlight only.
         """
         self.list_widget.blockSignals(True)
+
+        previous_item = self.list_widget.currentItem()
+        if previous_item:
+            widget = self.list_widget.itemWidget(previous_item)
+            if widget:
+                widget.set_icons_visible(False)
+                widget.set_selected_style(False)
+
+        new_current_item = None
         for i in range(self.list_widget.count()):
             item = self.list_widget.item(i)
             widget = self.list_widget.itemWidget(item)
             if widget and widget.participant_id == participant_id:
-                self.list_widget.setCurrentItem(item)
-                self.list_widget.scrollToItem(item)
+                new_current_item = item
                 break
+
+        self.list_widget.setCurrentItem(new_current_item)
+
+        if new_current_item:
+            widget = self.list_widget.itemWidget(new_current_item)
+            if widget:
+                widget.set_icons_visible(False)
+                widget.set_selected_style(True)
+            self.list_widget.scrollToItem(
+                new_current_item, QAbstractItemView.ScrollHint.PositionAtCenter
+            )
+
         self.list_widget.blockSignals(False)

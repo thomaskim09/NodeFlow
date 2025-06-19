@@ -605,16 +605,26 @@ class NodeTreeManager(QWidget):
         """
         Highlights (selects and scrolls to) the node with the given ID in the tree widget,
         but does NOT trigger filtering or emit any signals. Used for visual highlight only.
+        Also updates the stats style and hides the action buttons on the last item.
         """
         self.tree_widget.blockSignals(True)
 
+        # Un-highlight previous item
+        previous_item = self.tree_widget.currentItem()
+        if previous_item:
+            prev_widget = self.tree_widget.itemWidget(previous_item, 0)
+            if prev_widget:
+                prev_widget.set_icons_visible(False)
+                prev_widget.set_selected_style(False)
+
         it = QTreeWidgetItemIterator(self.tree_widget)
         found_item = None
+        last_item = None
         while it.value():
             item = it.value()
+            last_item = item
             if item.data(0, 1) == node_id:
                 found_item = item
-                break
             it += 1
 
         if found_item:
@@ -622,4 +632,15 @@ class NodeTreeManager(QWidget):
             self.tree_widget.scrollToItem(
                 found_item, QAbstractItemView.ScrollHint.PositionAtCenter
             )
+            widget = self.tree_widget.itemWidget(found_item, 0)
+            if widget:
+                widget.set_icons_visible(False)
+                widget.set_selected_style(True)
+
+        # Hide the action buttons on the last listview item (if any)
+        if last_item:
+            last_widget = self.tree_widget.itemWidget(last_item, 0)
+            if last_widget:
+                last_widget.set_icons_visible(False)
+
         self.tree_widget.blockSignals(False)
