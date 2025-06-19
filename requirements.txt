@@ -4,3 +4,4 @@ pyinstaller
 openpyxl
 wordcloud
 qt-material-icons
+networkx

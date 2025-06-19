@@ -1,4 +1,3 @@
-# MODIFIED: Add new imports
 import csv
 from PySide6.QtWidgets import (
     QDialog,
@@ -16,6 +15,7 @@ from PySide6.QtWidgets import (
     QMenu,
     QHeaderView,
     QFrame,
+    QSplitter,
 )
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QPixmap, QColor, QIcon
@@ -25,6 +25,7 @@ from managers.theme_manager import load_settings
 from .charts_widget import ChartsWidget
 from .crosstab_widget import CrosstabWidget
 from .wordcloud_widget import WordCloudWidget
+from .co_occurrence_widget import CoOccurrenceWidget
 import database
 from qt_material_icons import MaterialIcon
 
@@ -94,6 +95,9 @@ class DashboardView(QDialog):
         export_menu = QMenu(self)
         export_menu.addAction("Export Chart as Image", self.export_chart_as_image)
         export_menu.addAction("Export Data Table as CSV", self.export_data_as_csv)
+        export_menu.addAction(
+            "Export Co-occurrence Matrix as CSV", self.export_co_occurrence_as_csv
+        )
         export_menu.addAction("Export Cross-Tab as CSV", self.export_crosstab_as_csv)
         self.export_button.setMenu(export_menu)
 
@@ -111,6 +115,27 @@ class DashboardView(QDialog):
 
         breakdown_tab = QWidget()
         breakdown_layout = QVBoxLayout(breakdown_tab)
+        breakdown_splitter = QSplitter(Qt.Orientation.Horizontal)
+        participant_container = QWidget()
+        participant_layout = QVBoxLayout(participant_container)
+        participant_layout.setContentsMargins(0, 0, 0, 0)
+        participant_layout.addWidget(QLabel("<b>Participant Breakdown</b>"))
+        self.participant_tree_widget = QTreeWidget()
+        self.participant_tree_widget.setHeaderLabels(
+            ["Participant", "Coded Words", "% of Total", "Segments"]
+        )
+        participant_header = self.participant_tree_widget.header()
+        participant_header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        for i in range(1, 4):
+            participant_header.setSectionResizeMode(
+                i, QHeaderView.ResizeMode.ResizeToContents
+            )
+        participant_layout.addWidget(self.participant_tree_widget)
+        breakdown_splitter.addWidget(participant_container)
+        node_container = QWidget()
+        node_layout = QVBoxLayout(node_container)
+        node_layout.setContentsMargins(0, 0, 0, 0)
+        node_layout.addWidget(QLabel("<b>Code Breakdown</b>"))
         self.tree_widget = QTreeWidget()
         self.tree_widget.setHeaderLabels(
             ["Code", "Coded Words", "% of Total", "Segments"]
@@ -119,14 +144,21 @@ class DashboardView(QDialog):
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         for i in range(1, 4):
             header.setSectionResizeMode(i, QHeaderView.ResizeMode.ResizeToContents)
-        breakdown_layout.addWidget(self.tree_widget)
-        self.tabs.addTab(breakdown_tab, "Code Breakdown")
+        node_layout.addWidget(self.tree_widget)
+        breakdown_splitter.addWidget(node_container)
+        breakdown_splitter.setSizes([400, 700])
+        breakdown_layout.addWidget(breakdown_splitter)
+        breakdown_tab.setLayout(breakdown_layout)
+        self.tabs.addTab(breakdown_tab, "Breakdown")
 
         self.charts_widget = ChartsWidget(self.settings)
         self.tabs.addTab(self.charts_widget, "Charts")
 
         self.crosstab_widget = CrosstabWidget(self.settings)
         self.tabs.addTab(self.crosstab_widget, "Cross-Tabulation")
+
+        self.co_occurrence_widget = CoOccurrenceWidget(self.settings)
+        self.tabs.addTab(self.co_occurrence_widget, "Code Co-occurrence")
 
         self.wordcloud_widget = WordCloudWidget(self.settings)
         self.tabs.addTab(self.wordcloud_widget, "Word Cloud")
@@ -143,6 +175,41 @@ class DashboardView(QDialog):
         else:
             self.load_dashboard_data()
 
+    def _calculate_participant_stats(self, segments):
+        participant_stats = {}
+        all_participants = database.get_participants_for_project(self.project_id)
+        for p in all_participants:
+            participant_stats[p["id"]] = {
+                "word_count": 0,
+                "segment_count": 0,
+                "name": p["name"],
+            }
+        for seg in segments:
+            p_id = seg.get("participant_id")
+            if p_id is not None and p_id in participant_stats:
+                word_count = len(seg["content_preview"].split())
+                participant_stats[p_id]["word_count"] += word_count
+                participant_stats[p_id]["segment_count"] += 1
+        return participant_stats
+
+    def _populate_participant_tree(self, participant_stats, total_words):
+        self.participant_tree_widget.clear()
+        sorted_participants = sorted(
+            participant_stats.values(), key=lambda x: x["name"]
+        )
+        for stats in sorted_participants:
+            wc = stats.get("word_count", 0)
+            sc = stats.get("segment_count", 0)
+            name = stats.get("name", "N/A")
+            p = (wc / total_words * 100) if total_words > 0 else 0
+            item = QTreeWidgetItem(self.participant_tree_widget)
+            item.setText(0, name)
+            item.setText(1, f"{wc:,}")
+            item.setText(2, f"{p:.1f}%")
+            item.setText(3, f"{sc:,}")
+            for col in [1, 2, 3]:
+                item.setTextAlignment(col, Qt.AlignmentFlag.AlignRight)
+
     def load_dashboard_data(self):
         doc_id = self.doc_scope_combo.currentData()
         part_id = self.part_scope_combo.currentData()
@@ -154,11 +221,15 @@ class DashboardView(QDialog):
             results = self._get_data_from_db(doc_id, part_id, node_id, None)
             self._update_ui_with_results(results)
         except Exception as e:
+            import traceback
+
+            traceback.print_exc()
             self._on_loading_error((type(e), e, e.__traceback__))
         self._set_loading_state(False)
 
     def _set_loading_state(self, is_loading):
         if is_loading:
+            self.participant_tree_widget.clear()
             self.tree_widget.clear()
             self._update_stat_label(
                 self.total_words_label, "Scope Words", "Calculating..."
@@ -171,6 +242,7 @@ class DashboardView(QDialog):
             )
             self.charts_widget.clear_charts()
             self.crosstab_widget.clear_crosstab()
+            self.co_occurrence_widget.clear_views()
             self.wordcloud_widget.clear_wordcloud()
 
         self.export_button.setEnabled(not is_loading)
@@ -208,10 +280,18 @@ class DashboardView(QDialog):
             aggregated_stats = self._calculate_aggregated_stats(
                 nodes_by_parent, node_stats
             )
+            participant_stats = self._calculate_participant_stats(segments)
+            (
+                co_occurrence_matrix,
+                co_occurrence_headers,
+            ) = self._calculate_co_occurrence(segments, nodes)
+            results["participant_stats"] = participant_stats
             results["total_words"] = total_words
             results["segments"] = segments
             results["coded_words"] = coded_words
             results["aggregated_stats"] = aggregated_stats
+            results["co_occurrence_matrix"] = co_occurrence_matrix
+            results["co_occurrence_headers"] = co_occurrence_headers
         return results
 
     def _update_ui_with_results(self, results):
@@ -243,6 +323,8 @@ class DashboardView(QDialog):
                 self.coded_words_label, "Coded Words", f"{parent_total_words:,}"
             )
 
+            self.participant_tree_widget.clear()
+            self.co_occurrence_widget.clear_views()
             self.tree_widget.clear()
             direct_children_nodes = nodes_by_parent.get(node_id, [])
 
@@ -281,6 +363,8 @@ class DashboardView(QDialog):
             total_words = results.get("total_words", 0)
             segments = results.get("segments", [])
             coded_words = results.get("coded_words", 0)
+            participant_stats = results.get("participant_stats", {})
+            self._populate_participant_tree(participant_stats, total_words)
 
             coded_percentage = (
                 (coded_words / total_words * 100) if total_words > 0 else 0
@@ -303,6 +387,11 @@ class DashboardView(QDialog):
 
             self.charts_widget.update_charts(root_nodes_data)
             self.crosstab_widget.update_crosstab(segments, nodes)
+            co_occurrence_matrix = results.get("co_occurrence_matrix", {})
+            co_occurrence_headers = results.get("co_occurrence_headers", [])
+            self.co_occurrence_widget.update_data(
+                co_occurrence_matrix, co_occurrence_headers
+            )
             self.wordcloud_widget.update_wordcloud(segments)
 
     def _populate_tree_item(
@@ -321,7 +410,6 @@ class DashboardView(QDialog):
         return item
 
     def _populate_node_scope_combo(self):
-        """Populates the node scope dropdown with a node hierarchy."""
         self.node_scope_combo.blockSignals(True)
         self.node_scope_combo.clear()
 
@@ -409,6 +497,36 @@ class DashboardView(QDialog):
 
                 for i in range(self.tree_widget.topLevelItemCount()):
                     write_item(self.tree_widget.topLevelItem(i))
+        except Exception as e:
+            QMessageBox.critical(self, "Export Failed", f"An error occurred: {e}")
+
+    def export_co_occurrence_as_csv(self):
+        if self.tabs.currentWidget() != self.co_occurrence_widget:
+            QMessageBox.warning(
+                self,
+                "Not on Co-occurrence Tab",
+                "Please switch to the 'Code Co-occurrence' tab to export.",
+            )
+            return
+        table = self.co_occurrence_widget.get_matrix_for_export()
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Save Co-occurrence Matrix", "", "CSV File (*.csv)"
+        )
+        if not path:
+            return
+        try:
+            with open(path, "w", newline="", encoding="utf-8") as f:
+                writer = csv.writer(f)
+                headers = [""] + [
+                    table.horizontalHeaderItem(i).text()
+                    for i in range(table.columnCount())
+                ]
+                writer.writerow(headers)
+                for r in range(table.rowCount()):
+                    row_data = [table.verticalHeaderItem(r).text()] + [
+                        table.item(r, c).text() for c in range(table.columnCount())
+                    ]
+                    writer.writerow(row_data)
         except Exception as e:
             QMessageBox.critical(self, "Export Failed", f"An error occurred: {e}")
 
@@ -501,6 +619,45 @@ class DashboardView(QDialog):
 
         recurse(None)
         return agg_stats
+
+    def _calculate_co_occurrence(self, segments, nodes):
+        node_map = {node["id"]: node["name"] for node in nodes}
+        co_occurrence_matrix = {}
+
+        segments_by_content = {}
+        for seg in segments:
+            seg_key = (
+                seg["document_id"],
+                seg["segment_start"],
+                seg["segment_end"],
+            )
+            if seg_key not in segments_by_content:
+                segments_by_content[seg_key] = []
+            segments_by_content[seg_key].append(seg["node_id"])
+
+        for seg_key, node_ids in segments_by_content.items():
+            unique_node_ids = sorted(list(set(node_ids)))
+            for i in range(len(unique_node_ids)):
+                for j in range(i, len(unique_node_ids)):
+                    node1_id = unique_node_ids[i]
+                    node2_id = unique_node_ids[j]
+                    node1_name = node_map.get(node1_id)
+                    node2_name = node_map.get(node2_id)
+
+                    if not node1_name or not node2_name:
+                        continue
+
+                    co_occurrence_matrix.setdefault(node1_name, {})
+                    co_occurrence_matrix[node1_name].setdefault(node2_name, 0)
+                    co_occurrence_matrix[node1_name][node2_name] += 1
+
+                    if node1_name != node2_name:
+                        co_occurrence_matrix.setdefault(node2_name, {})
+                        co_occurrence_matrix[node2_name].setdefault(node1_name, 0)
+                        co_occurrence_matrix[node2_name][node1_name] += 1
+
+        headers = sorted(co_occurrence_matrix.keys())
+        return co_occurrence_matrix, headers
 
     def _populate_tree_widget(self, nodes_by_parent, nodes_map, agg_stats, total_words):
         root_nodes_data = []

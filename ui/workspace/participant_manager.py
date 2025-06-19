@@ -59,7 +59,7 @@ class ParticipantItemWidget(QWidget):
         self.parent_manager = parent_manager
 
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(5, 2, 5, 11)
+        layout.setContentsMargins(5, 3, 5, 8)
         name_label = QLabel(participant_name)
 
         self.stats_label = QLabel(stats_text)

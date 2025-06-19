@@ -52,7 +52,7 @@ def get_coded_segments_for_document(document_id):
     cursor = conn.cursor()
     cursor.execute(
         """
-        SELECT s.id, s.node_id, s.content_preview, s.segment_start, s.segment_end,
+        SELECT s.id, s.document_id, s.node_id, s.content_preview, s.segment_start, s.segment_end,
                n.name as node_name, n.color as node_color, s.participant_id,
                p.name as participant_name,
                d.title as document_title
