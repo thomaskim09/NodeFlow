@@ -94,7 +94,6 @@ def get_dark_theme_stylesheet():
             min-width: 80px; /* Standardize dialog buttons */
             padding: 6px 12px;
         }
-        
         QLineEdit, QTextEdit, QListWidget, QTreeWidget, QComboBox, QTableView {
             background-color: #363636; /* Darker input/list background */
             border: 1px solid #505050; /* Consistent border */
@@ -108,7 +107,6 @@ def get_dark_theme_stylesheet():
         }
         /* Assuming you have a light arrow icon for dark theme */
         /* QComboBox::down-arrow { image: url(icons/down_arrow_light.png); } */
-        
         QSplitter::handle {
             background-color: #505050;
             border: none;
@@ -123,7 +121,6 @@ def get_dark_theme_stylesheet():
             border: 1px solid #505050;
             padding: 6px;
         }
-        
         /* Ensure QLabel has no border and no padding/margins that might simulate a border */
         QLabel {
             border: none;
@@ -146,13 +143,11 @@ def get_dark_theme_stylesheet():
             margin: 0;
             background: transparent;
         }
-        
         QFrame {
             border: 1px solid #505050; /* Consistent frame border */
             border-radius: 4px;
             background-color: #333333; /* Slightly different background for frames */
         }
-        
         QMenu {
             background-color: #3a3a3a;
             border: 1px solid #505050;
@@ -233,7 +228,6 @@ def get_dark_theme_stylesheet():
             color: white;
             /* Removed border here as per request */
         }
-        
         /* Ensure buttons AND their containers within selected list/tree items are transparent to show highlight */
         QListWidget::item QWidget, QTreeWidget::item QWidget { /* Target the button container */
             background-color: transparent;
@@ -380,7 +374,6 @@ def get_light_theme_stylesheet():
             min-width: 80px;
             padding: 6px 12px;
         }
-        
         QLineEdit, QTextEdit, QListWidget, QTreeWidget, QComboBox, QTableView {
             background-color: #ffffff; /* White input/list background */
             border: 1px solid #cccccc;
@@ -394,7 +387,6 @@ def get_light_theme_stylesheet():
         }
         /* Assuming you have a dark arrow icon for light theme */
         /* QComboBox::down-arrow { image: url(icons/down_arrow_dark.png); } */
-        
         QSplitter::handle {
             background-color: #cccccc;
             border: none;
@@ -409,7 +401,6 @@ def get_light_theme_stylesheet():
             border: 1px solid #cccccc;
             padding: 6px;
         }
-        
         QLabel {
             border: none;
             color: #333333;
@@ -429,13 +420,11 @@ def get_light_theme_stylesheet():
             margin: 0;
             background: transparent;
         }
-        
         QFrame {
             border: 1px solid #cccccc;
             border-radius: 4px;
             background-color: #ffffff; /* White background for frames */
         }
-        
         QMenu {
             background-color: #e0e0e0;
             border: 1px solid #cccccc;
