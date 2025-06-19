@@ -598,8 +598,8 @@ def load_settings():
             try:
                 return json.load(f)
             except json.JSONDecodeError:
-                return {"theme": "Default"}  # Default on corruption
-    return {"theme": "Default"}  # Default to Default
+                return {"theme": "Default"}
+    return {"theme": "Default"}
 
 
 def save_settings(settings):
@@ -620,8 +620,4 @@ def apply_theme(app):
     elif theme_setting == "Light":
         app.setStyleSheet(get_light_theme_stylesheet())
     elif theme_setting == "Default":
-        # Apply system theme. If system is dark, apply dark stylesheet, otherwise custom light stylesheet.
-        if get_system_theme() == "Dark":
-            app.setStyleSheet(get_dark_theme_stylesheet())
-        else:
-            app.setStyleSheet("")  # Changed to empty stylesheet for default light
+        app.setStyleSheet("")
