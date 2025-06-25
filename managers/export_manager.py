@@ -62,11 +62,23 @@ def export_to_word(project_id, parent_widget=None):
     # --- Save the document with error handling ---
     try:
         doc.save(file_path)
-        QMessageBox.information(
-            parent_widget,
-            "Export Successful",
-            f"Report successfully saved to:\n{file_path}",
-        )
+        # Show a message box with an 'Open File' button
+        msg_box = QMessageBox(parent_widget)
+        msg_box.setWindowTitle("Export Successful")
+        msg_box.setText(f"Report successfully saved to:\n{file_path}")
+        open_button = msg_box.addButton("Open File", QMessageBox.ActionRole)
+        msg_box.addButton(QMessageBox.Ok)
+        msg_box.exec_()
+        if msg_box.clickedButton() == open_button:
+            import os
+            import sys
+
+            if sys.platform.startswith("win"):
+                os.startfile(file_path)
+            elif sys.platform.startswith("darwin"):
+                os.system(f'open "{file_path}"')
+            else:
+                os.system(f'xdg-open "{file_path}"')
     except PermissionError:
         QMessageBox.critical(
             parent_widget,
@@ -129,11 +141,23 @@ def export_to_json(project_id, parent_widget=None):
     try:
         with open(file_path, "w", encoding="utf-8") as f:
             json.dump(json_output, f, ensure_ascii=False, indent=4)
-        QMessageBox.information(
-            parent_widget,
-            "Export Successful",
-            f"JSON data successfully saved to:\n{file_path}",
-        )
+        # Show a message box with an 'Open File' button
+        msg_box = QMessageBox(parent_widget)
+        msg_box.setWindowTitle("Export Successful")
+        msg_box.setText(f"JSON data successfully saved to:\n{file_path}")
+        open_button = msg_box.addButton("Open File", QMessageBox.ActionRole)
+        msg_box.addButton(QMessageBox.Ok)
+        msg_box.exec_()
+        if msg_box.clickedButton() == open_button:
+            import os
+            import sys
+
+            if sys.platform.startswith("win"):
+                os.startfile(file_path)
+            elif sys.platform.startswith("darwin"):
+                os.system(f'open "{file_path}"')
+            else:
+                os.system(f'xdg-open "{file_path}"')
     except PermissionError:
         QMessageBox.critical(
             parent_widget,
@@ -238,11 +262,23 @@ def export_to_excel(project_id, parent_widget=None):
     # --- Save the workbook with error handling ---
     try:
         wb.save(file_path)
-        QMessageBox.information(
-            parent_widget,
-            "Export Successful",
-            f"Excel report successfully saved to:\n{file_path}",
-        )
+        # Show a message box with an 'Open File' button
+        msg_box = QMessageBox(parent_widget)
+        msg_box.setWindowTitle("Export Successful")
+        msg_box.setText(f"Excel report successfully saved to:\n{file_path}")
+        open_button = msg_box.addButton("Open File", QMessageBox.ActionRole)
+        msg_box.addButton(QMessageBox.Ok)
+        msg_box.exec_()
+        if msg_box.clickedButton() == open_button:
+            import os
+            import sys
+
+            if sys.platform.startswith("win"):
+                os.startfile(file_path)
+            elif sys.platform.startswith("darwin"):
+                os.system(f'open "{file_path}"')
+            else:
+                os.system(f'xdg-open "{file_path}"')
     except PermissionError:
         QMessageBox.critical(
             parent_widget,
@@ -327,11 +363,23 @@ def export_node_family_to_word(project_id, start_node_id, parent_widget=None):
     # --- Save the document with error handling ---
     try:
         doc.save(file_path)
-        QMessageBox.information(
-            parent_widget,
-            "Export Successful",
-            f"Report successfully saved to:\n{file_path}",
-        )
+        # Show a message box with an 'Open File' button
+        msg_box = QMessageBox(parent_widget)
+        msg_box.setWindowTitle("Export Successful")
+        msg_box.setText(f"Report successfully saved to:\n{file_path}")
+        open_button = msg_box.addButton("Open File", QMessageBox.ActionRole)
+        msg_box.addButton(QMessageBox.Ok)
+        msg_box.exec_()
+        if msg_box.clickedButton() == open_button:
+            import os
+            import sys
+
+            if sys.platform.startswith("win"):
+                os.startfile(file_path)
+            elif sys.platform.startswith("darwin"):
+                os.system(f'open "{file_path}"')
+            else:
+                os.system(f'xdg-open "{file_path}"')
     except PermissionError:
         QMessageBox.critical(
             parent_widget,
@@ -428,11 +476,23 @@ def export_node_family_to_excel(project_id, start_node_id, parent_widget=None):
     # --- Save the workbook with error handling ---
     try:
         wb.save(file_path)
-        QMessageBox.information(
-            parent_widget,
-            "Export Successful",
-            f"Excel report successfully saved to:\n{file_path}",
-        )
+        # Show a message box with an 'Open File' button
+        msg_box = QMessageBox(parent_widget)
+        msg_box.setWindowTitle("Export Successful")
+        msg_box.setText(f"Excel report successfully saved to:\n{file_path}")
+        open_button = msg_box.addButton("Open File", QMessageBox.ActionRole)
+        msg_box.addButton(QMessageBox.Ok)
+        msg_box.exec_()
+        if msg_box.clickedButton() == open_button:
+            import os
+            import sys
+
+            if sys.platform.startswith("win"):
+                os.startfile(file_path)
+            elif sys.platform.startswith("darwin"):
+                os.system(f'open "{file_path}"')
+            else:
+                os.system(f'xdg-open "{file_path}"')
     except PermissionError:
         QMessageBox.critical(
             parent_widget,
@@ -528,11 +588,23 @@ def export_node_family_to_excel_multi_sheet(
     # --- Save the workbook with error handling ---
     try:
         wb.save(file_path)
-        QMessageBox.information(
-            parent_widget,
-            "Export Successful",
-            f"Excel report successfully saved to:\n{file_path}",
-        )
+        # Show a message box with an 'Open File' button
+        msg_box = QMessageBox(parent_widget)
+        msg_box.setWindowTitle("Export Successful")
+        msg_box.setText(f"Excel report successfully saved to:\n{file_path}")
+        open_button = msg_box.addButton("Open File", QMessageBox.ActionRole)
+        msg_box.addButton(QMessageBox.Ok)
+        msg_box.exec_()
+        if msg_box.clickedButton() == open_button:
+            import os
+            import sys
+
+            if sys.platform.startswith("win"):
+                os.startfile(file_path)
+            elif sys.platform.startswith("darwin"):
+                os.system(f'open "{file_path}"')
+            else:
+                os.system(f'xdg-open "{file_path}"')
     except PermissionError:
         QMessageBox.critical(
             parent_widget,
@@ -609,11 +681,23 @@ def export_co_occurrence_to_gexf(project_id, parent_widget=None):
 
         nx.write_gexf(G, file_path)
 
-        QMessageBox.information(
-            parent_widget,
-            "Export Successful",
-            f"GEXF file successfully saved to:\n{file_path}",
-        )
+        # Show a message box with an 'Open File' button
+        msg_box = QMessageBox(parent_widget)
+        msg_box.setWindowTitle("Export Successful")
+        msg_box.setText(f"GEXF file successfully saved to:\n{file_path}")
+        open_button = msg_box.addButton("Open File", QMessageBox.ActionRole)
+        msg_box.addButton(QMessageBox.Ok)
+        msg_box.exec_()
+        if msg_box.clickedButton() == open_button:
+            import os
+            import sys
+
+            if sys.platform.startswith("win"):
+                os.startfile(file_path)
+            elif sys.platform.startswith("darwin"):
+                os.system(f'open "{file_path}"')
+            else:
+                os.system(f'xdg-open "{file_path}"')
     except Exception as e:
         import traceback
 
