@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (
     QComboBox,
 )
 from PySide6.QtCore import Qt, Signal, QTimer
-from PySide6.QtGui import QDropEvent, QKeyEvent, QDragEnterEvent
+from PySide6.QtGui import QDropEvent, QKeyEvent
 from managers.export_manager import (
     export_node_family_to_word,
     export_node_family_to_excel,
@@ -296,7 +296,7 @@ class NodeTreeManager(QWidget):
         self.tree_widget.currentItemChanged.connect(self.on_selection_changed)
         self.tree_widget.itemClicked.connect(self.on_item_clicked)
         self.tree_widget.customContextMenuRequested.connect(self.show_context_menu)
-        self.tree_widget.dragEnterEvent = self.dragEnterEvent
+        self.original_tree_widget_dropEvent = self.tree_widget.dropEvent
         self.tree_widget.dropEvent = self.dropEvent
         self.tree_widget.keyPressEvent = self.keyPressEvent
         self.load_nodes()
@@ -305,36 +305,43 @@ class NodeTreeManager(QWidget):
         """Public slot to enable/disable drag-drop highlighting."""
         self.tree_widget.highlighting_enabled = active
 
-    def dragEnterEvent(self, event: QDragEnterEvent):
-        """Overrides the tree widget's dragEnterEvent to control highlighting."""
-        if self.tree_widget.highlighting_enabled:
-            if event.mimeData().hasText():
-                event.acceptProposedAction()
-            else:
-                event.ignore()
-        else:
-            event.ignore()
-
     def dropEvent(self, event: QDropEvent):
-        """Handles dropping an item to reorder or reparent it."""
-        if not self.tree_widget.highlighting_enabled:
+        """
+        Handles dropping an item to reorder or reparent it. This method defers the
+        final UI refresh to prevent crashing.
+        """
+        if not self.tree_widget.highlighting_enabled or not event.source():
             event.ignore()
             return
 
         source_item = self.tree_widget.currentItem()
         if not source_item:
+            event.ignore()
             return
 
-        # Let the default dropEvent handle the visual move
-        super(QTreeWidget, self.tree_widget).dropEvent(event)
-
-        # After the move, update the database
         source_id = source_item.data(0, 1)
-        new_parent_item = source_item.parent()
+        if source_id is None:
+            event.ignore()
+            return
+        self.original_tree_widget_dropEvent(event)
+        it = QTreeWidgetItemIterator(self.tree_widget)
+        new_item = None
+        while it.value():
+            item = it.value()
+            if item.data(0, 1) == source_id:
+                new_item = item
+                break
+            it += 1
+
+        if not new_item:
+            QTimer.singleShot(0, self.refresh_tree_and_emit_update)
+            return
+
+        new_parent_item = new_item.parent()
         new_parent_id = new_parent_item.data(0, 1) if new_parent_item else None
+
         database.update_node_parent(source_id, new_parent_id)
 
-        # Update the order of siblings
         if new_parent_item:
             siblings = [
                 new_parent_item.child(i) for i in range(new_parent_item.childCount())
@@ -350,8 +357,13 @@ class NodeTreeManager(QWidget):
             for i, item in enumerate(siblings)
             if item.data(0, 1) is not None
         ]
-        database.update_node_order(db_order_updates)
-        QTimer.singleShot(0, self.refresh_tree_and_emit_update)
+
+        if db_order_updates:
+            database.update_node_order(db_order_updates)
+
+        QTimer.singleShot(
+            0, lambda: self.refresh_tree_and_emit_update(node_id_to_reselect=source_id)
+        )
 
     def keyPressEvent(self, event: QKeyEvent):
         """Handles key presses for actions like rename and delete."""
@@ -384,7 +396,7 @@ class NodeTreeManager(QWidget):
         scope = self.scope_combo.currentText()
         total_words = 0
         doc_id_for_stats = None
-        if scope == "Current Document":
+        if scope == get_translation("node_tree.scope_current", self.language):
             if self.current_document_id:
                 total_words = database.get_document_word_count(self.current_document_id)
                 doc_id_for_stats = self.current_document_id

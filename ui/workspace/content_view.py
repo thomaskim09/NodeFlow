@@ -47,9 +47,9 @@ class ContentView(QWidget):
     segments_changed = Signal()
     edit_mode_changed = Signal(bool)
 
-    def __init__(self, project_id):
+    def __init__(self, project_id, language=None):
         super().__init__()
-        self.language = load_settings().get("language", "English")
+        self.language = language or load_settings().get("language", "English")
         self.project_id = project_id
         self.documents_map = {}
         self.current_document_id = None
@@ -149,9 +149,13 @@ class ContentView(QWidget):
         self.edit_bar.setObjectName("editBar")
         edit_bar_layout = QHBoxLayout(self.edit_bar)
         edit_bar_layout.setContentsMargins(5, 2, 5, 2)
-        edit_label = QLabel("<b>Editing Segment:</b> Adjust selection and click save.")
-        self.save_edit_button = QPushButton("Save Changes")
-        cancel_edit_button = QPushButton("Cancel")
+        edit_label = QLabel(get_translation("edit_bar.editing_segment", self.language))
+        self.save_edit_button = QPushButton(
+            get_translation("edit_bar.save_changes", self.language)
+        )
+        cancel_edit_button = QPushButton(
+            get_translation("edit_bar.cancel", self.language)
+        )
         edit_bar_layout.addWidget(edit_label)
         edit_bar_layout.addStretch()
         edit_bar_layout.addWidget(self.save_edit_button)
@@ -595,8 +599,7 @@ class ContentView(QWidget):
                 self.import_button.setStyleSheet(
                     "QPushButton { border: 2px solid #0078d7; }"
                 )
-                self.word_count_label.setText("Word Count: 0")
-                self.segment_count_label.setText("Coded Segments: 0")
+                self.update_counts(0, 0)
             else:
                 self.text_edit.setReadOnly(False)
                 self.import_button.setStyleSheet("")
@@ -609,7 +612,7 @@ class ContentView(QWidget):
                 self.text_edit.setPlainText(content)
                 self.apply_all_highlights()
                 word_count = len(content.split())
-                self.word_count_label.setText(f"Word Count: {word_count}")
+                self.update_counts(word_count, len(self._coded_segments_cache))
 
             if self._pending_highlight:
                 mode, start, end = self._pending_highlight
@@ -686,6 +689,28 @@ class ContentView(QWidget):
 
     def on_segment_coded(self):
         self.segments_changed.emit()
+
+    def set_word_count(self, count):
+        self.word_count_label.setText(
+            get_translation("content_view.word_count", self.language, count=count)
+        )
+
+    def set_segment_count(self, count):
+        self.segment_count_label.setText(
+            get_translation(
+                "content_view.coded_segments_count", self.language, count=count
+            )
+        )
+
+    def update_counts(self, word_count, segment_count):
+        self.word_count_label.setText(
+            get_translation("content_view.word_count", self.language, count=word_count)
+        )
+        self.segment_count_label.setText(
+            get_translation(
+                "content_view.coded_segments_count", self.language, count=segment_count
+            )
+        )
 
 
 class AssignParticipantDialog(QDialog):

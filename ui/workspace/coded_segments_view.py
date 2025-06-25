@@ -16,6 +16,7 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QKeyEvent
 import database
 from qt_material_icons import MaterialIcon
+from utils.common import get_translation
 
 
 class DeletableTreeWidget(QTreeWidget):
@@ -43,9 +44,10 @@ class CodedSegmentsView(QWidget):
     segment_activated = Signal(int, int, int)  # document_id, start, end
     segment_edit_requested = Signal(int, int, int, int)  # seg_id, doc_id, start, end
 
-    def __init__(self, project_id):
+    def __init__(self, project_id, language=None):
         super().__init__()
         self.project_id = project_id
+        self.language = language or "English"
         self.current_document_id = None
         self.segments = []
         self.all_segments = []
@@ -56,15 +58,20 @@ class CodedSegmentsView(QWidget):
         main_layout.setSpacing(5)
 
         controls_layout = QHBoxLayout()
-        header_label = QLabel("Coded Segments")
+        header_label = QLabel(get_translation("coded_segments.header", self.language))
         font = header_label.font()
         font.setBold(True)
         header_label.setFont(font)
 
         self.scope_combo = QComboBox()
-        self.scope_combo.addItems(["Current Document", "Entire Project"])
+        self.scope_combo.addItems(
+            [
+                get_translation("coded_segments.scope_current", self.language),
+                get_translation("coded_segments.scope_project", self.language),
+            ]
+        )
         self.scope_combo.setToolTip(
-            "View coded segments in the current document or the entire project"
+            get_translation("coded_segments.scope_tooltip", self.language)
         )
 
         self.search_input = QLineEdit()
@@ -80,7 +87,9 @@ class CodedSegmentsView(QWidget):
         search_container.setLayout(search_layout)
 
         self.search_scope_combo = QComboBox()
-        self.search_scope_combo.setToolTip("Filter segments by the selected field")
+        self.search_scope_combo.setToolTip(
+            get_translation("coded_segments.search_scope_tooltip", self.language)
+        )
 
         controls_layout.addWidget(header_label)
         controls_layout.addWidget(self.scope_combo)
@@ -98,7 +107,9 @@ class CodedSegmentsView(QWidget):
         self.tree_widget.currentItemChanged.connect(self.on_selection_changed)
         self.tree_widget.itemActivated.connect(self.on_segment_activated)
 
-        self.scope_combo.setCurrentText("Current Document")
+        self.scope_combo.setCurrentText(
+            get_translation("coded_segments.scope_current", self.language)
+        )
         self.reload_view()
 
     def on_segment_activated(self, item: QTreeWidgetItem, column: int):
@@ -236,8 +247,7 @@ class CodedSegmentsView(QWidget):
     def load_segments(self, document_id):
         self.search_input.clear()
         self.current_document_id = document_id
-        if self.scope_combo.currentText() == "Current Document":
-            self.reload_view()
+        self.reload_view()
 
     def reload_view(self):
         try:
@@ -247,10 +257,22 @@ class CodedSegmentsView(QWidget):
 
         self.tree_widget.clear()
         self.all_segments = []
-        scope = self.scope_combo.currentText()
+        scope_display = self.scope_combo.currentText()
+        # Map translated scope labels back to internal keys
+        if scope_display == get_translation(
+            "coded_segments.scope_current", self.language
+        ):
+            scope = "Current Document"
+        else:
+            scope = "Entire Project"
 
         if scope == "Current Document":
-            headers = ["Coded Text", "Node", "Participant", ""]
+            headers = [
+                get_translation("coded_segments.col_coded_text", self.language),
+                get_translation("coded_segments.col_node", self.language),
+                get_translation("coded_segments.col_participant", self.language),
+                "",
+            ]
             self.tree_widget.setHeaderLabels(headers)
             self.tree_widget.setColumnWidth(0, 300)
             self.tree_widget.setColumnWidth(1, 150)
@@ -258,14 +280,25 @@ class CodedSegmentsView(QWidget):
             self.tree_widget.setColumnWidth(3, 50)
             self.search_scope_combo.clear()
             self.search_scope_combo.addItems(
-                ["All", "Coded Text", "Node", "Participant"]
+                [
+                    get_translation("coded_segments.search_all", self.language),
+                    get_translation("coded_segments.col_coded_text", self.language),
+                    get_translation("coded_segments.col_node", self.language),
+                    get_translation("coded_segments.col_participant", self.language),
+                ]
             )
             if self.current_document_id:
                 self.all_segments = database.get_coded_segments_for_document(
                     self.current_document_id
                 )
         elif scope == "Entire Project":
-            headers = ["Coded Text", "Node", "Participant", "Document", ""]
+            headers = [
+                get_translation("coded_segments.col_coded_text", self.language),
+                get_translation("coded_segments.col_node", self.language),
+                get_translation("coded_segments.col_participant", self.language),
+                get_translation("coded_segments.col_document", self.language),
+                "",
+            ]
             self.tree_widget.setHeaderLabels(headers)
             self.tree_widget.setColumnWidth(0, 300)
             self.tree_widget.setColumnWidth(1, 150)
@@ -274,7 +307,13 @@ class CodedSegmentsView(QWidget):
             self.tree_widget.setColumnWidth(4, 50)
             self.search_scope_combo.clear()
             self.search_scope_combo.addItems(
-                ["All", "Coded Text", "Node", "Participant", "Document"]
+                [
+                    get_translation("coded_segments.search_all", self.language),
+                    get_translation("coded_segments.col_coded_text", self.language),
+                    get_translation("coded_segments.col_node", self.language),
+                    get_translation("coded_segments.col_participant", self.language),
+                    get_translation("coded_segments.col_document", self.language),
+                ]
             )
             self.all_segments = database.get_coded_segments_for_project(self.project_id)
 
@@ -311,8 +350,34 @@ class CodedSegmentsView(QWidget):
     def filter_tree(self):
         self._last_active_node_filter = None
         search_text = self.search_input.text().lower()
-        scope = self.search_scope_combo.currentText()
-        view_scope = self.scope_combo.currentText()
+        scope_display = self.search_scope_combo.currentText()
+        view_scope_display = self.scope_combo.currentText()
+        # Map translated scope labels back to internal keys
+        if view_scope_display == get_translation(
+            "coded_segments.scope_current", self.language
+        ):
+            view_scope = "Current Document"
+        else:
+            view_scope = "Entire Project"
+        # Map search scope
+        if scope_display == get_translation("coded_segments.search_all", self.language):
+            scope = "All"
+        elif scope_display == get_translation(
+            "coded_segments.col_coded_text", self.language
+        ):
+            scope = "Coded Text"
+        elif scope_display == get_translation("coded_segments.col_node", self.language):
+            scope = "Node"
+        elif scope_display == get_translation(
+            "coded_segments.col_participant", self.language
+        ):
+            scope = "Participant"
+        elif scope_display == get_translation(
+            "coded_segments.col_document", self.language
+        ):
+            scope = "Document"
+        else:
+            scope = "All"
 
         try:
             self.tree_widget.currentItemChanged.disconnect(self.on_selection_changed)

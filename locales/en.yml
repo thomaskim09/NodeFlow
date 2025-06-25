@@ -1,4 +1,3 @@
-
 dashboard:
   title: 'Dashboard: {project_name}'
   scope_words: 'Scope Words'
@@ -123,6 +122,8 @@ startup:
   create_new_project: 'Create New Project'
   project_name_empty: 'Project name cannot be empty.'
   create_new_project_prompt: 'Enter new project name:'
+  create_new_project_to_begin: 'Create a new project to begin.'
+  select_a_project_to_open_or_create_a_new_one: 'Select a project to open or create a new one.'
 
 export:
   export_successful: 'Export Successful'
@@ -130,4 +131,66 @@ export:
   permission_denied: 'Permission Denied'
   permission_denied_message: 'Could not save the file to:\n{file_path}\n\nPlease make sure you have permissions to write to this location and that the file is not currently open in another program.'
   export_error: 'Export Error'
-  export_error_message: 'An unexpected error occurred while saving the file:\n{error}' 
+  export_error_message: 'An unexpected error occurred while saving the file:\n{error}'
+
+toolbar:
+  projects: 'Projects'
+  dashboard: 'Dashboard'
+  settings: 'Settings'
+
+export:
+  export_all_coded_data: 'Export All Coded Data'
+  export_all_coded_data_tooltip: 'Export all coded data for the project'
+  export_json: 'Export as JSON (.json)'
+  export_word: 'Export as Word (.docx)'
+  export_excel: 'Export as Excel (.xlsx)'
+
+participant:
+  header: 'Participants'
+  scope_current: 'Current Document'
+  scope_project: 'Project Total'
+  show_all: 'Show All'
+  show_all_tooltip: 'Clear selection and show all segments'
+  add: 'Add Participant'
+  add_tooltip: 'Add a new participant'
+  edit_tooltip: 'Edit Participant Name (F2)'
+  delete_tooltip: 'Delete Participant (Delete)'
+  no_participants: 'No participants created.'
+  add_dialog_title: 'Add Participant'
+  add_dialog_prompt: "Enter participant's name:"
+  edit_dialog_title: 'Edit Participant'
+  edit_dialog_prompt: 'Enter new name:'
+  delete_confirm_title: 'Confirm Delete'
+  delete_confirm_message: "Are you sure you want to delete '{current_name}'? This will also unassign them from any documents or coded segments."
+
+edit_bar:
+  editing_segment: '<b>Editing Segment:</b> Adjust selection and click save.'
+  save_changes: 'Save Changes'
+  cancel: 'Cancel'
+
+project_manager:
+  header: 'Project Management'
+  active_project: 'Active Project:'
+  new_project: 'New Project...'
+  create_dialog_title: 'Create New Project'
+  project_name_label: 'Project Name:'
+  save: 'Save'
+  cancel: 'Cancel'
+  error: 'Error'
+  project_name_empty: 'Project name cannot be empty.'
+  success: 'Success'
+  project_created: "Project '{project_name}' created successfully."
+
+coded_segments:
+  header: 'Coded Segments'
+  scope_current: 'Current Document'
+  scope_project: 'Entire Project'
+  scope_tooltip: 'View coded segments in the current document or the entire project'
+  search_scope_tooltip: 'Filter segments by the selected field'
+  col_coded_text: 'Coded Text'
+  col_node: 'Node'
+  col_participant: 'Participant'
+  col_document: 'Document'
+  search_all: 'All'
+
+  # ... existing code ... 

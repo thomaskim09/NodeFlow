@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Signal, Qt
 from PySide6.QtGui import QKeyEvent
 from qt_material_icons import MaterialIcon
+from utils.common import get_translation
 
 import database
 
@@ -69,7 +70,9 @@ class ParticipantItemWidget(QWidget):
         edit_icon = MaterialIcon("edit")
         self.edit_button.setIcon(edit_icon)
         self.edit_button.setFixedSize(24, 24)
-        self.edit_button.setToolTip("Edit Participant Name (F2)")
+        self.edit_button.setToolTip(
+            get_translation("participant.edit_tooltip", parent_manager.language)
+        )
         self.edit_button.clicked.connect(self.on_edit_clicked)
         self.edit_button.setVisible(False)
 
@@ -77,7 +80,9 @@ class ParticipantItemWidget(QWidget):
         delete_icon = MaterialIcon("delete")
         self.delete_button.setIcon(delete_icon)
         self.delete_button.setFixedSize(24, 24)
-        self.delete_button.setToolTip("Delete Participant (Delete)")
+        self.delete_button.setToolTip(
+            get_translation("participant.delete_tooltip", parent_manager.language)
+        )
         self.delete_button.clicked.connect(self.on_delete_clicked)
         self.delete_button.setVisible(False)
 
@@ -110,9 +115,10 @@ class ParticipantManager(QWidget):
     participant_updated = Signal()
     participant_selected = Signal(int)
 
-    def __init__(self, project_id):
+    def __init__(self, project_id, language=None):
         super().__init__()
         self.project_id = project_id
+        self.language = language or "English"
         self.current_document_id = None
 
         main_layout = QVBoxLayout(self)
@@ -120,28 +126,41 @@ class ParticipantManager(QWidget):
         main_layout.setSpacing(5)
 
         header_layout = QHBoxLayout()
-        header_label = QLabel("Participants")
+        header_label = QLabel(get_translation("participant.header", self.language))
         font = header_label.font()
         font.setBold(True)
         header_label.setFont(font)
 
         self.scope_combo = QComboBox()
-        self.scope_combo.addItems(["Current Document", "Project Total"])
-        self.scope_combo.setToolTip("Switch the scope of the stats calculation")
-        self.scope_combo.setCurrentText("Current Document")
+        self.scope_combo.addItems(
+            [
+                get_translation("participant.scope_current", self.language),
+                get_translation("participant.scope_project", self.language),
+            ]
+        )
+        self.scope_combo.setToolTip(
+            get_translation("participant.show_all_tooltip", self.language)
+        )
+        self.scope_combo.setCurrentText(
+            get_translation("participant.scope_current", self.language)
+        )
 
         self.show_all_button = QPushButton()
         show_all_icon = MaterialIcon("filter_list")
         self.show_all_button.setIcon(show_all_icon)
-        self.show_all_button.setText("Show All")
-        self.show_all_button.setToolTip("Clear selection and show all segments")
+        self.show_all_button.setText(
+            get_translation("participant.show_all", self.language)
+        )
+        self.show_all_button.setToolTip(
+            get_translation("participant.show_all_tooltip", self.language)
+        )
         self.show_all_button.clicked.connect(self.clear_selection)
 
         add_button = QPushButton()
         add_icon = MaterialIcon("add")
         add_button.setIcon(add_icon)
-        add_button.setText("Add Participant")
-        add_button.setToolTip("Add a new participant")
+        add_button.setText(get_translation("participant.add", self.language))
+        add_button.setToolTip(get_translation("participant.add_tooltip", self.language))
         add_button.clicked.connect(self.add_participant)
 
         header_layout.addWidget(header_label)
@@ -206,7 +225,10 @@ class ParticipantManager(QWidget):
             )
 
         if not participants:
-            item = QListWidgetItem("No participants created.", self.list_widget)
+            item = QListWidgetItem(
+                get_translation("participant.no_participants", self.language),
+                self.list_widget,
+            )
             item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsSelectable)
         else:
             for p in sorted(participants, key=lambda x: x["name"]):
@@ -243,7 +265,9 @@ class ParticipantManager(QWidget):
 
     def add_participant(self):
         name, ok = QInputDialog.getText(
-            self, "Add Participant", "Enter participant's name:"
+            self,
+            get_translation("participant.add_dialog_title", self.language),
+            get_translation("participant.add_dialog_prompt", self.language),
         )
         if ok and name.strip():
             database.add_participant(self.project_id, name.strip())
@@ -252,7 +276,10 @@ class ParticipantManager(QWidget):
 
     def edit_participant(self, participant_id, current_name):
         new_name, ok = QInputDialog.getText(
-            self, "Edit Participant", "Enter new name:", text=current_name
+            self,
+            get_translation("participant.edit_dialog_title", self.language),
+            get_translation("participant.edit_dialog_prompt", self.language),
+            text=current_name,
         )
         if ok and new_name.strip() and new_name.strip() != current_name:
             database.update_participant(participant_id, new_name.strip(), "")
@@ -262,8 +289,12 @@ class ParticipantManager(QWidget):
     def delete_participant(self, participant_id, current_name):
         reply = QMessageBox.question(
             self,
-            "Confirm Delete",
-            f"Are you sure you want to delete '{current_name}'? This will also unassign them from any documents or coded segments.",
+            get_translation("participant.delete_confirm_title", self.language),
+            get_translation(
+                "participant.delete_confirm_message",
+                self.language,
+                current_name=current_name,
+            ),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
         )

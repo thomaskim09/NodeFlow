@@ -1,6 +1,7 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
 import database
+from utils.common import get_translation
 
 
 class ProjectManager:
@@ -14,12 +15,17 @@ class ProjectManager:
 
         # Create a container frame for project management widgets
         project_frame = ttk.LabelFrame(
-            self.parent, text="Project Management", padding=10
+            self.parent,
+            text=get_translation("project_manager.header", "English"),
+            padding=10,
         )
         project_frame.pack(fill="x", padx=10, pady=10)
 
         # Project selection dropdown
-        ttk.Label(project_frame, text="Active Project:").pack(fill="x")
+        ttk.Label(
+            project_frame,
+            text=get_translation("project_manager.active_project", "English"),
+        ).pack(fill="x")
 
         self.project_combo = ttk.Combobox(
             project_frame, textvariable=self.active_project_id, state="readonly"
@@ -29,7 +35,9 @@ class ProjectManager:
 
         # Button to create a new project
         new_project_button = ttk.Button(
-            project_frame, text="New Project...", command=self.open_new_project_dialog
+            project_frame,
+            text=get_translation("project_manager.new_project", "English"),
+            command=self.open_new_project_dialog,
         )
         new_project_button.pack(fill="x")
 
@@ -60,7 +68,9 @@ class ProjectManager:
     def open_new_project_dialog(self):
         """Opens a Toplevel window to get details for a new project."""
         self.dialog = tk.Toplevel(self.parent)
-        self.dialog.title("Create New Project")
+        self.dialog.title(
+            get_translation("project_manager.create_dialog_title", "English")
+        )
         self.dialog.geometry("300x150")
         self.dialog.resizable(False, False)
         self.dialog.transient(self.parent)  # Keep dialog on top of the main window
@@ -69,7 +79,9 @@ class ProjectManager:
         frame = ttk.Frame(self.dialog, padding=10)
         frame.pack(expand=True, fill="both")
 
-        ttk.Label(frame, text="Project Name:").pack(pady=5)
+        ttk.Label(
+            frame, text=get_translation("project_manager.project_name_label", "English")
+        ).pack(pady=5)
         self.new_project_name_entry = ttk.Entry(frame)
         self.new_project_name_entry.pack(fill="x", expand=True)
         self.new_project_name_entry.focus_set()  # Set focus to the entry field
@@ -78,12 +90,16 @@ class ProjectManager:
         button_frame.pack(pady=10)
 
         save_button = ttk.Button(
-            button_frame, text="Save", command=self.save_new_project
+            button_frame,
+            text=get_translation("project_manager.save", "English"),
+            command=self.save_new_project,
         )
         save_button.pack(side="left", padx=5)
 
         cancel_button = ttk.Button(
-            button_frame, text="Cancel", command=self.dialog.destroy
+            button_frame,
+            text=get_translation("project_manager.cancel", "English"),
+            command=self.dialog.destroy,
         )
         cancel_button.pack(side="left", padx=5)
 
@@ -92,14 +108,18 @@ class ProjectManager:
         project_name = self.new_project_name_entry.get().strip()
         if not project_name:
             messagebox.showerror(
-                "Error", "Project name cannot be empty.", parent=self.dialog
+                get_translation("project_manager.error", "English"),
+                get_translation("project_manager.project_name_empty", "English"),
+                parent=self.dialog,
             )
             return
 
         database.add_project(project_name)
         messagebox.showinfo(
-            "Success",
-            f"Project '{project_name}' created successfully.",
+            get_translation("project_manager.success", "English"),
+            get_translation(
+                "project_manager.project_created", "English", project_name=project_name
+            ),
             parent=self.dialog,
         )
         self.dialog.destroy()

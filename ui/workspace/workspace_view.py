@@ -92,6 +92,7 @@ class SettingsDialog(QDialog):
 class WorkspaceView(QWidget):
     def __init__(self, project_id, project_name, back_to_startup_callback):
         super().__init__()
+        self.language = load_settings().get("language", "English")
         self.project_id = project_id
         self.project_name = project_name
         self.back_to_startup_callback = back_to_startup_callback
@@ -100,13 +101,17 @@ class WorkspaceView(QWidget):
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_splitter = QSplitter(Qt.Orientation.Horizontal)
-        toolbar = QToolBar("Main Toolbar")
+        toolbar = QToolBar(get_translation("toolbar.projects", self.language))
         toolbar.setMovable(False)
-        back_action = QAction("Projects", self)
+        back_action = QAction(get_translation("toolbar.projects", self.language), self)
         back_action.triggered.connect(self.back_to_startup_callback)
-        dashboard_action = QAction("Dashboard", self)
+        dashboard_action = QAction(
+            get_translation("toolbar.dashboard", self.language), self
+        )
         dashboard_action.triggered.connect(self.open_dashboard)
-        settings_action = QAction("Settings", self)
+        settings_action = QAction(
+            get_translation("toolbar.settings", self.language), self
+        )
         settings_action.triggered.connect(self.open_settings)
         toolbar.addAction(back_action)
         toolbar.addAction(dashboard_action)
@@ -114,21 +119,31 @@ class WorkspaceView(QWidget):
         main_layout.addWidget(toolbar)
         self.left_pane = QFrame()
         self.left_pane_layout = QVBoxLayout(self.left_pane)
-        self.center_pane = ContentView(self.project_id)
-        self.bottom_pane = CodedSegmentsView(self.project_id)
-        self.participant_manager = ParticipantManager(self.project_id)
-        self.node_tree_manager = NodeTreeManager(self.project_id)
+        self.center_pane = ContentView(self.project_id, self.language)
+        self.bottom_pane = CodedSegmentsView(self.project_id, self.language)
+        self.participant_manager = ParticipantManager(self.project_id, self.language)
+        self.node_tree_manager = NodeTreeManager(self.project_id, self.language)
         self.left_pane_layout.addWidget(self.participant_manager)
         self.left_pane_layout.addWidget(self.node_tree_manager)
         export_icon = MaterialIcon("download")
         export_button = QPushButton()
         export_button.setIcon(export_icon)
-        export_button.setText("Export All Coded Data")
-        export_button.setToolTip("Export all coded data for the project")
+        export_button.setText(
+            get_translation("export.export_all_coded_data", self.language)
+        )
+        export_button.setToolTip(
+            get_translation("export.export_all_coded_data_tooltip", self.language)
+        )
         export_menu = QMenu(self)
-        self.action_export_json = export_menu.addAction("Export as JSON (.json)")
-        self.action_export_word = export_menu.addAction("Export as Word (.docx)")
-        self.action_export_excel = export_menu.addAction("Export as Excel (.xlsx)")
+        self.action_export_json = export_menu.addAction(
+            get_translation("export.export_json", self.language)
+        )
+        self.action_export_word = export_menu.addAction(
+            get_translation("export.export_word", self.language)
+        )
+        self.action_export_excel = export_menu.addAction(
+            get_translation("export.export_excel", self.language)
+        )
         export_button.setMenu(export_menu)
         self.left_pane_layout.addStretch()
         self.left_pane_layout.addWidget(export_button)
@@ -192,6 +207,9 @@ class WorkspaceView(QWidget):
         # Initial Load
         self.center_pane.load_document_content()
         self.on_document_changed()
+        # Ensure coded segments view is refreshed on first open
+        if hasattr(self.center_pane, "current_document_id"):
+            self.bottom_pane.load_segments(self.center_pane.current_document_id)
 
     def on_segment_navigation_requested(self, document_id, start, end):
         """Receives signal from CodedSegmentsView and commands ContentView."""
