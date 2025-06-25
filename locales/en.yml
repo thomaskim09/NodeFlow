@@ -73,6 +73,7 @@ node_tree:
   export_excel_info: 'Choose whether to combine all data into a single sheet or create a separate sheet for each parent node.'
   export_excel_single: 'Single Sheet'
   export_excel_multi: 'Multiple Sheets'
+  export_excel_overall_participants: 'Overall Participants'
   error: 'Error'
   error_invalid_project: 'Invalid Project ID: {project_id}'
   error_failed_add_root: 'Failed to add root node: {error}'
@@ -132,18 +133,12 @@ export:
   permission_denied_message: 'Could not save the file to:\n{file_path}\n\nPlease make sure you have permissions to write to this location and that the file is not currently open in another program.'
   export_error: 'Export Error'
   export_error_message: 'An unexpected error occurred while saving the file:\n{error}'
-
-toolbar:
-  projects: 'Projects'
-  dashboard: 'Dashboard'
-  settings: 'Settings'
-
-export:
   export_all_coded_data: 'Export All Coded Data'
   export_all_coded_data_tooltip: 'Export all coded data for the project'
   export_json: 'Export as JSON (.json)'
   export_word: 'Export as Word (.docx)'
   export_excel: 'Export as Excel (.xlsx)'
+  excel: 'Export to Excel...'
 
 participant:
   header: 'Participants'
@@ -193,4 +188,7 @@ coded_segments:
   col_document: 'Document'
   search_all: 'All'
 
-  # ... existing code ... 
+toolbar:
+  projects: 'Projects'
+  dashboard: 'Dashboard'
+  settings: 'Settings'

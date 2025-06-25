@@ -73,6 +73,7 @@ node_tree:
   export_excel_info: '选择将所有数据合并到一个工作表还是为每个父节点创建单独的工作表。'
   export_excel_single: '单工作表'
   export_excel_multi: '多工作表'
+  export_excel_overall_participants: '总体参与者'
   error: '错误'
   error_invalid_project: '无效的项目ID: {project_id}'
   error_failed_add_root: '添加根节点失败: {error}'
@@ -137,6 +138,7 @@ export:
   export_json: '导出为JSON (.json)'
   export_word: '导出为Word (.docx)'
   export_excel: '导出为Excel (.xlsx)'
+  excel: '导出到 Excel...'
 
 participant:
   header: '参与者'
@@ -190,5 +192,3 @@ toolbar:
   projects: '项目'
   dashboard: '仪表板'
   settings: '设置'
-
-  # ... existing code ... 

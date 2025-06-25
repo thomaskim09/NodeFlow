@@ -2,7 +2,8 @@
 
 from PySide6.QtWidgets import QFileDialog, QMessageBox
 from docx import Document
-from openpyxl.styles import Font
+from openpyxl.styles import Font, Alignment
+from collections import defaultdict
 import json
 import re
 import database
@@ -611,6 +612,149 @@ def export_node_family_to_excel_multi_sheet(
             "Permission Denied",
             f"Could not save the file to:\n{file_path}\n\nPlease make sure you have permissions to write to this location and that the file is not currently open in another program.",
         )
+    except Exception as e:
+        QMessageBox.critical(
+            parent_widget,
+            "Export Error",
+            f"An unexpected error occurred while saving the file:\n{e}",
+        )
+
+
+def export_overall_participants_to_excel(project_id, parent_widget=None):
+    """
+    Exports a comprehensive Excel report with an overall node/participant view
+    and individual sheets for each participant.
+    """
+    file_path, _ = QFileDialog.getSaveFileName(
+        parent_widget, "Save Overall Participants Report", "", "Excel Files (*.xlsx)"
+    )
+    if not file_path:
+        return
+
+    try:
+        # --- 1. Fetch all necessary data ---
+        nodes = database.get_nodes_for_project(project_id)
+        participants = database.get_participants_for_project(project_id)
+        all_segments = database.get_coded_segments_for_project(project_id)
+
+        if not nodes:
+            QMessageBox.information(
+                parent_widget, "No Data", "There are no nodes to export."
+            )
+            return
+
+        # --- 2. Structure the data for easy access ---
+        participants_map = {p["id"]: p["name"] for p in participants}
+        sorted_participant_ids = sorted(
+            participants_map.keys(), key=lambda pid: participants_map[pid]
+        )
+
+        nodes_by_parent = defaultdict(list)
+        for node in nodes:
+            nodes_by_parent[node["parent_id"]].append(node)
+        for parent_id in nodes_by_parent:
+            nodes_by_parent[parent_id].sort(key=lambda n: n["position"])
+
+        segments_by_node_participant = defaultdict(lambda: defaultdict(list))
+        for seg in all_segments:
+            segments_by_node_participant[seg["node_id"]][seg["participant_id"]].append(
+                seg["content_preview"]
+            )
+
+        # --- 3. Create the Workbook and Overall Sheet ---
+        wb = openpyxl.Workbook()
+        ws_overall = wb.active
+        ws_overall.title = "Overall"
+
+        max_depth = 0
+
+        def find_max_depth(p_id, depth):
+            nonlocal max_depth
+            max_depth = max(max_depth, depth)
+            for child in nodes_by_parent.get(p_id, []):
+                find_max_depth(child["id"], depth + 1)
+
+        find_max_depth(None, 1)
+
+        headers = [f"Level {i+1}" for i in range(max_depth)] + [
+            participants_map[pid] for pid in sorted_participant_ids
+        ]
+        ws_overall.append(headers)
+
+        # --- 4. Recursively write data to the Overall sheet ---
+        def write_rows_recursively(parent_id, level, parent_names):
+            for node in nodes_by_parent.get(parent_id, []):
+                current_names = parent_names + [node["name"]]
+                row_data = current_names + [""] * (max_depth - len(current_names))
+
+                participant_cells = []
+                for pid in sorted_participant_ids:
+                    segments = segments_by_node_participant[node["id"]].get(pid, [])
+                    quoted_segments = [f'"{s}"' for s in segments]
+                    participant_cells.append("\n".join(quoted_segments))
+
+                ws_overall.append(row_data + participant_cells)
+
+                # Enable text wrapping for the cells with segments
+                current_row_index = ws_overall.max_row
+                for col_idx, _ in enumerate(participant_cells, start=max_depth + 1):
+                    cell = ws_overall.cell(row=current_row_index, column=col_idx)
+                    cell.alignment = Alignment(wrap_text=True, vertical="top")
+
+                write_rows_recursively(node["id"], level + 1, current_names)
+
+        write_rows_recursively(None, 1, [])
+        ws_overall.column_dimensions["A"].width = 30
+
+        for i in range(len(sorted_participant_ids)):
+            col_letter = openpyxl.utils.cell.get_column_letter(max_depth + 1 + i)
+            ws_overall.column_dimensions[col_letter].width = 50
+
+        # --- 5. Create individual sheets for each participant ---
+        for p in participants:
+            p_id = p["id"]
+            p_name = p["name"]
+            ws_p = wb.create_sheet(
+                title=p_name[:31]
+            )  # Sheet titles have a 31-char limit
+            ws_p.append(["Node", "Coded Segment", "Document"])
+
+            participant_segments = [
+                s for s in all_segments if s["participant_id"] == p_id
+            ]
+
+            for seg in sorted(participant_segments, key=lambda s: s["node_name"]):
+                ws_p.append(
+                    [
+                        seg["node_name"],
+                        seg["content_preview"],
+                        seg["document_title"],
+                    ]
+                )
+
+            ws_p.column_dimensions["A"].width = 30
+            ws_p.column_dimensions["B"].width = 80
+            ws_p.column_dimensions["C"].width = 40
+
+        # --- 6. Save the workbook ---
+        wb.save(file_path)
+        msg_box = QMessageBox(parent_widget)
+        msg_box.setWindowTitle("Export Successful")
+        msg_box.setText(f"Report successfully saved to:\n{file_path}")
+        open_button = msg_box.addButton("Open File", QMessageBox.ActionRole)
+        msg_box.addButton(QMessageBox.Ok)
+        msg_box.exec_()
+        if msg_box.clickedButton() == open_button:
+            import os
+            import sys
+
+            if sys.platform.startswith("win"):
+                os.startfile(file_path)
+            elif sys.platform.startswith("darwin"):
+                os.system(f'open "{file_path}"')
+            else:
+                os.system(f'xdg-open "{file_path}"')
+
     except Exception as e:
         QMessageBox.critical(
             parent_widget,

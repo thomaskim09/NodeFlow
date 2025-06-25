@@ -20,6 +20,7 @@ from managers.export_manager import (
     export_node_family_to_word,
     export_node_family_to_excel,
     export_node_family_to_excel_multi_sheet,
+    export_overall_participants_to_excel,
 )
 import database
 from qt_material_icons import MaterialIcon
@@ -658,7 +659,16 @@ class NodeTreeManager(QWidget):
         )
         menu.exec(button.mapToGlobal(button.rect().bottomLeft()))
 
-    def export_node_family_to_excel_handler(self, node_id):
+    def show_excel_export_options(self):
+        """
+        Displays a dialog box with all available Excel export options.
+        This can be called from the node tree context menu or the main menu.
+        """
+        node_id = self.get_selected_node_id()
+        # The overall participants export does not need a selected node,
+        # but the other two formats do.
+        is_node_selected = node_id is not None
+
         msg_box = QMessageBox(self)
         msg_box.setWindowTitle(
             get_translation("node_tree.export_excel_option", self.language)
@@ -669,21 +679,49 @@ class NodeTreeManager(QWidget):
         msg_box.setInformativeText(
             get_translation("node_tree.export_excel_info", self.language)
         )
+
         single_sheet_button = msg_box.addButton(
             get_translation("node_tree.export_excel_single", self.language),
             QMessageBox.ButtonRole.ActionRole,
         )
+        single_sheet_button.setEnabled(
+            is_node_selected
+        )  # Disable if no node is selected
+
         multi_sheet_button = msg_box.addButton(
             get_translation("node_tree.export_excel_multi", self.language),
             QMessageBox.ButtonRole.ActionRole,
         )
+        multi_sheet_button.setEnabled(
+            is_node_selected
+        )  # Disable if no node is selected
+
+        overall_participants_button = msg_box.addButton(
+            get_translation(
+                "node_tree.export_excel_overall_participants", self.language
+            ),
+            QMessageBox.ButtonRole.ActionRole,
+        )
+
         msg_box.addButton(QMessageBox.StandardButton.Cancel)
         msg_box.exec()
+
         clicked_button = msg_box.clickedButton()
+        if clicked_button is None:
+            return
         if clicked_button == single_sheet_button:
             export_node_family_to_excel(self.project_id, node_id, self)
         elif clicked_button == multi_sheet_button:
             export_node_family_to_excel_multi_sheet(self.project_id, node_id, self)
+        elif clicked_button == overall_participants_button:
+            export_overall_participants_to_excel(self.project_id, self)
+
+    def export_node_family_to_excel_handler(self, node_id):
+        """
+        This handler is specifically for the right-click context menu.
+        It now calls the main dialog function.
+        """
+        self.show_excel_export_options()
 
     def add_root_node(self):
         name, ok = QInputDialog.getText(
@@ -833,3 +871,12 @@ class NodeTreeManager(QWidget):
             if widget and hasattr(widget, "update_language"):
                 widget.update_language(new_language)
             it += 1
+
+    def get_selected_node_id(self):
+        """
+        Returns the node ID of the currently selected item in the tree widget, or None if nothing is selected.
+        """
+        current_item = self.tree_widget.currentItem()
+        if current_item is not None:
+            return current_item.data(0, 1)
+        return None
