@@ -686,8 +686,8 @@ def export_annotated_document(
             else:
                 run.font.color.rgb = RGBColor(255, 255, 255)  # white
 
-            # Add remark as [<node>, <participant>] (no field name prefix)
-            info_run = p.add_run(f" [{seg['node_name']}, {seg['participant_name']}] ")
+            # Add remark as [<node>] (no field name prefix)
+            info_run = p.add_run(f" [{seg['node_name']}] ")
             info_run.italic = True
             info_run.font.size = run.font.size
 
@@ -698,11 +698,23 @@ def export_annotated_document(
 
         doc.save(file_path)
 
-        QMessageBox.information(
-            parent_widget,
-            "Export Successful",
-            f"Annotated document successfully saved to:\n{file_path}",
-        )
+        # Show a message box with an 'Open File' button
+        msg_box = QMessageBox(parent_widget)
+        msg_box.setWindowTitle("Export Successful")
+        msg_box.setText(f"Annotated document successfully saved to:\n{file_path}")
+        open_button = msg_box.addButton("Open File", QMessageBox.ActionRole)
+        msg_box.addButton(QMessageBox.Ok)
+        msg_box.exec_()
+        if msg_box.clickedButton() == open_button:
+            import os
+            import sys
+
+            if sys.platform.startswith("win"):
+                os.startfile(file_path)
+            elif sys.platform.startswith("darwin"):
+                os.system(f'open "{file_path}"')
+            else:
+                os.system(f'xdg-open "{file_path}"')
     except Exception as e:
         import traceback
 

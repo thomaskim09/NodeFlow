@@ -168,9 +168,13 @@ class WorkspaceView(QWidget):
     def open_dashboard(self):
         current_doc_id = self.center_pane.current_document_id
         loading = QProgressDialog("Loading dashboard...", None, 0, 0, self)
-        loading.setWindowFlags(Qt.FramelessWindowHint | Qt.Dialog)
+        loading.setWindowFlags(Qt.FramelessWindowHint | Qt.Dialog | Qt.Tool)
         loading.setCancelButton(None)
+        loading.setStyleSheet(
+            "QProgressDialog { border: 3px solid #0078d7; border-radius: 10px; }"
+        )
         loading.show()
+        center_on_screen(loading)
         QApplication.processEvents()
         dialog = DashboardView(self.project_id, self.project_name, current_doc_id, self)
         loading.close()
@@ -270,3 +274,15 @@ class WorkspaceView(QWidget):
         text_edit.setTextCursor(new_cursor)
         scrollbar.setValue(original_scroll_value)
         text_edit.setFocus()
+
+
+def center_on_screen(window):
+    screen = (
+        window.screen()
+        if hasattr(window, "screen") and window.screen()
+        else QApplication.primaryScreen()
+    )
+    center_point = screen.availableGeometry().center()
+    frame_geometry = window.frameGeometry()
+    frame_geometry.moveCenter(center_point)
+    window.move(frame_geometry.topLeft())

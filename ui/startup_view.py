@@ -219,9 +219,13 @@ class StartupView(QWidget):
         widget = self.project_list_widget.itemWidget(selected_item)
         if isinstance(widget, ProjectItemWidget):
             loading = QProgressDialog("Loading workspace...", None, 0, 0, self)
-            loading.setWindowFlags(Qt.FramelessWindowHint | Qt.Dialog)
+            loading.setWindowFlags(Qt.FramelessWindowHint | Qt.Dialog | Qt.Tool)
             loading.setCancelButton(None)
+            loading.setStyleSheet(
+                "QProgressDialog { border: 3px solid #0078d7; border-radius: 10px; }"
+            )
             loading.show()
+            center_on_screen(loading)
             QApplication.processEvents()
             self.workspace_window = WorkspaceMainWindow(
                 widget.project_id, widget.project_name, self
@@ -273,3 +277,15 @@ class StartupView(QWidget):
                 )
         elif ok:
             QMessageBox.critical(self, "Error", "Project name cannot be empty.")
+
+
+def center_on_screen(window):
+    screen = (
+        window.screen()
+        if hasattr(window, "screen") and window.screen()
+        else QApplication.primaryScreen()
+    )
+    center_point = screen.availableGeometry().center()
+    frame_geometry = window.frameGeometry()
+    frame_geometry.moveCenter(center_point)
+    window.move(frame_geometry.topLeft())
