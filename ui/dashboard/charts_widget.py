@@ -47,23 +47,14 @@ class ChartsWidget(QWidget):
 
     def _create_bar_chart(self, root_nodes_data):
         series = QBarSeries()
-        pie_colors = [
-            "#1f77b4",
-            "#ff7f0e",
-            "#2ca02c",
-            "#d62728",
-            "#9467bd",
-            "#8c564b",
-            "#e377c2",
-        ]
         sorted_data = sorted(root_nodes_data, key=lambda x: x[1], reverse=True)
         categories = []
-        for i, (node_name, percentage, _, _) in enumerate(sorted_data):
+        for i, (node_name, percentage, _, _, node_color) in enumerate(sorted_data):
             bar_set = QBarSet(
                 node_name[:15] + "..." if len(node_name) > 15 else node_name
             )
             bar_set.append(percentage)
-            bar_set.setColor(QColor(pie_colors[i % len(pie_colors)]))
+            bar_set.setColor(QColor(node_color))  # Use the node's color
             series.append(bar_set)
             categories.append(bar_set.label())
 
@@ -93,33 +84,26 @@ class ChartsWidget(QWidget):
 
         is_dark = self.settings.get("theme") == "Dark"
         label_color = QColor("white") if is_dark else QColor("black")
-        pie_colors = [
-            "#1f77b4",
-            "#ff7f0e",
-            "#2ca02c",
-            "#d62728",
-            "#9467bd",
-            "#8c564b",
-            "#e377c2",
-        ]
+        # Keep a small preset color list for the 'Other' slice
+        other_slice_color = "#e377c2"
 
         sorted_data = sorted(root_nodes_data, key=lambda x: x[1], reverse=True)
         main_slices = sorted_data[:6]
         other_percentage = sum(item[1] for item in sorted_data[6:])
 
-        for i, (name, p, _, _) in enumerate(main_slices):
+        for i, (name, p, _, _, color) in enumerate(main_slices):
             if p > 0.1:
                 slice_ = QPieSlice(f"{name} {p:.1f}%", p)
                 slice_.setLabelVisible()
                 slice_.setLabelBrush(label_color)
-                slice_.setBrush(QColor(pie_colors[i % len(pie_colors)]))
+                slice_.setBrush(QColor(color))  # Use the node's color
                 series.append(slice_)
 
         if other_percentage > 0.1:
             slice_ = QPieSlice(f"Other {other_percentage:.1f}%", other_percentage)
             slice_.setLabelVisible()
             slice_.setLabelBrush(label_color)
-            slice_.setBrush(QColor(pie_colors[6 % len(pie_colors)]))
+            slice_.setBrush(QColor(other_slice_color))
             series.append(slice_)
 
         chart = QChart(title="Code Distribution (Pie)")

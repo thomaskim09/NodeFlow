@@ -350,11 +350,21 @@ class DashboardView(QDialog):
                         "segment_count", 0
                     )
                     p = (wc / parent_total_words * 100) if parent_total_words > 0 else 0
-                    children_data_for_charts.append((child_node["name"], p, wc, sc))
+                    children_data_for_charts.append(
+                        (child_node["name"], p, wc, sc, child_node["color"])
+                    )
                 self.charts_widget.update_charts(children_data_for_charts)
             else:
                 wc, sc = parent_total_words, parent_stats.get("segment_count", 0)
-                leaf_node_data = [(nodes_map[node_id]["name"], 100.0, wc, sc)]
+                leaf_node_data = [
+                    (
+                        nodes_map[node_id]["name"],
+                        100.0,
+                        wc,
+                        sc,
+                        nodes_map[node_id]["color"],
+                    )
+                ]
                 self.charts_widget.update_charts(leaf_node_data)
         else:
             total_words = results.get("total_words", 0)
@@ -763,7 +773,9 @@ class DashboardView(QDialog):
                 item.setText(0, f" {prefix}{i + 1}. {node_data['name']}")
 
                 if p_id is None:
-                    root_nodes_data.append((node_data["name"], p, wc, sc))
+                    root_nodes_data.append(
+                        (node_data["name"], p, wc, sc, node_data["color"])
+                    )
                 recurse(item, node_data["id"], f"{prefix}{i + 1}.")
 
         recurse(self.tree_widget.invisibleRootItem(), None)
