@@ -486,7 +486,9 @@ class NodeTreeManager(QWidget):
 
     def set_current_document_id(self, doc_id):
         self.current_document_id = doc_id
-        if self.scope_combo.currentText() == "Current Document":
+        if self.scope_combo.currentText() == get_translation(
+            "node_tree.scope_current", self.language
+        ):
             self.load_nodes()
 
     def set_selection_mode(self, enabled: bool):
