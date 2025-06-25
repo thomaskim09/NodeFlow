@@ -280,7 +280,7 @@ def get_dark_theme_stylesheet():
         }
         QTabBar::tab:selected {
             background: #2c2c2c; /* Selected tab matches pane background */
-            border-bottom-color: #2c2c2c; /* Remove border from selected tab bottom */
+            border-bottom-color: #2c2c2c;
         }
         QTabBar::tab:hover {
             background: #4a4a4a;

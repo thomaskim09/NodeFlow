@@ -905,7 +905,7 @@ def export_annotated_document(
             hex_color = seg["node_color"].lstrip("#")
             rgb = tuple(int(hex_color[i : i + 2], 16) for i in (0, 2, 4))
             # Set background color using shading (python-docx)
-            run.font.highlight_color = None  # Remove any highlight
+            run.font.highlight_color = None
             rPr = run._element.get_or_add_rPr()
             shd = rPr.xpath("./w:shd")
             from docx.oxml.ns import qn

@@ -449,7 +449,6 @@ class DashboardView(QDialog):
 
     def _update_cooccurrence_tab(self, results):
         if "node_id" in results:
-            # Not available for node-specific view
             self.co_occurrence_widget.clear_views()
         else:
             co_occurrence_matrix = results.get("co_occurrence_matrix", {})

@@ -28,13 +28,13 @@ NodeFlow is a user-friendly desktop application designed to assist researchers a
 
 - All translations are stored in YAML files in the `locales/` directory (e.g., `en.yml`, `zh.yml`).
 - Use hierarchical keys for each string, e.g.:
-  - `badger.view.dashboard.default_title`
-  - `badger.view.dashboard.welcome_message`
+  - `app.view.dashboard.default_title`
+  - `app.view.dashboard.welcome_message`
 - In code, use:
   ```python
   from utils.common import get_translation
-  get_translation('badger.view.dashboard.default_title', language)
-  get_translation('badger.view.dashboard.welcome_message', language, title='NodeFlow')
+  get_translation('app.view.dashboard.default_title', language)
+  get_translation('app.view.dashboard.welcome_message', language, title='NodeFlow')
   ```
 - To add a new language, create a new YAML file in `locales/` with the same key structure.
 
@@ -64,3 +64,31 @@ NodeFlow is a user-friendly desktop application designed to assist researchers a
     ```bash
     python main.py
     ```
+
+## Packaging as an Executable (EXE) with PyInstaller
+
+To create a standalone Windows executable from NodeFlow using PyInstaller:
+
+1. **Install PyInstaller** (if not already installed):
+    ```bash
+    pip install pyinstaller
+    ```
+
+2. **Run PyInstaller** from the project root:
+    ```bash
+    pyinstaller --onefile --windowed --name "NodeFlow" --icon resource/icon.png --add-data "locales;locales" --add-data "resource;resource" main.py
+    ```
+    - `--name`: Bundle it in a specific file name.
+    - `--onefile`: Bundle everything into a single EXE file.
+    - `--windowed`: Prevents a console window from appearing (for GUI apps).
+    - `--icon`: Sets the application icon.
+    - `--add-data`: Ensures the `locales` and `resource` folders are included in the EXE. Use a semicolon `;` as the separator on Windows.
+
+3. **Find your EXE** in the `dist/` folder:
+    - The output will be at `dist/main.exe`.
+
+4. **Distribute** the EXE file. You can share the EXE with others; they do not need Python installed.
+
+**Note:**
+- If you add or rename resource files, update the `--add-data` arguments accordingly.
+- For troubleshooting, see the [PyInstaller documentation](https://pyinstaller.org/en/stable/).
