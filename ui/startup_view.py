@@ -274,18 +274,25 @@ class StartupView(QWidget):
                 )
 
     def delete_project(self, project_id, project_name):
-        reply = QMessageBox.question(
+        confirm_text, ok = QInputDialog.getText(
             self,
             get_translation("startup.confirm_delete", self.language),
             get_translation(
                 "startup.confirm_delete_message", self.language, name=project_name
-            ),
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No,
+            )
+            + f"\n\nType the project name '{project_name}' to confirm:",
         )
-        if reply == QMessageBox.StandardButton.Yes:
-            database.delete_project(project_id)
-            self.load_projects()
+
+        if ok:
+            if confirm_text.strip() == project_name:
+                database.delete_project(project_id)
+                self.load_projects()
+            else:
+                QMessageBox.warning(
+                    self,
+                    get_translation("startup.error", self.language),
+                    "The project name you entered was incorrect. Deletion has been cancelled.",
+                )
 
     def open_new_project_dialog(self):
         project_name, ok = QInputDialog.getText(

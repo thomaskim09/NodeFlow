@@ -76,7 +76,7 @@ To create a standalone Windows executable from NodeFlow using PyInstaller:
 
 2. **Run PyInstaller** from the project root:
     ```bash
-    pyinstaller --onefile --windowed --name "NodeFlow" --icon resource/icon.png --add-data "locales;locales" --add-data "resource;resource" main.py
+    pyinstaller --onefile --windowed --name "NodeFlow" --icon resource/icon.png --collect-all qt_material_icons --add-data "locales;locales" --add-data "resource;resource" main.py
     ```
     - `--name`: Bundle it in a specific file name.
     - `--onefile`: Bundle everything into a single EXE file.
