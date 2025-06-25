@@ -142,12 +142,7 @@ class WorkspaceView(QWidget):
             get_translation("export.export_word", self.language)
         )
         self.action_export_excel = export_menu.addAction(
-            get_translation(
-                "export.excel", self.language
-            )  # Using the new translation key
-        )
-        self.action_export_excel.triggered.connect(
-            self.node_tree_manager.show_excel_export_options
+            get_translation("export.excel", self.language)
         )
         export_button.setMenu(export_menu)
         self.left_pane_layout.addStretch()
@@ -183,7 +178,9 @@ class WorkspaceView(QWidget):
         )
         self.action_export_json.triggered.connect(self.export_as_json)
         self.action_export_word.triggered.connect(self.export_as_word)
-        self.action_export_excel.triggered.connect(self.export_as_excel)
+        self.action_export_excel.triggered.connect(
+            self.node_tree_manager.show_excel_export_options
+        )
         self.node_tree_manager.filter_by_node_family_signal.connect(
             self.bottom_pane.filter_by_node_family
         )
