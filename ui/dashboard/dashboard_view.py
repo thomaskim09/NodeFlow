@@ -29,18 +29,24 @@ from .wordcloud_widget import WordCloudWidget
 from .co_occurrence_widget import CoOccurrenceWidget
 import database
 from qt_material_icons import MaterialIcon
+from utils.common import get_translation
 
 
 class DashboardView(QDialog):
-    def __init__(self, project_id, project_name, current_document_id, parent=None):
+    def __init__(
+        self, project_id, project_name, current_document_id, parent=None, language=None
+    ):
         super().__init__(parent)
         self.project_id = project_id
         self.initial_document_id = current_document_id
-        self.setWindowTitle(f"Dashboard: {project_name}")
+        self.settings = load_settings()
+        self.language = language or self.settings.get("language", "English")
+        self.setWindowTitle(
+            get_translation("dashboard.title", self.language, project_name=project_name)
+        )
         self.setMinimumSize(1100, 800)
         self.docs = database.get_documents_for_project(self.project_id)
         self.participants = database.get_participants_for_project(self.project_id)
-        self.settings = load_settings()
         self.is_dark = self.settings.get("theme") == "Dark"
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(15, 15, 15, 15)
@@ -59,9 +65,15 @@ class DashboardView(QDialog):
         overview_layout.setContentsMargins(0, 0, 25, 0)
         overview_layout.setSpacing(15)
 
-        self.total_words_label = self._create_stat_label("Scope Words")
-        self.coded_segments_label = self._create_stat_label("Coded Segments")
-        self.coded_words_label = self._create_stat_label("Coded Words")
+        self.total_words_label = self._create_stat_label(
+            get_translation("dashboard.scope_words", self.language)
+        )
+        self.coded_segments_label = self._create_stat_label(
+            get_translation("dashboard.coded_segments", self.language)
+        )
+        self.coded_words_label = self._create_stat_label(
+            get_translation("dashboard.coded_words", self.language)
+        )
 
         overview_layout.addWidget(self.total_words_label)
         overview_layout.addWidget(self.coded_segments_label)
@@ -69,7 +81,9 @@ class DashboardView(QDialog):
 
         controls_layout = QVBoxLayout()
         doc_scope_layout = QHBoxLayout()
-        doc_scope_layout.addWidget(QLabel("Document Scope:"))
+        doc_scope_layout.addWidget(
+            QLabel(get_translation("dashboard.document_scope", self.language))
+        )
         self.doc_scope_combo = QComboBox()
         self.doc_scope_combo.addItem("Project Total", -1)
         for doc in self.docs:
@@ -77,7 +91,9 @@ class DashboardView(QDialog):
         doc_scope_layout.addWidget(self.doc_scope_combo)
 
         part_scope_layout = QHBoxLayout()
-        part_scope_layout.addWidget(QLabel("Participant Scope:"))
+        part_scope_layout.addWidget(
+            QLabel(get_translation("dashboard.participant_scope", self.language))
+        )
         self.part_scope_combo = QComboBox()
         self.part_scope_combo.addItem("All Participants", -1)
         for p in self.participants:
@@ -85,14 +101,18 @@ class DashboardView(QDialog):
         part_scope_layout.addWidget(self.part_scope_combo)
 
         node_scope_layout = QHBoxLayout()
-        node_scope_layout.addWidget(QLabel("Node Scope:"))
+        node_scope_layout.addWidget(
+            QLabel(get_translation("dashboard.node_scope", self.language))
+        )
         self.node_scope_combo = QComboBox()
         node_scope_layout.addWidget(self.node_scope_combo)
 
         export_icon = MaterialIcon("download")
         self.export_button = QPushButton()
         self.export_button.setIcon(export_icon)
-        self.export_button.setText("Export Options")
+        self.export_button.setText(
+            get_translation("dashboard.export_options", self.language)
+        )
         export_menu = QMenu(self)
         export_menu.addAction("Export Chart as Image", self.export_chart_as_image)
         export_menu.addAction("Export Data Table as CSV", self.export_data_as_csv)
@@ -123,10 +143,21 @@ class DashboardView(QDialog):
         participant_container = QWidget()
         participant_layout = QVBoxLayout(participant_container)
         participant_layout.setContentsMargins(0, 0, 0, 0)
-        participant_layout.addWidget(QLabel("<b>Participant Breakdown</b>"))
+        participant_layout.addWidget(
+            QLabel(
+                "<b>"
+                + get_translation("dashboard.participant_breakdown", self.language)
+                + "</b>"
+            )
+        )
         self.participant_tree_widget = QTreeWidget()
         self.participant_tree_widget.setHeaderLabels(
-            ["Participant", "Coded Words", "% of Total", "Segments"]
+            [
+                get_translation("dashboard.participant", self.language),
+                get_translation("dashboard.coded_words_header", self.language),
+                get_translation("dashboard.percent_of_total", self.language),
+                get_translation("dashboard.segments", self.language),
+            ]
         )
         participant_header = self.participant_tree_widget.header()
         participant_header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
@@ -139,10 +170,21 @@ class DashboardView(QDialog):
         node_container = QWidget()
         node_layout = QVBoxLayout(node_container)
         node_layout.setContentsMargins(0, 0, 0, 0)
-        node_layout.addWidget(QLabel("<b>Code Breakdown</b>"))
+        node_layout.addWidget(
+            QLabel(
+                "<b>"
+                + get_translation("dashboard.code_breakdown", self.language)
+                + "</b>"
+            )
+        )
         self.tree_widget = QTreeWidget()
         self.tree_widget.setHeaderLabels(
-            ["Code", "Coded Words", "% of Total", "Segments"]
+            [
+                get_translation("dashboard.code_breakdown", self.language),
+                get_translation("dashboard.coded_words_header", self.language),
+                get_translation("dashboard.percent_of_total", self.language),
+                get_translation("dashboard.segments", self.language),
+            ]
         )
         header = self.tree_widget.header()
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
@@ -153,19 +195,32 @@ class DashboardView(QDialog):
         breakdown_splitter.setSizes([400, 700])
         breakdown_layout.addWidget(breakdown_splitter)
         breakdown_tab.setLayout(breakdown_layout)
-        self.tabs.addTab(breakdown_tab, "Breakdown")
+        self.tabs.addTab(
+            breakdown_tab, get_translation("dashboard.breakdown_tab", self.language)
+        )
 
         self.charts_widget = ChartsWidget(self.settings)
-        self.tabs.addTab(self.charts_widget, "Charts")
+        self.tabs.addTab(
+            self.charts_widget, get_translation("dashboard.charts_tab", self.language)
+        )
 
         self.crosstab_widget = CrosstabWidget(self.settings)
-        self.tabs.addTab(self.crosstab_widget, "Cross-Tabulation")
+        self.tabs.addTab(
+            self.crosstab_widget,
+            get_translation("dashboard.crosstab_tab", self.language),
+        )
 
         self.co_occurrence_widget = CoOccurrenceWidget(self.settings)
-        self.tabs.addTab(self.co_occurrence_widget, "Code Co-occurrence")
+        self.tabs.addTab(
+            self.co_occurrence_widget,
+            get_translation("dashboard.cooccurrence_tab", self.language),
+        )
 
         self.wordcloud_widget = WordCloudWidget(self.settings)
-        self.tabs.addTab(self.wordcloud_widget, "Word Cloud")
+        self.tabs.addTab(
+            self.wordcloud_widget,
+            get_translation("dashboard.wordcloud_tab", self.language),
+        )
 
         self._populate_node_scope_combo()
         self.doc_scope_combo.currentIndexChanged.connect(self.reload_active_tab)
@@ -793,3 +848,30 @@ class DashboardView(QDialog):
             except Exception as e:
                 print(f"Error clearing chart views: {e}")
         super().closeEvent(event)
+
+    def update_language(self, new_language):
+        self.language = new_language
+        self.setWindowTitle(
+            get_translation(
+                "dashboard.title",
+                self.language,
+                project_name=self.windowTitle().split(": ", 1)[-1],
+            )
+        )
+        self.total_words_label.setText(
+            get_translation("dashboard.scope_words", self.language)
+        )
+        self.coded_segments_label.setText(
+            get_translation("dashboard.coded_segments", self.language)
+        )
+        self.coded_words_label.setText(
+            get_translation("dashboard.coded_words", self.language)
+        )
+        if hasattr(self.charts_widget, "update_language"):
+            self.charts_widget.update_language(new_language)
+        if hasattr(self.crosstab_widget, "update_language"):
+            self.crosstab_widget.update_language(new_language)
+        if hasattr(self.wordcloud_widget, "update_language"):
+            self.wordcloud_widget.update_language(new_language)
+        if hasattr(self.co_occurrence_widget, "update_language"):
+            self.co_occurrence_widget.update_language(new_language)

@@ -28,6 +28,7 @@ from managers.export_manager import export_to_word, export_to_json, export_to_ex
 from managers.theme_manager import save_settings, load_settings
 import database
 from qt_material_icons import MaterialIcon
+from utils.common import get_translation
 
 
 class SettingsDialog(QDialog):
@@ -35,15 +36,27 @@ class SettingsDialog(QDialog):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Settings")
-        self.setMinimumWidth(300)
         self.settings = load_settings()
+        self.language = self.settings.get("language", "English")
+        self.setWindowTitle(get_translation("workspace.settings", self.language))
+        self.setMinimumWidth(300)
         layout = QVBoxLayout(self)
         form_layout = QFormLayout()
         self.theme_combo = QComboBox()
         self.theme_combo.addItems(["Default", "Light", "Dark"])
         self.theme_combo.setCurrentText(self.settings.get("theme", "Default"))
-        form_layout.addRow(QLabel("Application Theme:"), self.theme_combo)
+        form_layout.addRow(
+            QLabel(get_translation("workspace.application_theme", self.language)),
+            self.theme_combo,
+        )
+        # Language selection
+        self.language_combo = QComboBox()
+        self.language_combo.addItems(["English", "Chinese"])
+        self.language_combo.setCurrentText(self.settings.get("language", "English"))
+        form_layout.addRow(
+            QLabel(get_translation("workspace.language", self.language)),
+            self.language_combo,
+        )
         layout.addLayout(form_layout)
         button_box = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Save
@@ -51,15 +64,27 @@ class SettingsDialog(QDialog):
         )
         button_box.accepted.connect(self.save_and_apply)
         button_box.rejected.connect(self.reject)
+        # Set translated button text
+        button_box.button(QDialogButtonBox.StandardButton.Save).setText(
+            get_translation("workspace.save", self.language)
+        )
+        button_box.button(QDialogButtonBox.StandardButton.Cancel).setText(
+            get_translation("workspace.cancel", self.language)
+        )
         layout.addWidget(button_box)
 
     def save_and_apply(self):
         self.settings["theme"] = self.theme_combo.currentText()
+        self.settings["language"] = self.language_combo.currentText()
         save_settings(self.settings)
         QMessageBox.information(
             self,
-            "Settings Saved",
-            "The new theme will be applied when you restart the application.",
+            get_translation(
+                "workspace.settings_saved", self.language_combo.currentText()
+            ),
+            get_translation(
+                "workspace.settings_saved_message", self.language_combo.currentText()
+            ),
         )
         self.accept()
 

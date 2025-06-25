@@ -614,10 +614,13 @@ def load_settings():
     if os.path.exists(SETTINGS_FILE):
         with open(SETTINGS_FILE, "r") as f:
             try:
-                return json.load(f)
+                settings = json.load(f)
+                if "language" not in settings:
+                    settings["language"] = "English"
+                return settings
             except json.JSONDecodeError:
-                return {"theme": "Default"}
-    return {"theme": "Default"}
+                return {"theme": "Default", "language": "English"}
+    return {"theme": "Default", "language": "English"}
 
 
 def save_settings(settings):

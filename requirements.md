@@ -60,4 +60,4 @@ To develop a user-friendly desktop application using Python and PySide6 that str
 
 * **Operating System**: Cross-platform (tested on Windows)
 * **Python**: Python 3.10+
-* **Core Libraries**: PySide6, python-docx, openpyxl, wordcloud
+* **Core Libraries**: PySide6, python-docx, openpyxl, wordcloud, pyyaml

@@ -5,3 +5,4 @@ openpyxl
 wordcloud
 qt-material-icons
 networkx
+pyyaml

@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QPainter, QColor, QPen, QFont
+from utils.common import get_translation
 
 
 class CoOccurrenceWidget(QWidget):
@@ -25,20 +26,17 @@ class CoOccurrenceWidget(QWidget):
     A widget to display code co-occurrence data in a matrix and a graph view.
     """
 
-    def __init__(self, settings, parent=None):
+    def __init__(self, settings, parent=None, language=None):
         super().__init__(parent)
         self.settings = settings
+        self.language = language or self.settings.get("language", "English")
         self.is_dark = self.settings.get("theme") == "Dark"
         self.layout = QVBoxLayout(self)
         self.layout.setContentsMargins(10, 10, 10, 10)
 
         # --- Top Controls ---
         controls_layout = QHBoxLayout()
-        intro_text = (
-            "Visualize code relationships: the matrix shows co-occurrence counts, "
-            "the graph shows connection structure."
-        )
-        self.intro_label = QLabel(intro_text)
+        self.intro_label = QLabel(get_translation("cooccurrence.intro", self.language))
         self.intro_label.setWordWrap(True)
         self.intro_label.setStyleSheet("font-size: 11pt;")
         self.intro_label.setMaximumHeight(40)
@@ -47,9 +45,13 @@ class CoOccurrenceWidget(QWidget):
         controls_layout.addStretch()
 
         self.view_button_group = QButtonGroup(self)
-        self.view_matrix_button = QPushButton("Matrix View")
+        self.view_matrix_button = QPushButton(
+            get_translation("cooccurrence.matrix_view", self.language)
+        )
         self.view_matrix_button.setCheckable(True)
-        self.view_graph_button = QPushButton("Graph View")
+        self.view_graph_button = QPushButton(
+            get_translation("cooccurrence.graph_view", self.language)
+        )
         self.view_graph_button.setCheckable(True)
         self.view_button_group.addButton(self.view_matrix_button)
         self.view_button_group.addButton(self.view_graph_button)
@@ -228,3 +230,13 @@ class CoOccurrenceWidget(QWidget):
 
     def get_matrix_for_export(self):
         return self.table_widget
+
+    def update_language(self, new_language):
+        self.language = new_language
+        self.intro_label.setText(get_translation("cooccurrence.intro", self.language))
+        self.view_matrix_button.setText(
+            get_translation("cooccurrence.matrix_view", self.language)
+        )
+        self.view_graph_button.setText(
+            get_translation("cooccurrence.graph_view", self.language)
+        )

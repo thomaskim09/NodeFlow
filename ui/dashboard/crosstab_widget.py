@@ -9,21 +9,19 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor
+from utils.common import get_translation
 
 
 class CrosstabWidget(QWidget):
     """A widget to display a cross-tabulation/co-occurrence matrix."""
 
-    def __init__(self, theme_settings, parent=None):
+    def __init__(self, theme_settings, parent=None, language=None):
         super().__init__(parent)
         self.settings = theme_settings
-
+        self.language = language or self.settings.get("language", "English")
         layout = QVBoxLayout(self)
-        layout.addWidget(
-            QLabel(
-                "This table shows how many times two codes were applied to overlapping text segments."
-            )
-        )
+        self.intro_label = QLabel(get_translation("crosstab.intro", self.language))
+        layout.addWidget(self.intro_label)
         self.table = QTableWidget()
         layout.addWidget(self.table)
 
@@ -97,3 +95,7 @@ class CrosstabWidget(QWidget):
         self.table.clear()
         self.table.setRowCount(0)
         self.table.setColumnCount(0)
+
+    def update_language(self, new_language):
+        self.language = new_language
+        self.intro_label.setText(get_translation("crosstab.intro", self.language))

@@ -32,6 +32,7 @@ from managers.theme_manager import load_settings
 from .excel_import_dialog import ExcelImportDialog
 from managers import excel_import_manager
 from qt_material_icons import MaterialIcon
+from utils.common import get_translation
 
 
 class ContentView(QWidget):
@@ -48,6 +49,7 @@ class ContentView(QWidget):
 
     def __init__(self, project_id):
         super().__init__()
+        self.language = load_settings().get("language", "English")
         self.project_id = project_id
         self.documents_map = {}
         self.current_document_id = None
@@ -59,7 +61,9 @@ class ContentView(QWidget):
         self.setAcceptDrops(True)
         main_layout = QVBoxLayout(self)
         top_bar_layout = QHBoxLayout()
-        title_label = QLabel("Document View")
+        title_label = QLabel(
+            get_translation("content_view.document_view", self.language)
+        )
         font = title_label.font()
         font.setBold(True)
         title_label.setFont(font)
@@ -69,22 +73,30 @@ class ContentView(QWidget):
         self.import_button = QPushButton()
         import_icon = MaterialIcon("upload")
         self.import_button.setIcon(import_icon)
-        self.import_button.setToolTip("Import Document (.txt, .docx, .xlsx)")
+        self.import_button.setToolTip(
+            get_translation("content_view.import_tooltip", self.language)
+        )
         self.save_button = QPushButton()
         save_icon = MaterialIcon("save")
         self.save_button.setIcon(save_icon)
-        self.save_button.setToolTip("Save Changes")
+        self.save_button.setToolTip(
+            get_translation("content_view.save_tooltip", self.language)
+        )
         self.save_button.setFixedSize(28, 28)
         self.save_button.setEnabled(False)
         delete_button = QPushButton()
         delete_icon = MaterialIcon("delete")
         delete_button.setIcon(delete_icon)
-        delete_button.setToolTip("Delete Current Document")
+        delete_button.setToolTip(
+            get_translation("content_view.delete_tooltip", self.language)
+        )
         delete_button.setFixedSize(28, 28)
         self.export_annotated_button = QPushButton()
         export_annotated_icon = MaterialIcon("description")
         self.export_annotated_button.setIcon(export_annotated_icon)
-        self.export_annotated_button.setToolTip("Export Annotated Document")
+        self.export_annotated_button.setToolTip(
+            get_translation("content_view.export_annotated_tooltip", self.language)
+        )
         self.export_annotated_button.setFixedSize(28, 28)
 
         self.text_edit = QTextEdit()
@@ -100,7 +112,7 @@ class ContentView(QWidget):
         icon_label.setPixmap(upload_icon.pixmap(48, 48))
         icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        text_label = QLabel("Drop document file(s) here\n(.txt, .docx, .xlsx)")
+        text_label = QLabel(get_translation("content_view.drop_text", self.language))
         text_font = QFont()
         text_font.setPointSize(12)
         text_label.setFont(text_font)
@@ -115,8 +127,12 @@ class ContentView(QWidget):
         info_bar.setFrameShape(QFrame.Shape.StyledPanel)
         info_bar_layout = QHBoxLayout(info_bar)
         info_bar_layout.setContentsMargins(5, 2, 5, 2)
-        self.word_count_label = QLabel("Word Count: 0")
-        self.segment_count_label = QLabel("Coded Segments: 0")
+        self.word_count_label = QLabel(
+            get_translation("content_view.word_count", self.language, count=0)
+        )
+        self.segment_count_label = QLabel(
+            get_translation("content_view.coded_segments_count", self.language, count=0)
+        )
         info_bar_layout.addWidget(self.word_count_label)
         info_bar_layout.addStretch()
         info_bar_layout.addWidget(self.segment_count_label)

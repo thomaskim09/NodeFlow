@@ -16,8 +16,9 @@ from qt_material_icons import MaterialIcon
 from PySide6.QtWidgets import QApplication
 
 import database
-from utils.common import get_resource_path
+from utils.common import get_resource_path, get_translation
 from ui.workspace.workspace_main_window import WorkspaceMainWindow
+from managers.theme_manager import load_settings
 
 
 class ProjectListWidget(QListWidget):
@@ -59,15 +60,13 @@ class ProjectItemWidget(QWidget):
         self.project_id = project_id
         self.project_name = project_name
         self.parent_view = parent_view
-
+        self.language = load_settings().get("language", "English")
         layout = QHBoxLayout(self)
         layout.setContentsMargins(5, 5, 5, 10)
-
         name_label = QLabel(project_name)
         font = name_label.font()
         font.setPointSize(12)
         name_label.setFont(font)
-
         # Edit button with pencil icon
         self.edit_button = QPushButton()
         pencil_icon = MaterialIcon("edit")
@@ -76,10 +75,11 @@ class ProjectItemWidget(QWidget):
         font.setPointSize(12)
         self.edit_button.setFont(font)
         self.edit_button.setFixedSize(24, 24)
-        self.edit_button.setToolTip("Rename Project (F2)")
+        self.edit_button.setToolTip(
+            get_translation("startup.rename_project", self.language)
+        )
         self.edit_button.clicked.connect(self.on_rename_clicked)
         self.edit_button.setVisible(False)
-
         # Delete button with trash icon
         self.delete_button = QPushButton()
         trash_icon = MaterialIcon("delete")
@@ -88,10 +88,11 @@ class ProjectItemWidget(QWidget):
         font.setPointSize(12)
         self.delete_button.setFont(font)
         self.delete_button.setFixedSize(24, 24)
-        self.delete_button.setToolTip("Delete Project (Delete)")
+        self.delete_button.setToolTip(
+            get_translation("startup.delete_project", self.language)
+        )
         self.delete_button.clicked.connect(self.on_delete_clicked)
         self.delete_button.setVisible(False)
-
         layout.addWidget(name_label)
         layout.addStretch()
         layout.addWidget(self.edit_button)
@@ -111,6 +112,7 @@ class ProjectItemWidget(QWidget):
 class StartupView(QWidget):
     def __init__(self):
         super().__init__()
+        self.language = load_settings().get("language", "English")
         self._current_selected_widget = None
         self.workspace_window = None
 
@@ -124,14 +126,14 @@ class StartupView(QWidget):
             pixmap.scaledToWidth(64, Qt.TransformationMode.SmoothTransformation)
         )
         icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        title_label = QLabel("NodeFlow")
+        title_label = QLabel(get_translation("startup.nodeflow_title", self.language))
         title_font = QFont()
         title_font.setPointSize(24)
         title_font.setBold(True)
         title_label.setFont(title_font)
         title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        tagline_label = QLabel("Your compass for qualitative data.")
+        tagline_label = QLabel(get_translation("startup.tagline", self.language))
         tagline_font = QFont()
         tagline_font.setPointSize(10)
         tagline_font.setItalic(True)
@@ -139,7 +141,7 @@ class StartupView(QWidget):
         tagline_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         tagline_label.setStyleSheet("color: #555;")
 
-        self.subtitle_label = QLabel("Select a project to open or create a new one.")
+        self.subtitle_label = QLabel(get_translation("startup.subtitle", self.language))
         subtitle_font = QFont()
         subtitle_font.setPointSize(12)
         self.subtitle_label.setFont(subtitle_font)
@@ -151,9 +153,13 @@ class StartupView(QWidget):
         self.project_list_widget.itemDoubleClicked.connect(self.open_selected_project)
         self.project_list_widget.currentItemChanged.connect(self.on_selection_changed)
 
-        self.open_button = QPushButton("Open Selected Project")
+        self.open_button = QPushButton(
+            get_translation("startup.open_selected", self.language)
+        )
         self.open_button.clicked.connect(self.open_selected_project)
-        self.new_button = QPushButton("Create New Project")
+        self.new_button = QPushButton(
+            get_translation("startup.create_new", self.language)
+        )
         self.new_button.clicked.connect(self.open_new_project_dialog)
 
         main_layout.addWidget(icon_label)
@@ -187,12 +193,19 @@ class StartupView(QWidget):
 
         if not projects:
             # If no projects exist, hide the list and "Open" button for a clean UI
-            self.subtitle_label.setText("Create a new project to begin.")
+            self.subtitle_label.setText(
+                get_translation("startup.create_new_project_to_begin", self.language)
+            )
             self.project_list_widget.setVisible(False)
             self.open_button.setVisible(False)
         else:
             # If projects exist, ensure the UI elements are visible
-            self.subtitle_label.setText("Select a project to open or create a new one.")
+            self.subtitle_label.setText(
+                get_translation(
+                    "startup.select_a_project_to_open_or_create_a_new_one",
+                    self.language,
+                )
+            )
             self.project_list_widget.setVisible(True)
             self.open_button.setVisible(True)
             for project in sorted(projects, key=lambda p: p["name"]):
@@ -211,14 +224,20 @@ class StartupView(QWidget):
         if not selected_item:
             QMessageBox.warning(
                 self,
-                "No Project Selected",
-                "Please select a project from the list to open.",
+                get_translation("startup.no_project_selected", self.language),
+                get_translation("startup.no_project_selected_message", self.language),
             )
             return
 
         widget = self.project_list_widget.itemWidget(selected_item)
         if isinstance(widget, ProjectItemWidget):
-            loading = QProgressDialog("Loading workspace...", None, 0, 0, self)
+            loading = QProgressDialog(
+                get_translation("startup.loading_workspace", self.language),
+                None,
+                0,
+                0,
+                self,
+            )
             loading.setWindowFlags(Qt.FramelessWindowHint | Qt.Dialog | Qt.Tool)
             loading.setCancelButton(None)
             loading.setStyleSheet(
@@ -236,7 +255,10 @@ class StartupView(QWidget):
 
     def rename_project(self, project_id, current_name):
         new_name, ok = QInputDialog.getText(
-            self, "Rename Project", "Enter new project name:", text=current_name
+            self,
+            get_translation("startup.rename_project", self.language),
+            get_translation("startup.enter_new_project_name", self.language),
+            text=current_name,
         )
         if ok and new_name.strip() and new_name.strip() != current_name:
             try:
@@ -245,15 +267,19 @@ class StartupView(QWidget):
             except database.sqlite3.IntegrityError:
                 QMessageBox.critical(
                     self,
-                    "Error",
-                    f"A project named '{new_name.strip()}' already exists.",
+                    get_translation("startup.error", self.language),
+                    get_translation(
+                        "startup.project_exists", self.language, name=new_name.strip()
+                    ),
                 )
 
     def delete_project(self, project_id, project_name):
         reply = QMessageBox.question(
             self,
-            "Confirm Delete",
-            f"Are you sure you want to permanently delete the project '{project_name}'?\nThis action cannot be undone.",
+            get_translation("startup.confirm_delete", self.language),
+            get_translation(
+                "startup.confirm_delete_message", self.language, name=project_name
+            ),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
         )
@@ -263,7 +289,9 @@ class StartupView(QWidget):
 
     def open_new_project_dialog(self):
         project_name, ok = QInputDialog.getText(
-            self, "Create New Project", "Enter new project name:"
+            self,
+            get_translation("startup.create_new_project", self.language),
+            get_translation("startup.create_new_project_prompt", self.language),
         )
         if ok and project_name.strip():
             try:
@@ -272,11 +300,19 @@ class StartupView(QWidget):
             except database.sqlite3.IntegrityError:
                 QMessageBox.critical(
                     self,
-                    "Error",
-                    f"A project named '{project_name.strip()}' already exists.",
+                    get_translation("startup.error", self.language),
+                    get_translation(
+                        "startup.project_exists",
+                        self.language,
+                        name=project_name.strip(),
+                    ),
                 )
         elif ok:
-            QMessageBox.critical(self, "Error", "Project name cannot be empty.")
+            QMessageBox.critical(
+                self,
+                get_translation("startup.error", self.language),
+                get_translation("startup.project_name_empty", self.language),
+            )
 
 
 def center_on_screen(window):

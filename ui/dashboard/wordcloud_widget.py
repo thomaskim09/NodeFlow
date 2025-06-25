@@ -5,14 +5,16 @@ from wordcloud import WordCloud
 import io
 import os
 from collections import Counter
+from utils.common import get_translation
 
 
 class WordCloudWidget(QWidget):
     """A widget to generate and display a word cloud from node frequencies."""
 
-    def __init__(self, theme_settings, parent=None):
+    def __init__(self, theme_settings, parent=None, language=None):
         super().__init__(parent)
         self.settings = theme_settings
+        self.language = language or self.settings.get("language", "English")
         self.is_dark = self.settings.get("theme") == "Dark"
         self._original_pixmap = None
 
@@ -29,9 +31,15 @@ class WordCloudWidget(QWidget):
         self.image_label.setVisible(False)
         self.message_label.setVisible(True)
 
+    def update_language(self, new_language):
+        self.language = new_language
+        # Update any static message text if needed
+
     def update_wordcloud(self, segments):
         """Synchronously generate and display the word cloud."""
-        self.message_label.setText("Generating word cloud, please wait...")
+        self.message_label.setText(
+            get_translation("wordcloud.generating", self.language)
+        )
         self.message_label.setVisible(True)
         self.image_label.setVisible(False)
         QApplication.processEvents()
@@ -45,7 +53,8 @@ class WordCloudWidget(QWidget):
             ]
             if not node_names:
                 self.display_wordcloud(
-                    QPixmap(), "No codes have been applied in the current scope."
+                    QPixmap(),
+                    get_translation("wordcloud.no_codes", self.language),
                 )
                 return
             frequencies = Counter(node_names)
@@ -56,7 +65,7 @@ class WordCloudWidget(QWidget):
                 if not font_path:
                     self.display_wordcloud(
                         QPixmap(),
-                        "Could not find a suitable font for special characters.",
+                        get_translation("wordcloud.font_error", self.language),
                     )
                     return
             colormap = "Pastel1" if self.is_dark else "viridis"
@@ -81,7 +90,10 @@ class WordCloudWidget(QWidget):
             import traceback
 
             traceback.print_exc()
-            self.display_wordcloud(QPixmap(), f"An error occurred:\n{e}")
+            self.display_wordcloud(
+                QPixmap(),
+                get_translation("wordcloud.error", self.language, error=str(e)),
+            )
 
     def _find_cjk_font(self):
         if os.name == "nt":
@@ -130,4 +142,6 @@ class WordCloudWidget(QWidget):
 
     def clear_wordcloud(self):
         self.image_label.clear()
-        self.image_label.setText("Calculating...")
+        self.image_label.setText(
+            get_translation("wordcloud.calculating", self.language)
+        )

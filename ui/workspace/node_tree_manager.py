@@ -23,6 +23,7 @@ from managers.export_manager import (
 )
 import database
 from qt_material_icons import MaterialIcon
+from utils.common import get_translation
 
 PRESET_COLORS = [
     "#FFB3BA",
@@ -79,66 +80,72 @@ PRESET_COLORS = [
 
 
 class NodeItemWidget(QWidget):
-    def __init__(self, node_id, node_color, name_text, stats_text, parent_manager):
+    def __init__(
+        self, node_id, node_color, name_text, stats_text, parent_manager, language=None
+    ):
         super().__init__()
         self.node_id = node_id
         self.parent_manager = parent_manager
-
+        self.language = language or getattr(parent_manager, "language", "English")
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 2, 5, 7)
         layout.setSpacing(5)
-
         self.color_button = QPushButton()
         self.color_button.setObjectName("nodeColorButton")
         self.color_button.setFixedSize(18, 18)
-        self.color_button.setToolTip("Click to change node color")
+        self.color_button.setToolTip(
+            get_translation("node_tree.color_tooltip", self.language)
+        )
         self.set_button_color(node_color)
         self.color_button.clicked.connect(self.on_color_change)
-
         self.name_label = QLabel(name_text)
         self.stats_label = QLabel(stats_text)
         self.stats_label.setStyleSheet("color: #888;")
-
         self.export_button = QPushButton()
         export_icon = MaterialIcon("download")
         self.export_button.setIcon(export_icon)
         self.export_button.setFixedSize(24, 24)
-        self.export_button.setToolTip("Export this node and its children")
+        self.export_button.setToolTip(
+            get_translation("node_tree.export_tooltip", self.language)
+        )
         self.export_button.clicked.connect(self.on_export)
         self.export_button.setVisible(False)
-
         self.filter_button = QPushButton()
         filter_icon = MaterialIcon("filter_list")
         self.filter_button.setIcon(filter_icon)
         self.filter_button.setFixedSize(24, 24)
-        self.filter_button.setToolTip("Filter by this node only")
+        self.filter_button.setToolTip(
+            get_translation("node_tree.filter_tooltip", self.language)
+        )
         self.filter_button.clicked.connect(self.on_filter)
         self.filter_button.setVisible(False)
-
         self.add_button = QPushButton()
         add_icon = MaterialIcon("add")
         self.add_button.setIcon(add_icon)
         self.add_button.setFixedSize(24, 24)
-        self.add_button.setToolTip("Add a child node")
+        self.add_button.setToolTip(
+            get_translation("node_tree.add_child_tooltip", self.language)
+        )
         self.add_button.clicked.connect(self.on_add_child)
         self.add_button.setVisible(False)
-
         self.edit_button = QPushButton()
         edit_icon = MaterialIcon("edit")
         self.edit_button.setIcon(edit_icon)
         self.edit_button.setFixedSize(24, 24)
-        self.edit_button.setToolTip("Rename node (F2)")
+        self.edit_button.setToolTip(
+            get_translation("node_tree.rename_tooltip", self.language)
+        )
         self.edit_button.clicked.connect(self.on_rename)
         self.edit_button.setVisible(False)
-
         self.delete_button = QPushButton()
         delete_icon = MaterialIcon("delete")
         self.delete_button.setIcon(delete_icon)
         self.delete_button.setFixedSize(24, 24)
-        self.delete_button.setToolTip("Delete node and its children (Delete)")
+        self.delete_button.setToolTip(
+            get_translation("node_tree.delete_tooltip", self.language)
+        )
         self.delete_button.clicked.connect(self.on_delete)
         self.delete_button.setVisible(False)
-
         layout.addWidget(self.color_button)
         layout.addWidget(self.name_label)
         layout.addStretch()
@@ -191,6 +198,27 @@ class NodeItemWidget(QWidget):
     def on_delete(self):
         self.parent_manager.delete_node(self.node_id)
 
+    def update_language(self, new_language):
+        self.language = new_language
+        self.color_button.setToolTip(
+            get_translation("node_tree.color_tooltip", self.language)
+        )
+        self.export_button.setToolTip(
+            get_translation("node_tree.export_tooltip", self.language)
+        )
+        self.filter_button.setToolTip(
+            get_translation("node_tree.filter_tooltip", self.language)
+        )
+        self.add_button.setToolTip(
+            get_translation("node_tree.add_child_tooltip", self.language)
+        )
+        self.edit_button.setToolTip(
+            get_translation("node_tree.rename_tooltip", self.language)
+        )
+        self.delete_button.setToolTip(
+            get_translation("node_tree.delete_tooltip", self.language)
+        )
+
 
 class NodeTreeManager(QWidget):
     filter_by_node_family_signal = Signal(list)
@@ -198,9 +226,10 @@ class NodeTreeManager(QWidget):
     node_updated = Signal()
     node_selected_for_coding = Signal(int)
 
-    def __init__(self, project_id):
+    def __init__(self, project_id, language=None):
         super().__init__()
         self.project_id = project_id
+        self.language = language or "English"
         self.nodes_map = {}
         self.setAcceptDrops(True)
         self._is_selection_mode = False
@@ -208,37 +237,51 @@ class NodeTreeManager(QWidget):
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(5)
-        header_label = QLabel("Nodes & Codes")
-        font = header_label.font()
+        self.header_label = QLabel(get_translation("node_tree.header", self.language))
+        font = self.header_label.font()
         font.setBold(True)
-        header_label.setFont(font)
-        add_root_button = QPushButton()
+        self.header_label.setFont(font)
+        self.add_root_button = QPushButton()
         add_root_icon = MaterialIcon("add")
-        add_root_button.setIcon(add_root_icon)
-        add_root_button.setText("Add Root Node")
-        add_root_button.setToolTip("Add a new root node")
-        add_root_button.clicked.connect(self.add_root_node)
-        clear_filter_button = QPushButton()
+        self.add_root_button.setIcon(add_root_icon)
+        self.add_root_button.setText(
+            get_translation("node_tree.add_root", self.language)
+        )
+        self.add_root_button.setToolTip(
+            get_translation("node_tree.add_root_tooltip", self.language)
+        )
+        self.add_root_button.clicked.connect(self.add_root_node)
+        self.clear_filter_button = QPushButton()
         clear_filter_icon = MaterialIcon("filter_list")
-        clear_filter_button.setIcon(clear_filter_icon)
-        clear_filter_button.setText("Show All")
-        clear_filter_button.setToolTip("Show all nodes")
-        clear_filter_button.clicked.connect(self.clear_all_filters)
+        self.clear_filter_button.setIcon(clear_filter_icon)
+        self.clear_filter_button.setText(
+            get_translation("node_tree.show_all", self.language)
+        )
+        self.clear_filter_button.setToolTip(
+            get_translation("node_tree.show_all_tooltip", self.language)
+        )
+        self.clear_filter_button.clicked.connect(self.clear_all_filters)
         self.scope_combo = QComboBox()
-        self.scope_combo.addItems(["Current Document", "Project Total"])
-        self.scope_combo.setToolTip("Switch the scope of the percentage calculation")
+        self.scope_combo.addItems(
+            [
+                get_translation("node_tree.scope_current", self.language),
+                get_translation("node_tree.scope_project", self.language),
+            ]
+        )
+        self.scope_combo.setToolTip(
+            get_translation("node_tree.scope_tooltip", self.language)
+        )
         self.scope_combo.setCurrentText(
-            "Current Document"
-        )  # Default to Current Document
+            get_translation("node_tree.scope_current", self.language)
+        )
         self.scope_combo.currentTextChanged.connect(self.load_nodes)
         header_layout = QHBoxLayout()
-        header_layout.addWidget(header_label)
+        header_layout.addWidget(self.header_label)
         header_layout.addStretch()
         header_layout.addWidget(self.scope_combo)
-        header_layout.addWidget(clear_filter_button)
-        header_layout.addWidget(add_root_button)
+        header_layout.addWidget(self.clear_filter_button)
+        header_layout.addWidget(self.add_root_button)
         main_layout.addLayout(header_layout)
-
         self.tree_widget = QTreeWidget()
         self.tree_widget.setHeaderHidden(True)
         self.tree_widget.setIndentation(20)
@@ -248,21 +291,14 @@ class NodeTreeManager(QWidget):
         )
         self.tree_widget.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.tree_widget.setAcceptDrops(True)
-        # This new attribute will control the drag-drop highlighting behavior
         self.tree_widget.highlighting_enabled = True
-
         main_layout.addWidget(self.tree_widget)
-
-        # --- Connections ---
         self.tree_widget.currentItemChanged.connect(self.on_selection_changed)
         self.tree_widget.itemClicked.connect(self.on_item_clicked)
         self.tree_widget.customContextMenuRequested.connect(self.show_context_menu)
-
-        # Override the event handlers for the tree widget
         self.tree_widget.dragEnterEvent = self.dragEnterEvent
         self.tree_widget.dropEvent = self.dropEvent
         self.tree_widget.keyPressEvent = self.keyPressEvent
-
         self.load_nodes()
 
     def set_highlighting_active(self, active):
@@ -417,7 +453,12 @@ class NodeTreeManager(QWidget):
                 tree_item.setData(0, 1, node_data["id"])
 
                 item_widget = NodeItemWidget(
-                    node_data["id"], node_data["color"], name_text, stats_text, self
+                    node_data["id"],
+                    node_data["color"],
+                    name_text,
+                    stats_text,
+                    self,
+                    self.language,
                 )
                 self.tree_widget.setItemWidget(tree_item, 0, item_widget)
 
@@ -558,21 +599,25 @@ class NodeTreeManager(QWidget):
         item = self.tree_widget.itemAt(position)
         if not item:
             return
-
         node_id = item.data(0, 1)
         if node_id is None:
             return
-
         menu = QMenu()
-        rename_action = menu.addAction("Rename (F2)")
-        delete_action = menu.addAction("Delete (Delete)")
+        rename_action = menu.addAction(
+            get_translation("node_tree.context_rename", self.language)
+        )
+        delete_action = menu.addAction(
+            get_translation("node_tree.context_delete", self.language)
+        )
         menu.addSeparator()
-        add_child_action = menu.addAction("Add Child Node")
+        add_child_action = menu.addAction(
+            get_translation("node_tree.context_add_child", self.language)
+        )
         menu.addSeparator()
-        export_action = menu.addAction("Export...")
-
+        export_action = menu.addAction(
+            get_translation("node_tree.context_export", self.language)
+        )
         action = menu.exec(self.tree_widget.mapToGlobal(position))
-
         if action == rename_action:
             self.rename_node(node_id)
         elif action == delete_action:
@@ -585,8 +630,12 @@ class NodeTreeManager(QWidget):
 
     def show_node_export_menu(self, node_id, button):
         menu = QMenu(self)
-        action_export_word = menu.addAction("Export as Word (.docx)")
-        action_export_excel = menu.addAction("Export as Excel (.xlsx)")
+        action_export_word = menu.addAction(
+            get_translation("node_tree.export_word", self.language)
+        )
+        action_export_excel = menu.addAction(
+            get_translation("node_tree.export_excel", self.language)
+        )
         action_export_word.triggered.connect(
             lambda: export_node_family_to_word(self.project_id, node_id, self)
         )
@@ -597,16 +646,22 @@ class NodeTreeManager(QWidget):
 
     def export_node_family_to_excel_handler(self, node_id):
         msg_box = QMessageBox(self)
-        msg_box.setWindowTitle("Excel Export Option")
-        msg_box.setText("How would you like to export the Excel report?")
+        msg_box.setWindowTitle(
+            get_translation("node_tree.export_excel_option", self.language)
+        )
+        msg_box.setText(
+            get_translation("node_tree.export_excel_question", self.language)
+        )
         msg_box.setInformativeText(
-            "Choose whether to combine all data into a single sheet or create a separate sheet for each parent node."
+            get_translation("node_tree.export_excel_info", self.language)
         )
         single_sheet_button = msg_box.addButton(
-            "Single Sheet", QMessageBox.ButtonRole.ActionRole
+            get_translation("node_tree.export_excel_single", self.language),
+            QMessageBox.ButtonRole.ActionRole,
         )
         multi_sheet_button = msg_box.addButton(
-            "Multiple Sheets", QMessageBox.ButtonRole.ActionRole
+            get_translation("node_tree.export_excel_multi", self.language),
+            QMessageBox.ButtonRole.ActionRole,
         )
         msg_box.addButton(QMessageBox.StandardButton.Cancel)
         msg_box.exec()
@@ -618,7 +673,9 @@ class NodeTreeManager(QWidget):
 
     def add_root_node(self):
         name, ok = QInputDialog.getText(
-            self, "Add Root Node", "Enter name for the new root node:"
+            self,
+            get_translation("node_tree.add_root_dialog", self.language),
+            get_translation("node_tree.add_root_prompt", self.language),
         )
         if ok and name.strip():
             existing_colors = {node["color"] for node in self.nodes_map.values()}
@@ -634,16 +691,24 @@ class NodeTreeManager(QWidget):
             except (ValueError, TypeError) as e:
                 QMessageBox.critical(
                     self,
-                    "Error",
+                    get_translation("node_tree.error", self.language),
                     (
                         str(e)
                         if isinstance(e, ValueError)
-                        else f"Invalid Project ID: {self.project_id}"
+                        else get_translation(
+                            "node_tree.error_invalid_project",
+                            self.language,
+                            project_id=self.project_id,
+                        )
                     ),
                 )
             except Exception as e:
                 QMessageBox.critical(
-                    self, "Error", f"Failed to add root node: {str(e)}"
+                    self,
+                    get_translation("node_tree.error", self.language),
+                    get_translation(
+                        "node_tree.error_failed_add_root", self.language, error=str(e)
+                    ),
                 )
 
     def select_node_by_id(self, node_id: int):
@@ -715,3 +780,42 @@ class NodeTreeManager(QWidget):
                 last_widget.set_icons_visible(False)
 
         self.tree_widget.blockSignals(False)
+
+    def update_language(self, new_language):
+        self.language = new_language
+        self.header_label.setText(get_translation("node_tree.header", self.language))
+        self.add_root_button.setText(
+            get_translation("node_tree.add_root", self.language)
+        )
+        self.add_root_button.setToolTip(
+            get_translation("node_tree.add_root_tooltip", self.language)
+        )
+        self.clear_filter_button.setText(
+            get_translation("node_tree.show_all", self.language)
+        )
+        self.clear_filter_button.setToolTip(
+            get_translation("node_tree.show_all_tooltip", self.language)
+        )
+        self.scope_combo.blockSignals(True)
+        self.scope_combo.clear()
+        self.scope_combo.addItems(
+            [
+                get_translation("node_tree.scope_current", self.language),
+                get_translation("node_tree.scope_project", self.language),
+            ]
+        )
+        self.scope_combo.setCurrentText(
+            get_translation("node_tree.scope_current", self.language)
+        )
+        self.scope_combo.setToolTip(
+            get_translation("node_tree.scope_tooltip", self.language)
+        )
+        self.scope_combo.blockSignals(False)
+        # Update all NodeItemWidgets
+        it = QTreeWidgetItemIterator(self.tree_widget)
+        while it.value():
+            item = it.value()
+            widget = self.tree_widget.itemWidget(item, 0)
+            if widget and hasattr(widget, "update_language"):
+                widget.update_language(new_language)
+            it += 1

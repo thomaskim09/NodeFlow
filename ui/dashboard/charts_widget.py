@@ -11,15 +11,16 @@ from PySide6.QtCharts import (
     QPieSeries,
     QPieSlice,
 )
+from utils.common import get_translation
 
 
 class ChartsWidget(QWidget):
     """A widget to display bar and pie charts for the dashboard."""
 
-    def __init__(self, theme_settings, parent=None):
+    def __init__(self, theme_settings, parent=None, language=None):
         super().__init__(parent)
         self.settings = theme_settings
-
+        self.language = language or self.settings.get("language", "English")
         layout = QHBoxLayout(self)
         self.bar_chart_view = QChartView()
         self.pie_chart_view = QChartView()
@@ -58,7 +59,9 @@ class ChartsWidget(QWidget):
             series.append(bar_set)
             categories.append(bar_set.label())
 
-        chart = QChart(title="Code Distribution (Bar)")
+        chart = QChart(
+            title=get_translation("charts.code_distribution_bar", self.language)
+        )
         chart.addSeries(series)
         chart.setAnimationOptions(QChart.AnimationOption.SeriesAnimations)
 
@@ -100,13 +103,19 @@ class ChartsWidget(QWidget):
                 series.append(slice_)
 
         if other_percentage > 0.1:
-            slice_ = QPieSlice(f"Other {other_percentage:.1f}%", other_percentage)
+            slice_ = QPieSlice(
+                get_translation("charts.other", self.language)
+                + f" {other_percentage:.1f}%",
+                other_percentage,
+            )
             slice_.setLabelVisible()
             slice_.setLabelBrush(label_color)
             slice_.setBrush(QColor(other_slice_color))
             series.append(slice_)
 
-        chart = QChart(title="Code Distribution (Pie)")
+        chart = QChart(
+            title=get_translation("charts.code_distribution_pie", self.language)
+        )
         chart.addSeries(series)
         self._apply_theme_to_chart(chart)
         chart.legend().setVisible(False)
@@ -128,3 +137,8 @@ class ChartsWidget(QWidget):
         # Set charts to empty QChart instances to safely release resources
         self.bar_chart_view.setChart(QChart())
         self.pie_chart_view.setChart(QChart())
+
+    def update_language(self, new_language):
+        self.language = new_language
+        # Redraw charts with translated titles
+        # You may need to call update_charts with the last data if you want to update titles

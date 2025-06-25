@@ -24,6 +24,20 @@ NodeFlow is a user-friendly desktop application designed to assist researchers a
     * Export a clean, formatted **Word Document** report, with your nodes as headings and the coded text listed beneath them.
     * Export a comprehensive **Excel** report, with each node and its children's coded segments on a separate, hierarchically-ordered worksheet.
 
+## Localization/Translation
+
+- All translations are stored in YAML files in the `locales/` directory (e.g., `en.yml`, `zh.yml`).
+- Use hierarchical keys for each string, e.g.:
+  - `badger.view.dashboard.default_title`
+  - `badger.view.dashboard.welcome_message`
+- In code, use:
+  ```python
+  from utils.common import get_translation
+  get_translation('badger.view.dashboard.default_title', language)
+  get_translation('badger.view.dashboard.welcome_message', language, title='NodeFlow')
+  ```
+- To add a new language, create a new YAML file in `locales/` with the same key structure.
+
 ## Getting Started (For Developers)
 
 1.  **Clone the Repository:**
