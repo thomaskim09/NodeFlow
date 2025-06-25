@@ -50,6 +50,7 @@ from .segments_db import (
     get_coded_segments_for_participant,
     get_coded_segments_for_nodes,
     delete_coded_segment,
+    update_coded_segment,
     get_node_statistics,
     get_word_count_for_participant,
 )  # noqa: F401

@@ -44,6 +44,7 @@ class ContentView(QWidget):
     participant_highlight_requested = Signal(int)
     documents_changed = Signal()
     segments_changed = Signal()
+    edit_mode_changed = Signal(bool)
 
     def __init__(self, project_id):
         super().__init__()
@@ -51,6 +52,7 @@ class ContentView(QWidget):
         self.documents_map = {}
         self.current_document_id = None
         self.current_participant_id = None
+        self.editing_segment_id = None
         self.is_dirty = False
         self._coded_segments_cache = []
         self._pending_highlight = None
@@ -125,7 +127,23 @@ class ContentView(QWidget):
         top_bar_layout.addWidget(self.save_button)
         top_bar_layout.addWidget(self.export_annotated_button)
         top_bar_layout.addWidget(delete_button)
+
+        # Edit Mode Bar
+        self.edit_bar = QFrame()
+        self.edit_bar.setObjectName("editBar")
+        edit_bar_layout = QHBoxLayout(self.edit_bar)
+        edit_bar_layout.setContentsMargins(5, 2, 5, 2)
+        edit_label = QLabel("<b>Editing Segment:</b> Adjust selection and click save.")
+        self.save_edit_button = QPushButton("Save Changes")
+        cancel_edit_button = QPushButton("Cancel")
+        edit_bar_layout.addWidget(edit_label)
+        edit_bar_layout.addStretch()
+        edit_bar_layout.addWidget(self.save_edit_button)
+        edit_bar_layout.addWidget(cancel_edit_button)
+        self.edit_bar.setVisible(False)
+
         main_layout.addLayout(top_bar_layout)
+        main_layout.addWidget(self.edit_bar)
         main_layout.addLayout(self.stacked_layout)
         main_layout.addWidget(info_bar)
 
@@ -133,6 +151,9 @@ class ContentView(QWidget):
         self.save_button.clicked.connect(self.save_document)
         self.export_annotated_button.clicked.connect(self.export_annotated)
         delete_button.clicked.connect(self.delete_current_document)
+        self.text_edit.selectionChanged.connect(self.on_edit_selection_changed)
+        self.save_edit_button.clicked.connect(self.save_segment_edit)
+        cancel_edit_button.clicked.connect(self.cancel_segment_edit)
         self.doc_selector.currentIndexChanged.connect(self.handle_document_switch)
         self.text_edit.textChanged.connect(self.on_text_changed)
         self.text_edit.cursorPositionChanged.connect(self.on_cursor_position_changed)
@@ -146,17 +167,112 @@ class ContentView(QWidget):
         self.text_edit.setTextCursor(cursor)
         self.text_edit.ensureCursorVisible()
 
-    def go_to_segment(self, document_id, start, end):
+    def go_to_segment(self, document_id, start, end, mode="view"):
         if document_id == self.current_document_id:
-            self._select_and_scroll(start, end)
+            if mode == "edit":
+                self._highlight_for_edit(start, end)
+            elif mode == "view":
+                self._select_and_scroll(start, end)
         else:
-            self._pending_highlight = (start, end)
+            self._pending_highlight = (mode, start, end)
             id_to_display_text = {v: k for k, v in self.documents_map.items()}
             display_text = id_to_display_text.get(document_id)
             if display_text:
                 index = self.doc_selector.findText(display_text)
                 if index != -1:
                     self.doc_selector.setCurrentIndex(index)
+
+    def start_segment_edit_mode(self, segment_id, document_id, start, end):
+        if self.editing_segment_id is not None:
+            QMessageBox.warning(
+                self,
+                "Edit in Progress",
+                "Please save or cancel the current segment edit first.",
+            )
+            return
+        if self.is_dirty:
+            reply = QMessageBox.question(
+                self,
+                "Unsaved Changes",
+                "The document has unsaved text changes that must be saved first. Save now?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            )
+            if reply == QMessageBox.StandardButton.Yes:
+                self.save_document(show_success_prompt=False)
+            else:
+                return
+        self.editing_segment_id = segment_id
+        self.go_to_segment(document_id, start, end, mode="edit")
+        self.edit_mode_changed.emit(True)
+
+    def _highlight_for_edit(self, start, end):
+        self.apply_all_highlights()
+        cursor = self.text_edit.textCursor()
+        cursor.setPosition(start)
+        cursor.setPosition(end, QTextCursor.MoveMode.KeepAnchor)
+        fmt = QTextCharFormat()
+        fmt.setBackground(QColor("#FFD700"))  # Gold color for editing
+        fmt.setForeground(QColor("black"))
+        cursor.setCharFormat(fmt)
+        self.text_edit.setTextCursor(cursor)
+        self.edit_bar.setVisible(True)
+
+    def save_segment_edit(self):
+        if self.editing_segment_id is None:
+            return
+
+        cursor = self.text_edit.textCursor()
+        if not cursor.hasSelection():
+            QMessageBox.warning(
+                self,
+                "No Selection",
+                "Cannot save an empty segment. Please select text.",
+            )
+            return
+
+        new_start = cursor.selectionStart()
+        new_end = cursor.selectionEnd()
+        new_text = cursor.selectedText()
+
+        database.update_coded_segment(
+            self.editing_segment_id, new_start, new_end, new_text
+        )
+
+        self.end_segment_edit_mode()
+        self.segments_changed.emit()
+
+        self.is_dirty = False
+        self.text_edit.document().setModified(False)
+
+        # Find the updated segment in the cache (after highlights are reapplied)
+        for segment in self._coded_segments_cache:
+            if (
+                segment["id"] == self.editing_segment_id
+                and segment["segment_start"] == new_start
+                and segment["segment_end"] == new_end
+            ):
+                self._select_and_scroll(new_start, new_end)
+                self.segment_clicked.emit(segment["id"])
+                break
+
+    def cancel_segment_edit(self):
+        self.end_segment_edit_mode()
+
+    def end_segment_edit_mode(self):
+        self.editing_segment_id = None
+        self.edit_bar.setVisible(False)
+        self.save_edit_button.setStyleSheet("")  # Clear special border
+        self.apply_all_highlights()
+        self.edit_mode_changed.emit(False)
+
+    def on_edit_selection_changed(self):
+        if (
+            self.editing_segment_id is not None
+            and self.text_edit.textCursor().hasSelection()
+        ):
+            self.save_edit_button.setStyleSheet("border: 2px solid #0078D7;")
+        else:
+            self.save_edit_button.setStyleSheet("")
 
     def open_import_dialog(self):
         file_paths, _ = QFileDialog.getOpenFileNames(
@@ -417,6 +533,8 @@ class ContentView(QWidget):
             )
 
     def handle_document_switch(self, new_index):
+        if self.editing_segment_id is not None:
+            self.cancel_segment_edit()
         if self.is_dirty and self.current_document_id is not None:
             msg_box = QMessageBox(self)
             msg_box.setWindowTitle("Unsaved Changes")
@@ -478,8 +596,11 @@ class ContentView(QWidget):
                 self.word_count_label.setText(f"Word Count: {word_count}")
 
             if self._pending_highlight:
-                start, end = self._pending_highlight
-                self._select_and_scroll(start, end)
+                mode, start, end = self._pending_highlight
+                if mode == "edit":
+                    self._highlight_for_edit(start, end)
+                elif mode == "view":
+                    self._select_and_scroll(start, end)
                 self._pending_highlight = None
 
             self.text_edit.textChanged.connect(self.on_text_changed)

@@ -122,6 +122,21 @@ def delete_coded_segment(segment_id):
     conn.close()
 
 
+def update_coded_segment(segment_id, new_start, new_end, new_content_preview):
+    """Updates the boundaries and content of an existing coded segment."""
+    conn = get_db_connection()
+    with conn:
+        conn.execute(
+            """
+            UPDATE coded_segments
+            SET segment_start = ?, segment_end = ?, content_preview = ?
+            WHERE id = ?
+            """,
+            (new_start, new_end, new_content_preview, segment_id),
+        )
+    conn.close()
+
+
 def get_node_statistics(project_id, document_id=None):
     stats = {}
     conn = get_db_connection()

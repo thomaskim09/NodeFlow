@@ -41,6 +41,7 @@ class DeletableTreeWidget(QTreeWidget):
 class CodedSegmentsView(QWidget):
     segment_deleted = Signal()
     segment_activated = Signal(int, int, int)  # document_id, start, end
+    segment_edit_requested = Signal(int, int, int, int)  # seg_id, doc_id, start, end
 
     def __init__(self, project_id):
         super().__init__()
@@ -154,6 +155,16 @@ class CodedSegmentsView(QWidget):
             segment_id = current.data(0, 1)
             preview = current.text(0)
 
+            edit_button = QPushButton()
+            edit_icon = MaterialIcon("edit")
+            edit_button.setIcon(edit_icon)
+            edit_button.setObjectName("codedSegmentEditButton")
+            edit_button.setFixedSize(20, 20)
+            edit_button.setToolTip("Edit this coded segment's boundaries")
+            edit_button.clicked.connect(
+                lambda checked=False, sid=segment_id: self.request_segment_edit(sid)
+            )
+
             delete_button = QPushButton()
             delete_icon = MaterialIcon("delete")
             delete_button.setIcon(delete_icon)
@@ -168,8 +179,9 @@ class CodedSegmentsView(QWidget):
             button_container.setFixedHeight(20)
             button_layout = QHBoxLayout(button_container)
             button_layout.setContentsMargins(0, 0, 0, 0)
-            button_layout.setSpacing(0)
+            button_layout.setSpacing(5)
             button_layout.addStretch()
+            button_layout.addWidget(edit_button)
             button_layout.addWidget(delete_button)
             button_layout.addStretch()
 
@@ -196,6 +208,30 @@ class CodedSegmentsView(QWidget):
                 current_item
             )
             self.segment_deleted.emit()
+
+    def request_segment_edit(self, segment_id):
+        if segment_id is None:
+            return
+
+        segment_data = next(
+            (s for s in self.all_segments if s["id"] == segment_id), None
+        )
+        if not segment_data:
+            return
+
+        doc_id = None
+        if self.scope_combo.currentText() == "Current Document":
+            doc_id = self.current_document_id
+        else:
+            doc_id = segment_data.get("document_id")
+
+        if doc_id is not None:
+            self.segment_edit_requested.emit(
+                segment_id,
+                doc_id,
+                segment_data["segment_start"],
+                segment_data["segment_end"],
+            )
 
     def load_segments(self, document_id):
         self.search_input.clear()

@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (
     QComboBox,
 )
 from PySide6.QtCore import Qt, Signal, QTimer
-from PySide6.QtGui import QDropEvent, QKeyEvent
+from PySide6.QtGui import QDropEvent, QKeyEvent, QDragEnterEvent
 from managers.export_manager import (
     export_node_family_to_word,
     export_node_family_to_excel,
@@ -76,57 +76,6 @@ PRESET_COLORS = [
     "#33FFCC",
     "#66FFCC",
 ]
-
-
-class DraggableTreeWidget(QTreeWidget):
-    def __init__(self, parent_manager):
-        super().__init__()
-        self.parent_manager = parent_manager
-        self.setDragEnabled(True)
-        self.setAcceptDrops(True)
-        self.setDragDropMode(QAbstractItemView.DragDropMode.InternalMove)
-        self.setDropIndicatorShown(True)
-
-    def dropEvent(self, event: QDropEvent):
-        source_item = self.currentItem()
-        if not source_item:
-            return
-        source_id = source_item.data(0, 1)
-        super().dropEvent(event)
-        new_parent_item = source_item.parent()
-        new_parent_id = new_parent_item.data(0, 1) if new_parent_item else None
-        database.update_node_parent(source_id, new_parent_id)
-        if new_parent_item:
-            siblings = [
-                new_parent_item.child(i) for i in range(new_parent_item.childCount())
-            ]
-        else:
-            siblings = [self.topLevelItem(i) for i in range(self.topLevelItemCount())]
-        db_order_updates = [
-            (i, item.data(0, 1))
-            for i, item in enumerate(siblings)
-            if item.data(0, 1) is not None
-        ]
-        database.update_node_order(db_order_updates)
-        QTimer.singleShot(0, self.parent_manager.refresh_tree_and_emit_update)
-
-    def keyPressEvent(self, event: QKeyEvent):
-        current_item = self.currentItem()
-        if not current_item:
-            super().keyPressEvent(event)
-            return
-        node_id = current_item.data(0, 1)
-        if node_id is None:
-            super().keyPressEvent(event)
-            return
-        if event.key() == Qt.Key.Key_F2:
-            self.parent_manager.rename_node(node_id)
-            event.accept()
-        elif event.key() == Qt.Key.Key_Delete:
-            self.parent_manager.delete_node(node_id)
-            event.accept()
-        else:
-            super().keyPressEvent(event)
 
 
 class NodeItemWidget(QWidget):
@@ -253,6 +202,7 @@ class NodeTreeManager(QWidget):
         super().__init__()
         self.project_id = project_id
         self.nodes_map = {}
+        self.setAcceptDrops(True)
         self._is_selection_mode = False
         self.current_document_id = None
         main_layout = QVBoxLayout(self)
@@ -288,13 +238,105 @@ class NodeTreeManager(QWidget):
         header_layout.addWidget(clear_filter_button)
         header_layout.addWidget(add_root_button)
         main_layout.addLayout(header_layout)
-        self.tree_widget = DraggableTreeWidget(self)
+
+        self.tree_widget = QTreeWidget()
         self.tree_widget.setHeaderHidden(True)
         self.tree_widget.setIndentation(20)
+        self.tree_widget.setDragDropMode(QAbstractItemView.DragDropMode.InternalMove)
+        self.tree_widget.setSelectionMode(
+            QAbstractItemView.SelectionMode.SingleSelection
+        )
+        self.tree_widget.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.tree_widget.setAcceptDrops(True)
+        # This new attribute will control the drag-drop highlighting behavior
+        self.tree_widget.highlighting_enabled = True
+
         main_layout.addWidget(self.tree_widget)
+
+        # --- Connections ---
         self.tree_widget.currentItemChanged.connect(self.on_selection_changed)
         self.tree_widget.itemClicked.connect(self.on_item_clicked)
+        self.tree_widget.customContextMenuRequested.connect(self.show_context_menu)
+
+        # Override the event handlers for the tree widget
+        self.tree_widget.dragEnterEvent = self.dragEnterEvent
+        self.tree_widget.dropEvent = self.dropEvent
+        self.tree_widget.keyPressEvent = self.keyPressEvent
+
         self.load_nodes()
+
+    def set_highlighting_active(self, active):
+        """Public slot to enable/disable drag-drop highlighting."""
+        self.tree_widget.highlighting_enabled = active
+
+    def dragEnterEvent(self, event: QDragEnterEvent):
+        """Overrides the tree widget's dragEnterEvent to control highlighting."""
+        if self.tree_widget.highlighting_enabled:
+            if event.mimeData().hasText():
+                event.acceptProposedAction()
+            else:
+                event.ignore()
+        else:
+            event.ignore()
+
+    def dropEvent(self, event: QDropEvent):
+        """Handles dropping an item to reorder or reparent it."""
+        if not self.tree_widget.highlighting_enabled:
+            event.ignore()
+            return
+
+        source_item = self.tree_widget.currentItem()
+        if not source_item:
+            return
+
+        # Let the default dropEvent handle the visual move
+        super(QTreeWidget, self.tree_widget).dropEvent(event)
+
+        # After the move, update the database
+        source_id = source_item.data(0, 1)
+        new_parent_item = source_item.parent()
+        new_parent_id = new_parent_item.data(0, 1) if new_parent_item else None
+        database.update_node_parent(source_id, new_parent_id)
+
+        # Update the order of siblings
+        if new_parent_item:
+            siblings = [
+                new_parent_item.child(i) for i in range(new_parent_item.childCount())
+            ]
+        else:
+            siblings = [
+                self.tree_widget.topLevelItem(i)
+                for i in range(self.tree_widget.topLevelItemCount())
+            ]
+
+        db_order_updates = [
+            (i, item.data(0, 1))
+            for i, item in enumerate(siblings)
+            if item.data(0, 1) is not None
+        ]
+        database.update_node_order(db_order_updates)
+        QTimer.singleShot(0, self.refresh_tree_and_emit_update)
+
+    def keyPressEvent(self, event: QKeyEvent):
+        """Handles key presses for actions like rename and delete."""
+        current_item = self.tree_widget.currentItem()
+        if not current_item:
+            super(QTreeWidget, self.tree_widget).keyPressEvent(event)
+            return
+
+        node_id = current_item.data(0, 1)
+        if node_id is None:
+            super(QTreeWidget, self.tree_widget).keyPressEvent(event)
+            return
+
+        if event.key() == Qt.Key.Key_F2:
+            self.rename_node(node_id)
+            event.accept()
+        elif event.key() == Qt.Key.Key_Delete:
+            self.delete_node(node_id)
+            event.accept()
+        else:
+            super(QTreeWidget, self.tree_widget).keyPressEvent(event)
 
     def load_nodes(self, node_id_to_reselect=None):
         try:
@@ -511,6 +553,35 @@ class NodeTreeManager(QWidget):
 
     def filter_by_single_node(self, node_id):
         self.filter_by_single_node_signal.emit(node_id)
+
+    def show_context_menu(self, position):
+        item = self.tree_widget.itemAt(position)
+        if not item:
+            return
+
+        node_id = item.data(0, 1)
+        if node_id is None:
+            return
+
+        menu = QMenu()
+        rename_action = menu.addAction("Rename (F2)")
+        delete_action = menu.addAction("Delete (Delete)")
+        menu.addSeparator()
+        add_child_action = menu.addAction("Add Child Node")
+        menu.addSeparator()
+        export_action = menu.addAction("Export...")
+
+        action = menu.exec(self.tree_widget.mapToGlobal(position))
+
+        if action == rename_action:
+            self.rename_node(node_id)
+        elif action == delete_action:
+            self.delete_node(node_id)
+        elif action == add_child_action:
+            self.add_node(parent_id=node_id)
+        elif action == export_action:
+            widget = self.tree_widget.itemWidget(item, 0)
+            self.show_node_export_menu(node_id, widget.export_button)
 
     def show_node_export_menu(self, node_id, button):
         menu = QMenu(self)

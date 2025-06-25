@@ -71,6 +71,7 @@ class WorkspaceView(QWidget):
         self.project_name = project_name
         self.back_to_startup_callback = back_to_startup_callback
         self._last_added_doc_id = None
+        self._in_edit_mode = False
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_splitter = QSplitter(Qt.Orientation.Horizontal)
@@ -132,6 +133,9 @@ class WorkspaceView(QWidget):
         )
         self.bottom_pane.segment_deleted.connect(self.on_segment_deleted)
         self.bottom_pane.segment_activated.connect(self.on_segment_navigation_requested)
+        self.bottom_pane.segment_edit_requested.connect(
+            self.center_pane.start_segment_edit_mode
+        )
         self.action_export_json.triggered.connect(self.export_as_json)
         self.action_export_word.triggered.connect(self.export_as_word)
         self.action_export_excel.triggered.connect(self.export_as_excel)
@@ -148,9 +152,12 @@ class WorkspaceView(QWidget):
         self.participant_manager.participant_updated.connect(self.refresh_all_views)
         self.node_tree_manager.node_updated.connect(self.on_node_data_updated)
         self.center_pane.text_selection_changed.connect(
-            self.node_tree_manager.set_selection_mode
+            self.handle_text_selection_changed
         )
         self.node_tree_manager.node_selected_for_coding.connect(self.code_selection)
+
+        # Disable node tree selection mode during segment edit mode
+        self.center_pane.edit_mode_changed.connect(self.handle_edit_mode_changed)
 
         # Allow external highlight of participant in listview
         self.center_pane.participant_highlight_requested.connect(
@@ -274,6 +281,19 @@ class WorkspaceView(QWidget):
         text_edit.setTextCursor(new_cursor)
         scrollbar.setValue(original_scroll_value)
         text_edit.setFocus()
+
+    def handle_text_selection_changed(self, enabled):
+        # Only allow selection mode if not in edit segment mode
+        if not self._in_edit_mode:
+            self.node_tree_manager.set_selection_mode(enabled)
+        else:
+            self.node_tree_manager.set_selection_mode(False)
+
+    def handle_edit_mode_changed(self, in_edit_mode):
+        self._in_edit_mode = in_edit_mode
+        # Always disable selection mode when entering edit mode
+        if in_edit_mode:
+            self.node_tree_manager.set_selection_mode(False)
 
 
 def center_on_screen(window):
