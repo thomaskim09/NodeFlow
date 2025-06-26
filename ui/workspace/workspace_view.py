@@ -319,6 +319,7 @@ class WorkspaceView(QWidget):
         database.add_coded_segment(doc_id, node_id, participant_id, start, end, text)
         self.bottom_pane.reload_view()
         self.center_pane.apply_all_highlights()
+        self.node_tree_manager.set_current_document_id(doc_id)
         self.node_tree_manager.load_nodes()
         self.participant_manager.load_participants()
         new_cursor = text_edit.textCursor()
