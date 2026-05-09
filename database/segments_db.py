@@ -1,47 +1,12 @@
-from .db_core import get_db_connection
+from repositories.segment_repository import segment_repository
 
 
 def add_coded_segment(document_id, node_id, participant_id, start, end, text_preview):
-    conn = get_db_connection()
-    with conn:
-        conn.execute(
-            "INSERT INTO coded_segments (document_id, node_id, participant_id, segment_start, segment_end, content_preview) VALUES (?, ?, ?, ?, ?, ?)",
-            (document_id, node_id, participant_id, start, end, text_preview),
-        )
-    conn.close()
+    segment_repository.add(document_id, node_id, participant_id, start, end, text_preview)
 
 
 def get_coded_segments_for_nodes(project_id, node_ids, document_id=None):
-    """
-    Retrieves all coded segments for a given list of node IDs,
-    optionally filtered by a document ID.
-    """
-    if not node_ids:
-        return []
-
-    conn = get_db_connection()
-    placeholders = ",".join("?" * len(node_ids))
-
-    params = [project_id] + node_ids
-
-    sql = f"""
-        SELECT cs.*, d.title as document_title, d.id as document_id, n.name as node_name, n.color as node_color, p.name as participant_name
-        FROM coded_segments cs
-        JOIN documents d ON cs.document_id = d.id
-        JOIN nodes n ON cs.node_id = n.id
-        LEFT JOIN participants p ON cs.participant_id = p.id
-        WHERE d.project_id = ? AND cs.node_id IN ({placeholders})
-    """
-
-    if document_id:
-        sql += " AND d.id = ?"
-        params.append(document_id)
-
-    sql += " ORDER BY d.title, cs.id"
-
-    segments_rows = conn.execute(sql, tuple(params)).fetchall()
-    conn.close()
-    return [dict(row) for row in segments_rows]
+    return segment_repository.get_for_nodes(project_id, node_ids, document_id)
 
 
 # Replace the existing get_coded_segments_for_document function
@@ -49,128 +14,28 @@ def get_coded_segments_for_nodes(project_id, node_ids, document_id=None):
 
 
 def get_coded_segments_for_document(document_id):
-    """
-    Retrieves all coded segments for a specific document, including associated
-    node and participant info.
-    """
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute(
-        """
-        SELECT
-            s.id, s.document_id, s.segment_start, s.segment_end, s.content_preview,
-            n.id as node_id, n.name as node_name, n.color as node_color,
-            d.participant_id,
-            p.name as participant_name,
-            d.title as document_title
-        FROM
-            coded_segments s
-        JOIN nodes n ON s.node_id = n.id
-        JOIN documents d ON s.document_id = d.id
-        LEFT JOIN participants p ON d.participant_id = p.id
-        WHERE
-            s.document_id = ?
-        ORDER BY
-            s.segment_start
-    """,
-        (document_id,),
-    )
-    rows = cursor.fetchall()
-    conn.close()
-    return [dict(row) for row in rows]
+    return segment_repository.get_for_document(document_id)
 
 
 def get_coded_segments_for_project(project_id):
-    conn = get_db_connection()
-    segments_rows = conn.execute(
-        """
-        SELECT cs.*, d.title as document_title, d.id as document_id, n.name as node_name, n.color as node_color, p.name as participant_name
-        FROM coded_segments cs
-        JOIN documents d ON cs.document_id = d.id
-        JOIN nodes n ON cs.node_id = n.id
-        LEFT JOIN participants p ON cs.participant_id = p.id
-        WHERE d.project_id = ? ORDER BY d.title, cs.id
-    """,
-        (project_id,),
-    ).fetchall()
-    conn.close()
-    return [dict(row) for row in segments_rows]
+    return segment_repository.get_for_project(project_id)
 
 
 def get_coded_segments_for_participant(project_id, participant_id):
-    conn = get_db_connection()
-    segments_rows = conn.execute(
-        """
-        SELECT cs.*, d.title as document_title, d.id as document_id, n.name as node_name, n.color as node_color, p.name as participant_name
-        FROM coded_segments cs
-        JOIN documents d ON cs.document_id = d.id
-        JOIN nodes n ON cs.node_id = n.id
-        LEFT JOIN participants p ON cs.participant_id = p.id
-        WHERE d.project_id = ? AND cs.participant_id = ?
-        ORDER BY d.title, cs.id
-    """,
-        (project_id, participant_id),
-    ).fetchall()
-    conn.close()
-    return [dict(row) for row in segments_rows]
+    return segment_repository.get_for_participant(project_id, participant_id)
 
 
 def delete_coded_segment(segment_id):
-    conn = get_db_connection()
-    with conn:
-        conn.execute("DELETE FROM coded_segments WHERE id = ?", (segment_id,))
-    conn.close()
+    segment_repository.delete(segment_id)
 
 
 def update_coded_segment(segment_id, new_start, new_end, new_content_preview):
-    """Updates the boundaries and content of an existing coded segment."""
-    conn = get_db_connection()
-    with conn:
-        conn.execute(
-            """
-            UPDATE coded_segments
-            SET segment_start = ?, segment_end = ?, content_preview = ?
-            WHERE id = ?
-            """,
-            (new_start, new_end, new_content_preview, segment_id),
-        )
-    conn.close()
+    segment_repository.update(segment_id, new_start, new_end, new_content_preview)
 
 
 def get_node_statistics(project_id, document_id=None):
-    stats = {}
-    conn = get_db_connection()
-    if document_id:
-        sql = (
-            "SELECT node_id, content_preview FROM coded_segments WHERE document_id = ?"
-        )
-        params = (document_id,)
-    else:
-        sql = """
-            SELECT cs.node_id, cs.content_preview FROM coded_segments cs
-            JOIN documents d ON cs.document_id = d.id WHERE d.project_id = ?
-        """
-        params = (project_id,)
-
-    segments_rows = conn.execute(sql, params).fetchall()
-    conn.close()
-
-    segments = [dict(row) for row in segments_rows]
-    for seg in segments:
-        stats.setdefault(seg["node_id"], {"word_count": 0, "segment_count": 0})
-        stats[seg["node_id"]]["segment_count"] += 1
-        stats[seg["node_id"]]["word_count"] += len(seg["content_preview"].split())
-    return stats
+    return segment_repository.get_node_statistics(project_id, document_id)
 
 
 def get_word_count_for_participant(project_id, participant_id):
-    conn = get_db_connection()
-    docs_rows = conn.execute(
-        "SELECT content FROM documents WHERE project_id = ? AND participant_id = ?",
-        (project_id, participant_id),
-    ).fetchall()
-    conn.close()
-
-    docs = [dict(row) for row in docs_rows]
-    total_words = sum(len(doc["content"].split()) for doc in docs if doc["content"])
-    return total_words
+    return segment_repository.get_word_count_for_participant(project_id, participant_id)

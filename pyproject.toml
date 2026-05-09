@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=80.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nodeflow"
+version = "0.2.0"
+description = "Cross-platform qualitative analysis desktop app built with PySide6."
+readme = "README.md"
+requires-python = ">=3.13,<3.15"
+dependencies = [
+    "networkx==3.5",
+    "openpyxl==3.1.5",
+    "PySide6==6.11.0",
+    "python-docx==1.2.0",
+    "PyYAML==6.0.3",
+    "qt-material-icons==0.2.0",
+    "wordcloud==1.9.4",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pyinstaller==6.20.0",
+    "pytest==8.4.2",
+    "pytest-qt==4.5.0",
+    "ruff==0.12.0",
+]
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+include = ["database*", "managers*", "repositories*", "services*", "ui*", "utils*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+qt_api = "pyside6"
+
+[tool.ruff]
+line-length = 88
+target-version = "py313"

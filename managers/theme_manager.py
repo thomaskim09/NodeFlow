@@ -4,6 +4,8 @@ import os
 from PySide6.QtGui import QPalette
 from PySide6.QtWidgets import QApplication
 
+from services.settings_service import settings_service
+
 
 # Define the data directory and the database file path
 DATA_DIR = "data"
@@ -610,25 +612,11 @@ def get_default_theme_stylesheet():
 
 
 def load_settings():
-    """Loads settings from the JSON file."""
-    if os.path.exists(SETTINGS_FILE):
-        with open(SETTINGS_FILE, "r") as f:
-            try:
-                settings = json.load(f)
-                if "language" not in settings:
-                    settings["language"] = "English"
-                return settings
-            except json.JSONDecodeError:
-                return {"theme": "Default", "language": "English"}
-    return {"theme": "Default", "language": "English"}
+    return settings_service.load()
 
 
 def save_settings(settings):
-    """Saves settings to the JSON file."""
-    # Ensure the data directory exists before saving
-    os.makedirs(DATA_DIR, exist_ok=True)
-    with open(SETTINGS_FILE, "w") as f:
-        json.dump(settings, f, indent=4)
+    settings_service.save(settings)
 
 
 def apply_theme(app):

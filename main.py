@@ -1,5 +1,4 @@
 import sys
-import time
 from PySide6.QtWidgets import QApplication, QMainWindow, QSplashScreen
 from PySide6.QtCore import QSize
 from PySide6.QtGui import QIcon, QPixmap
@@ -10,6 +9,7 @@ from ui.startup_view import StartupView
 from managers.theme_manager import apply_theme
 import database
 from utils.common import get_resource_path
+from services.logging_service import configure_logging
 
 
 class MainWindow(QMainWindow):
@@ -45,14 +45,13 @@ class MainWindow(QMainWindow):
 
 
 if __name__ == "__main__":
+    configure_logging()
     app = QApplication(sys.argv)
     pixmap = QPixmap(get_resource_path("splashscreen.png"))
     splash = QSplashScreen(pixmap)
     splash.show()
-    app.processEvents()
     apply_theme(app)
     database.create_tables()
-    time.sleep(2)
     window = MainWindow()
     window.show()
     splash.finish(window)

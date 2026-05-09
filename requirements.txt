@@ -1,8 +1,1 @@
-PySide6
-python-docx
-pyinstaller
-openpyxl
-wordcloud
-qt-material-icons
-networkx
-pyyaml
+-e .

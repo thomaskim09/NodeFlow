@@ -19,13 +19,11 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import (
     QTextCursor,
     QColor,
-    QTextCharFormat,
     QTextDocument,
     QFont,
 )
 import os
 import database
-import docx
 
 from managers.export_manager import export_annotated_document
 from managers.theme_manager import load_settings
@@ -33,6 +31,9 @@ from .excel_import_dialog import ExcelImportDialog
 from managers import excel_import_manager
 from qt_material_icons import MaterialIcon
 from utils.common import get_translation
+from services.import_service import import_service
+from services.settings_service import settings_service
+from services.worker_service import TaskThread
 
 
 class ContentView(QWidget):
@@ -58,6 +59,7 @@ class ContentView(QWidget):
         self.is_dirty = False
         self._coded_segments_cache = []
         self._pending_highlight = None
+        self._import_thread = None
         self.setAcceptDrops(True)
         main_layout = QVBoxLayout(self)
         top_bar_layout = QHBoxLayout()
@@ -227,14 +229,8 @@ class ContentView(QWidget):
 
     def _highlight_for_edit(self, start, end):
         self.apply_all_highlights()
-        cursor = self.text_edit.textCursor()
-        cursor.setPosition(start)
-        cursor.setPosition(end, QTextCursor.MoveMode.KeepAnchor)
-        fmt = QTextCharFormat()
-        fmt.setBackground(QColor("#FFD700"))  # Gold color for editing
-        fmt.setForeground(QColor("black"))
-        cursor.setCharFormat(fmt)
-        self.text_edit.setTextCursor(cursor)
+        self._render_highlights((start, end))
+        self._select_and_scroll(start, end)
         self.edit_bar.setVisible(True)
 
     def save_segment_edit(self):
@@ -326,26 +322,18 @@ class ContentView(QWidget):
             )
             return
         if dialog.exec() == QDialog.DialogCode.Accepted:
-            QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
             mappings = dialog.get_column_mappings()
-            docs_imported, errors = excel_import_manager.import_data(
-                self.project_id, file_path, mappings
+            QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+            self._import_thread = TaskThread(
+                excel_import_manager.import_data, self.project_id, file_path, mappings
             )
-            QApplication.restoreOverrideCursor()
-            if docs_imported > 0:
-                self.bulk_documents_added.emit()
-            summary_message = f"Successfully imported {docs_imported} document(s) from '{os.path.basename(file_path)}'."
-            if errors:
-                detailed_errors = "\n".join(errors[:5])
-                if len(errors) > 5:
-                    detailed_errors += "\n(And more...)"
-                error_dialog = QMessageBox(self)
-                error_dialog.setWindowTitle("Import Complete with Errors")
-                error_dialog.setText(summary_message)
-                error_dialog.setDetailedText(detailed_errors)
-                error_dialog.exec()
-            else:
-                QMessageBox.information(self, "Import Complete", summary_message)
+            self._import_thread.succeeded.connect(
+                lambda result, filename=os.path.basename(file_path): self._finish_excel_import(
+                    filename, result
+                )
+            )
+            self._import_thread.failed.connect(self._handle_background_error)
+            self._import_thread.start()
 
     def dragEnterEvent(self, event):
         mime_data = event.mimeData()
@@ -378,14 +366,7 @@ class ContentView(QWidget):
 
     def _process_text_document(self, file_path):
         try:
-            content = ""
-            if file_path.lower().endswith(".docx"):
-                doc = docx.Document(file_path)
-                content = "\n\n".join([p.text for p in doc.paragraphs])
-            else:
-                with open(file_path, "r", encoding="utf-8") as f:
-                    content = f.read()
-            title = os.path.basename(file_path)
+            title, content = import_service.read_text_document(file_path)
             if database.check_document_exists(self.project_id, title, content):
                 reply = QMessageBox.question(
                     self,
@@ -440,7 +421,7 @@ class ContentView(QWidget):
 
     def show_drop_overlay(self):
         if self.stacked_layout.currentWidget() is not self.drop_overlay:
-            settings = load_settings()
+            settings = settings_service.load()
             is_dark = settings.get("theme") == "Dark"
             bg_color_str = (
                 "rgba(60, 60, 60, 0.95)" if is_dark else "rgba(240, 240, 240, 0.95)"
@@ -626,16 +607,37 @@ class ContentView(QWidget):
         finally:
             QApplication.restoreOverrideCursor()
 
+    def _finish_excel_import(self, filename, result):
+        QApplication.restoreOverrideCursor()
+        docs_imported, errors = result
+        if docs_imported > 0:
+            self.bulk_documents_added.emit()
+        summary_message = (
+            f"Successfully imported {docs_imported} document(s) from '{filename}'."
+        )
+        if errors:
+            detailed_errors = "\n".join(errors[:5])
+            if len(errors) > 5:
+                detailed_errors += "\n(And more...)"
+            error_dialog = QMessageBox(self)
+            error_dialog.setWindowTitle("Import Complete with Errors")
+            error_dialog.setText(summary_message)
+            error_dialog.setDetailedText(detailed_errors)
+            error_dialog.exec()
+        else:
+            QMessageBox.information(self, "Import Complete", summary_message)
+
+    def _handle_background_error(self, error_tuple):
+        QApplication.restoreOverrideCursor()
+        _, error, _ = error_tuple
+        QMessageBox.critical(self, "Error", str(error))
+
     def apply_all_highlights(self):
         self.text_edit.blockSignals(True)
         original_position = self.text_edit.textCursor().position()
         try:
-            cursor = self.text_edit.textCursor()
-            cursor.select(QTextCursor.SelectionType.Document)
-            cursor.setCharFormat(QTextCharFormat())
-            cursor.clearSelection()
-            self.text_edit.setTextCursor(cursor)
             if not self.current_document_id:
+                self.text_edit.setExtraSelections([])
                 self.segment_count_label.setText("Coded Segments: 0")
                 return
             self._coded_segments_cache = database.get_coded_segments_for_document(
@@ -644,33 +646,47 @@ class ContentView(QWidget):
             self.segment_count_label.setText(
                 f"Coded Segments: {len(self._coded_segments_cache)}"
             )
-            for segment in self._coded_segments_cache:
-                self.highlight_text(
-                    segment["segment_start"],
-                    segment["segment_end"],
-                    segment["node_color"],
-                )
+            self._render_highlights()
         finally:
             cursor = self.text_edit.textCursor()
             cursor.setPosition(original_position)
             self.text_edit.setTextCursor(cursor)
             self.text_edit.blockSignals(False)
 
-    def highlight_text(self, start, end, color_hex):
+    def _create_selection(self, start, end, color_hex, foreground_hex=None):
+        selection = QTextEdit.ExtraSelection()
         cursor = self.text_edit.textCursor()
         cursor.setPosition(start)
         cursor.setPosition(end, QTextCursor.MoveMode.KeepAnchor)
-        fmt = QTextCharFormat()
+        selection.cursor = cursor
+        fmt = selection.format
         bg_color = QColor(color_hex)
         brightness = (
             bg_color.red() * 299 + bg_color.green() * 587 + bg_color.blue() * 114
         ) / 1000
-        text_color = QColor("black") if brightness > 128 else QColor("white")
+        text_color = (
+            QColor(foreground_hex)
+            if foreground_hex
+            else QColor("black") if brightness > 128 else QColor("white")
+        )
         fmt.setBackground(bg_color)
         fmt.setForeground(text_color)
-        cursor.setCharFormat(fmt)
-        cursor.clearSelection()
-        self.text_edit.setTextCursor(cursor)
+        return selection
+
+    def _render_highlights(self, edit_range=None):
+        selections = [
+            self._create_selection(
+                segment["segment_start"], segment["segment_end"], segment["node_color"]
+            )
+            for segment in self._coded_segments_cache
+        ]
+        if edit_range is not None:
+            selections.append(
+                self._create_selection(
+                    edit_range[0], edit_range[1], "#FFD700", foreground_hex="#000000"
+                )
+            )
+        self.text_edit.setExtraSelections(selections)
 
     def on_cursor_position_changed(self):
         pos = self.text_edit.textCursor().position()

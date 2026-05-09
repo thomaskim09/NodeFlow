@@ -30,6 +30,8 @@ from .co_occurrence_widget import CoOccurrenceWidget
 import database
 from qt_material_icons import MaterialIcon
 from utils.common import get_translation
+from services.dashboard_service import DashboardQuery, dashboard_service
+from services.worker_service import TaskThread
 
 
 class DashboardView(QDialog):
@@ -41,6 +43,8 @@ class DashboardView(QDialog):
         self.initial_document_id = current_document_id
         self.settings = load_settings()
         self.language = language or self.settings.get("language", "English")
+        self.dashboard_service = dashboard_service
+        self._loading_thread = None
         self.setWindowTitle(
             get_translation("dashboard.title", self.language, project_name=project_name)
         )
@@ -278,27 +282,25 @@ class DashboardView(QDialog):
         if node_id is None:
             return
         self._set_loading_state(True)
-        try:
-            results = self._get_data_from_db(doc_id, part_id, node_id, None)
-            tab_index = self.tabs.currentIndex()
-            # Always update stat labels for all tabs
-            self._update_stat_labels_from_results(results)
-            # 0: Breakdown, 1: Charts, 2: Cross-Tabulation, 3: Code Co-occurrence, 4: Word Cloud
-            if tab_index == 0:
-                self._update_breakdown_tab(results)
-            elif tab_index == 1:
-                self._update_charts_tab(results)
-            elif tab_index == 2:
-                self._update_crosstab_tab(results)
-            elif tab_index == 3:
-                self._update_cooccurrence_tab(results)
-            elif tab_index == 4:
-                self._update_wordcloud_tab(results)
-        except Exception as e:
-            import traceback
+        query = DashboardQuery(self.project_id, doc_id, part_id, node_id)
+        self._loading_thread = TaskThread(self.dashboard_service.load, query)
+        self._loading_thread.succeeded.connect(self._apply_results)
+        self._loading_thread.failed.connect(self._on_loading_error)
+        self._loading_thread.start()
 
-            traceback.print_exc()
-            self._on_loading_error((type(e), e, e.__traceback__))
+    def _apply_results(self, results):
+        tab_index = self.tabs.currentIndex()
+        self._update_stat_labels_from_results(results)
+        if tab_index == 0:
+            self._update_breakdown_tab(results)
+        elif tab_index == 1:
+            self._update_charts_tab(results)
+        elif tab_index == 2:
+            self._update_crosstab_tab(results)
+        elif tab_index == 3:
+            self._update_cooccurrence_tab(results)
+        elif tab_index == 4:
+            self._update_wordcloud_tab(results)
         self._set_loading_state(False)
 
     def _update_stat_labels_from_results(self, results):
@@ -492,7 +494,7 @@ class DashboardView(QDialog):
         self.export_button.setEnabled(not is_loading)
 
     def _on_loading_error(self, error_tuple):
-        exctype, value, tb = error_tuple
+        exctype, value, _ = error_tuple
         QMessageBox.critical(
             self,
             f"Error: {exctype.__name__}",
@@ -501,42 +503,8 @@ class DashboardView(QDialog):
         self._set_loading_state(False)
 
     def _get_data_from_db(self, doc_id, part_id, node_id, progress_callback):
-        results = {}
-        nodes = database.get_nodes_for_project(self.project_id)
-        nodes_map, nodes_by_parent = self._build_node_hierarchy(nodes)
-        results["nodes"] = nodes
-        results["nodes_map"] = nodes_map
-        results["nodes_by_parent"] = nodes_by_parent
-        if node_id != -1:
-            all_project_segments = database.get_coded_segments_for_project(
-                self.project_id
-            )
-            node_stats, _ = self._calculate_direct_stats(all_project_segments)
-            aggregated_stats = self._calculate_aggregated_stats(
-                nodes_by_parent, node_stats
-            )
-            results["node_id"] = node_id
-            results["aggregated_stats"] = aggregated_stats
-            results["all_project_segments"] = all_project_segments
-        else:
-            total_words, segments = self._get_scoped_data(doc_id, part_id)
-            node_stats, coded_words = self._calculate_direct_stats(segments)
-            aggregated_stats = self._calculate_aggregated_stats(
-                nodes_by_parent, node_stats
-            )
-            participant_stats = self._calculate_participant_stats(segments)
-            (
-                co_occurrence_matrix,
-                co_occurrence_headers,
-            ) = self._calculate_co_occurrence(segments, nodes)
-            results["participant_stats"] = participant_stats
-            results["total_words"] = total_words
-            results["segments"] = segments
-            results["coded_words"] = coded_words
-            results["aggregated_stats"] = aggregated_stats
-            results["co_occurrence_matrix"] = co_occurrence_matrix
-            results["co_occurrence_headers"] = co_occurrence_headers
-        return results
+        query = DashboardQuery(self.project_id, doc_id, part_id, node_id)
+        return self.dashboard_service.load(query)
 
     def _populate_tree_item(
         self, parent_item, node, word_count, segment_count, percentage

@@ -48,16 +48,18 @@ NodeFlow is a user-friendly desktop application designed to assist researchers a
 
 2.  **Create and Activate Virtual Environment:**
     ```bash
-    # Create the virtual environment
-    python -m venv venv
+    python -m venv .venv
 
-    # Activate it (Windows)
-    .\venv\Scripts\activate
+    # macOS / Linux
+    source .venv/bin/activate
+
+    # Windows PowerShell
+    .\.venv\Scripts\Activate.ps1
     ```
 
 3.  **Install Dependencies:**
     ```bash
-    pip install -r requirements.txt
+    pip install -e .[dev]
     ```
 
 4.  **Run the Application:**
@@ -65,30 +67,22 @@ NodeFlow is a user-friendly desktop application designed to assist researchers a
     python main.py
     ```
 
-## Packaging as an Executable (EXE) with PyInstaller
+## Packaging
 
-To create a standalone Windows executable from NodeFlow using PyInstaller:
+PyInstaller builds must be produced on the target OS. Build the Windows bundle on Windows and the macOS app on macOS.
 
-1. **Install PyInstaller** (if not already installed):
-    ```bash
-    pip install pyinstaller
-    ```
+### Windows
+```bash
+pyinstaller packaging/windows.spec
+```
 
-2. **Run PyInstaller** from the project root:
-    ```bash
-    pyinstaller --onefile --windowed --name "NodeFlow" --icon resource/icon.png --collect-all qt_material_icons --add-data "locales;locales" --add-data "resource;resource" main.py
-    ```
-    - `--name`: Bundle it in a specific file name.
-    - `--onefile`: Bundle everything into a single EXE file.
-    - `--windowed`: Prevents a console window from appearing (for GUI apps).
-    - `--icon`: Sets the application icon.
-    - `--add-data`: Ensures the `locales` and `resource` folders are included in the EXE. Use a semicolon `;` as the separator on Windows.
+### macOS
+```bash
+pyinstaller packaging/macos.spec
+```
 
-3. **Find your EXE** in the `dist/` folder:
-    - The output will be at `dist/main.exe`.
+## Testing
 
-4. **Distribute** the EXE file. You can share the EXE with others; they do not need Python installed.
-
-**Note:**
-- If you add or rename resource files, update the `--add-data` arguments accordingly.
-- For troubleshooting, see the [PyInstaller documentation](https://pyinstaller.org/en/stable/).
+```bash
+pytest
+```

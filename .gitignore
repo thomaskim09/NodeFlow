@@ -1,9 +1,9 @@
 # Virtual Environment
 venv/
+.venv/
 
-# Application Data
-/data/nodeflow.db
-/data/settings.json
+# Local packaging metadata
+nodeflow.egg-info/
 
 # Python cache
 __pycache__/

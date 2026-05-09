@@ -1,5 +1,5 @@
-import os
 import yaml
+from pathlib import Path
 
 _LOCALE_CACHE = {}
 
@@ -9,13 +9,11 @@ def load_locale(language):
     lang_map = {"Chinese": "zh", "English": "en"}
     language_code = lang_map.get(language, language)
     if language_code not in _LOCALE_CACHE:
-        path = os.path.join(
-            os.path.dirname(__file__), "..", "locales", f"{language_code}.yml"
-        )
-        if not os.path.exists(path):
+        path = Path(__file__).resolve().parent.parent / "locales" / f"{language_code}.yml"
+        if not path.exists():
             # fallback to English if not found
-            path = os.path.join(os.path.dirname(__file__), "..", "locales", "en.yml")
-        with open(path, "r", encoding="utf-8") as f:
+            path = Path(__file__).resolve().parent.parent / "locales" / "en.yml"
+        with path.open("r", encoding="utf-8") as f:
             _LOCALE_CACHE[language_code] = yaml.safe_load(f)
     return _LOCALE_CACHE[language_code]
 
@@ -35,9 +33,6 @@ def get_translation(key, language="en", **kwargs):
 
 
 def get_resource_path(filename: str) -> str:
-    os.path.dirname(os.path.abspath(__file__))
-    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-    resource_folder_path = os.path.join(project_root, "resource")
-    os.makedirs(resource_folder_path, exist_ok=True)
-    full_path = os.path.join(resource_folder_path, filename)
-    return full_path
+    from utils.app_paths import get_bundle_resource_path
+
+    return str(get_bundle_resource_path(filename))

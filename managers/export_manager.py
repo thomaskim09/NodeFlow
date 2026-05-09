@@ -10,9 +10,19 @@ import database
 import openpyxl
 import networkx as nx
 from docx.shared import RGBColor
-import os
-import platform
-import subprocess
+from services.export_service import export_service
+from services.platform_service import platform_service
+
+
+def _show_export_saved(parent_widget, message, file_path):
+    msg_box = QMessageBox(parent_widget)
+    msg_box.setWindowTitle("Export Successful")
+    msg_box.setText(f"{message}\n{file_path}")
+    open_button = msg_box.addButton("Open File", QMessageBox.ActionRole)
+    msg_box.addButton(QMessageBox.Ok)
+    msg_box.exec()
+    if msg_box.clickedButton() == open_button:
+        platform_service.open_path(file_path)
 
 
 def export_to_word(project_id, parent_widget=None):
@@ -66,35 +76,11 @@ def export_to_word(project_id, parent_widget=None):
     # --- Save the document with error handling ---
     try:
         doc.save(file_path)
-        # Show a message box with an 'Open File' button
-        msg_box = QMessageBox(parent_widget)
-        msg_box.setWindowTitle("Export Successful")
-        msg_box.setText(f"Report successfully saved to:\n{file_path}")
-        open_button = msg_box.addButton("Open File", QMessageBox.ActionRole)
-        msg_box.addButton(QMessageBox.Ok)
-        msg_box.exec_()
-        if msg_box.clickedButton() == open_button:
-            import os
-            import sys
-
-            if sys.platform.startswith("win"):
-                os.startfile(file_path)
-            elif sys.platform.startswith("darwin"):
-                os.system(f'open "{file_path}"')
-            else:
-                os.system(f'xdg-open "{file_path}"')
+        _show_export_saved(parent_widget, "Report successfully saved to:", file_path)
     except PermissionError:
-        QMessageBox.critical(
-            parent_widget,
-            "Permission Denied",
-            f"Could not save the file to:\n{file_path}\n\nPlease make sure you have permissions to write to this location and that the file is not currently open in another program.",
-        )
+        export_service.show_permission_error(parent_widget, file_path)
     except Exception as e:
-        QMessageBox.critical(
-            parent_widget,
-            "Export Error",
-            f"An unexpected error occurred while saving the file:\n{e}",
-        )
+        export_service.show_unexpected_error(parent_widget, "Export Error", e)
 
 
 def export_to_json(project_id, parent_widget=None):
@@ -145,35 +131,13 @@ def export_to_json(project_id, parent_widget=None):
     try:
         with open(file_path, "w", encoding="utf-8") as f:
             json.dump(json_output, f, ensure_ascii=False, indent=4)
-        # Show a message box with an 'Open File' button
-        msg_box = QMessageBox(parent_widget)
-        msg_box.setWindowTitle("Export Successful")
-        msg_box.setText(f"JSON data successfully saved to:\n{file_path}")
-        open_button = msg_box.addButton("Open File", QMessageBox.ActionRole)
-        msg_box.addButton(QMessageBox.Ok)
-        msg_box.exec_()
-        if msg_box.clickedButton() == open_button:
-            import os
-            import sys
-
-            if sys.platform.startswith("win"):
-                os.startfile(file_path)
-            elif sys.platform.startswith("darwin"):
-                os.system(f'open "{file_path}"')
-            else:
-                os.system(f'xdg-open "{file_path}"')
+        _show_export_saved(
+            parent_widget, "JSON data successfully saved to:", file_path
+        )
     except PermissionError:
-        QMessageBox.critical(
-            parent_widget,
-            "Permission Denied",
-            f"Could not save the file to:\n{file_path}\n\nPlease make sure you have permissions to write to this location and that the file is not currently open in another program.",
-        )
+        export_service.show_permission_error(parent_widget, file_path)
     except Exception as e:
-        QMessageBox.critical(
-            parent_widget,
-            "Export Error",
-            f"An unexpected error occurred while saving the file:\n{e}",
-        )
+        export_service.show_unexpected_error(parent_widget, "Export Error", e)
 
 
 def export_to_excel(project_id, parent_widget=None):
@@ -266,35 +230,13 @@ def export_to_excel(project_id, parent_widget=None):
     # --- Save the workbook with error handling ---
     try:
         wb.save(file_path)
-        # Show a message box with an 'Open File' button
-        msg_box = QMessageBox(parent_widget)
-        msg_box.setWindowTitle("Export Successful")
-        msg_box.setText(f"Excel report successfully saved to:\n{file_path}")
-        open_button = msg_box.addButton("Open File", QMessageBox.ActionRole)
-        msg_box.addButton(QMessageBox.Ok)
-        msg_box.exec_()
-        if msg_box.clickedButton() == open_button:
-            import os
-            import sys
-
-            if sys.platform.startswith("win"):
-                os.startfile(file_path)
-            elif sys.platform.startswith("darwin"):
-                os.system(f'open "{file_path}"')
-            else:
-                os.system(f'xdg-open "{file_path}"')
+        _show_export_saved(
+            parent_widget, "Excel report successfully saved to:", file_path
+        )
     except PermissionError:
-        QMessageBox.critical(
-            parent_widget,
-            "Permission Denied",
-            f"Could not save the file to:\n{file_path}\n\nPlease make sure you have permissions to write to this location and that the file is not currently open in another program.",
-        )
+        export_service.show_permission_error(parent_widget, file_path)
     except Exception as e:
-        QMessageBox.critical(
-            parent_widget,
-            "Export Error",
-            f"An unexpected error occurred while saving the file:\n{e}",
-        )
+        export_service.show_unexpected_error(parent_widget, "Export Error", e)
 
 
 def export_node_family_to_word(project_id, start_node_id, parent_widget=None):
@@ -737,44 +679,12 @@ def export_overall_participants_to_excel(project_id, parent_widget=None):
         # --- 6. Save the workbook ---
         wb.save(file_path)
 
-        # --- 7. Show success message with an "Open File" button ---
-        msg_box = QMessageBox(parent_widget)
-        msg_box.setIcon(QMessageBox.Icon.Information)
-        msg_box.setText("Export Successful")
-        msg_box.setInformativeText(f"The report has been saved to:\n{file_path}")
-
-        open_button = msg_box.addButton("Open File", QMessageBox.ActionRole)
-        msg_box.addButton(QMessageBox.Ok)
-        msg_box.exec()
-
-        if msg_box.clickedButton() == open_button:
-            try:
-                if platform.system() == "Windows":
-                    os.startfile(file_path)
-                elif platform.system() == "Darwin":  # macOS
-                    subprocess.run(("open", file_path), check=True)
-                else:  # Linux variants
-                    subprocess.run(("xdg-open", file_path), check=True)
-            except Exception as e:
-                QMessageBox.critical(
-                    parent_widget,
-                    "Error Opening File",
-                    f"Could not open the file automatically. Please try opening it manually.\n\nError: {e}",
-                )
+        _show_export_saved(parent_widget, "The report has been saved to:", file_path)
 
     except PermissionError:
-        QMessageBox.critical(
-            parent_widget,
-            "Permission Denied",
-            "Could not save the file. It may be open in another program. "
-            "Please close the file and try again.",
-        )
+        export_service.show_permission_error(parent_widget, file_path)
     except Exception as e:
-        QMessageBox.critical(
-            parent_widget,
-            "Export Error",
-            f"An unexpected error occurred while saving the file:\n{e}",
-        )
+        export_service.show_unexpected_error(parent_widget, "Export Error", e)
 
 
 def export_co_occurrence_to_gexf(project_id, parent_widget=None):
@@ -941,28 +851,13 @@ def export_annotated_document(
         doc.save(file_path)
 
         # Show a message box with an 'Open File' button
-        msg_box = QMessageBox(parent_widget)
-        msg_box.setWindowTitle("Export Successful")
-        msg_box.setText(f"Annotated document successfully saved to:\n{file_path}")
-        open_button = msg_box.addButton("Open File", QMessageBox.ActionRole)
-        msg_box.addButton(QMessageBox.Ok)
-        msg_box.exec_()
-        if msg_box.clickedButton() == open_button:
-            import os
-            import sys
-
-            if sys.platform.startswith("win"):
-                os.startfile(file_path)
-            elif sys.platform.startswith("darwin"):
-                os.system(f'open "{file_path}"')
-            else:
-                os.system(f'xdg-open "{file_path}"')
+        _show_export_saved(
+            parent_widget,
+            "Annotated document successfully saved to:",
+            file_path,
+        )
     except Exception as e:
         import traceback
 
         traceback.print_exc()
-        QMessageBox.critical(
-            parent_widget,
-            "Export Error",
-            f"An unexpected error occurred while saving the file:\n{e}",
-        )
+        export_service.show_unexpected_error(parent_widget, "Export Error", e)
