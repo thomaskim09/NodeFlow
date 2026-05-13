@@ -38,34 +38,76 @@ NodeFlow is a user-friendly desktop application designed to assist researchers a
   ```
 - To add a new language, create a new YAML file in `locales/` with the same key structure.
 
-## Getting Started (For Developers)
+## macOS: Step-by-Step (Run from Source)
 
-1.  **Clone the Repository:**
-    ```bash
-    git clone <your-repo-url>
-    cd NodeFlow
-    ```
+### Recommended (with `.venv`)
 
-2.  **Create and Activate Virtual Environment:**
-    ```bash
-    python -m venv .venv
+1. **Open Terminal and go to the project**
+   ```bash
+   cd /path/to/NodeFlow
+   ```
 
-    # macOS / Linux
-    source .venv/bin/activate
+2. **Check Python version**
+   ```bash
+   python3 --version
+   ```
+   Target: Python `3.13` or `3.14`.
 
-    # Windows PowerShell
-    .\.venv\Scripts\Activate.ps1
-    ```
+3. **Create and activate virtual environment**
+   ```bash
+   python3 -m venv .venv
+   source .venv/bin/activate
+   ```
 
-3.  **Install Dependencies:**
-    ```bash
-    pip install -e .[dev]
-    ```
+4. **Install dependencies**
+   ```bash
+   python -m pip install --upgrade pip
+   python -m pip install -e ".[dev]"
+   ```
 
-4.  **Run the Application:**
-    ```bash
-    python main.py
-    ```
+5. **Start the app**
+   ```bash
+   python main.py
+   ```
+
+6. **Next time, run again**
+   ```bash
+   cd /path/to/NodeFlow
+   source .venv/bin/activate
+   python main.py
+   ```
+
+### Alternative (no virtual environment)
+
+Use this only if you intentionally want global/user-site installs.
+
+1. **Go to project**
+   ```bash
+   cd /path/to/NodeFlow
+   ```
+
+2. **Install dependencies to user site**
+   ```bash
+   python3 -m pip install --user -e ".[dev]" --break-system-packages
+   ```
+
+3. **Start the app**
+   ```bash
+   python3 main.py
+   ```
+
+If macOS blocks package installation, use the recommended `.venv` flow above.
+
+## Windows Quick Start
+
+```powershell
+cd C:\path\to\NodeFlow
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+python -m pip install -e ".[dev]"
+python main.py
+```
 
 ## Packaging
 

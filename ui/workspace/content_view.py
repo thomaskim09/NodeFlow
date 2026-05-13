@@ -15,12 +15,13 @@ from PySide6.QtWidgets import (
     QStackedLayout,
     QInputDialog,
 )
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, Signal, QSize
 from PySide6.QtGui import (
     QTextCursor,
     QColor,
     QTextDocument,
     QFont,
+    QIcon,
 )
 import os
 import database
@@ -63,43 +64,48 @@ class ContentView(QWidget):
         self.setAcceptDrops(True)
         main_layout = QVBoxLayout(self)
         top_bar_layout = QHBoxLayout()
-        title_label = QLabel(
+        self.title_label = QLabel(
             get_translation("content_view.document_view", self.language)
         )
-        font = title_label.font()
+        font = self.title_label.font()
         font.setBold(True)
-        title_label.setFont(font)
+        self.title_label.setFont(font)
         self.doc_selector = QComboBox()
         self.doc_selector.setMinimumWidth(300)
 
         self.import_button = QPushButton()
-        import_icon = MaterialIcon("upload")
-        self.import_button.setIcon(import_icon)
+        self.import_icon = MaterialIcon("upload")
+        self.import_button.setIcon(self.import_icon)
         self.import_button.setToolTip(
             get_translation("content_view.import_tooltip", self.language)
         )
         self.save_button = QPushButton()
-        save_icon = MaterialIcon("save")
-        self.save_button.setIcon(save_icon)
+        self.save_icon = MaterialIcon("save")
+        self.save_button.setIcon(self.save_icon)
         self.save_button.setToolTip(
             get_translation("content_view.save_tooltip", self.language)
         )
         self.save_button.setFixedSize(28, 28)
+        self.save_button.setIconSize(QSize(16, 16))
         self.save_button.setEnabled(False)
-        delete_button = QPushButton()
-        delete_icon = MaterialIcon("delete")
-        delete_button.setIcon(delete_icon)
-        delete_button.setToolTip(
+        self.delete_button = QPushButton()
+        self.delete_icon = MaterialIcon("delete")
+        self.delete_button.setIcon(self.delete_icon)
+        self.delete_button.setToolTip(
             get_translation("content_view.delete_tooltip", self.language)
         )
-        delete_button.setFixedSize(28, 28)
+        self.delete_button.setFixedSize(28, 28)
+        self.delete_button.setIconSize(QSize(16, 16))
         self.export_annotated_button = QPushButton()
-        export_annotated_icon = MaterialIcon("description")
-        self.export_annotated_button.setIcon(export_annotated_icon)
+        self.export_annotated_icon = MaterialIcon("description")
+        self.export_annotated_button.setIcon(self.export_annotated_icon)
         self.export_annotated_button.setToolTip(
             get_translation("content_view.export_annotated_tooltip", self.language)
         )
         self.export_annotated_button.setFixedSize(28, 28)
+        self.export_annotated_button.setIconSize(QSize(16, 16))
+        self.import_button.setFixedSize(28, 28)
+        self.import_button.setIconSize(QSize(16, 16))
 
         self.text_edit = QTextEdit()
         self.text_edit.setReadOnly(False)
@@ -114,13 +120,15 @@ class ContentView(QWidget):
         icon_label.setPixmap(upload_icon.pixmap(48, 48))
         icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        text_label = QLabel(get_translation("content_view.drop_text", self.language))
+        self.drop_text_label = QLabel(
+            get_translation("content_view.drop_text", self.language)
+        )
         text_font = QFont()
         text_font.setPointSize(12)
-        text_label.setFont(text_font)
-        text_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.drop_text_label.setFont(text_font)
+        self.drop_text_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         overlay_layout.addWidget(icon_label)
-        overlay_layout.addWidget(text_label)
+        overlay_layout.addWidget(self.drop_text_label)
         self.stacked_layout = QStackedLayout()
         self.stacked_layout.addWidget(self.text_edit)
         self.stacked_layout.addWidget(self.drop_overlay)
@@ -138,30 +146,32 @@ class ContentView(QWidget):
         info_bar_layout.addWidget(self.word_count_label)
         info_bar_layout.addStretch()
         info_bar_layout.addWidget(self.segment_count_label)
-        top_bar_layout.addWidget(title_label)
+        top_bar_layout.addWidget(self.title_label)
         top_bar_layout.addWidget(self.doc_selector)
         top_bar_layout.addStretch()
         top_bar_layout.addWidget(self.import_button)
         top_bar_layout.addWidget(self.save_button)
         top_bar_layout.addWidget(self.export_annotated_button)
-        top_bar_layout.addWidget(delete_button)
+        top_bar_layout.addWidget(self.delete_button)
 
         # Edit Mode Bar
         self.edit_bar = QFrame()
         self.edit_bar.setObjectName("editBar")
         edit_bar_layout = QHBoxLayout(self.edit_bar)
         edit_bar_layout.setContentsMargins(5, 2, 5, 2)
-        edit_label = QLabel(get_translation("edit_bar.editing_segment", self.language))
+        self.edit_label = QLabel(
+            get_translation("edit_bar.editing_segment", self.language)
+        )
         self.save_edit_button = QPushButton(
             get_translation("edit_bar.save_changes", self.language)
         )
-        cancel_edit_button = QPushButton(
+        self.cancel_edit_button = QPushButton(
             get_translation("edit_bar.cancel", self.language)
         )
-        edit_bar_layout.addWidget(edit_label)
+        edit_bar_layout.addWidget(self.edit_label)
         edit_bar_layout.addStretch()
         edit_bar_layout.addWidget(self.save_edit_button)
-        edit_bar_layout.addWidget(cancel_edit_button)
+        edit_bar_layout.addWidget(self.cancel_edit_button)
         self.edit_bar.setVisible(False)
 
         main_layout.addLayout(top_bar_layout)
@@ -172,15 +182,16 @@ class ContentView(QWidget):
         self.import_button.clicked.connect(self.open_import_dialog)
         self.save_button.clicked.connect(self.save_document)
         self.export_annotated_button.clicked.connect(self.export_annotated)
-        delete_button.clicked.connect(self.delete_current_document)
+        self.delete_button.clicked.connect(self.delete_current_document)
         self.text_edit.selectionChanged.connect(self.on_edit_selection_changed)
         self.save_edit_button.clicked.connect(self.save_segment_edit)
-        cancel_edit_button.clicked.connect(self.cancel_segment_edit)
+        self.cancel_edit_button.clicked.connect(self.cancel_segment_edit)
         self.doc_selector.currentIndexChanged.connect(self.handle_document_switch)
         self.text_edit.textChanged.connect(self.on_text_changed)
         self.text_edit.cursorPositionChanged.connect(self.on_cursor_position_changed)
         self.text_edit.selectionChanged.connect(self.on_selection_changed_for_coding)
         self.load_document_list()
+        self.update_theme(load_settings().get("theme", "Light"))
 
     def _select_and_scroll(self, start, end):
         cursor = self.text_edit.textCursor()
@@ -727,6 +738,44 @@ class ContentView(QWidget):
                 "content_view.coded_segments_count", self.language, count=segment_count
             )
         )
+
+    def update_language(self, new_language):
+        self.language = new_language
+        self.title_label.setText(get_translation("content_view.document_view", self.language))
+        self.import_button.setToolTip(
+            get_translation("content_view.import_tooltip", self.language)
+        )
+        self.save_button.setToolTip(
+            get_translation("content_view.save_tooltip", self.language)
+        )
+        self.delete_button.setToolTip(
+            get_translation("content_view.delete_tooltip", self.language)
+        )
+        self.export_annotated_button.setToolTip(
+            get_translation("content_view.export_annotated_tooltip", self.language)
+        )
+        self.drop_text_label.setText(get_translation("content_view.drop_text", self.language))
+        self.edit_label.setText(get_translation("edit_bar.editing_segment", self.language))
+        self.save_edit_button.setText(get_translation("edit_bar.save_changes", self.language))
+        self.cancel_edit_button.setText(get_translation("edit_bar.cancel", self.language))
+        self.update_counts(
+            len(self.text_edit.toPlainText().split()),
+            len(self._coded_segments_cache),
+        )
+
+    def update_theme(self, theme):
+        is_dark = theme == "Dark"
+        fg = QColor("#f0f0f0" if is_dark else "#000000")
+        disabled_fg = QColor("#a8a8a8" if is_dark else "#5e5e5e")
+        for icon, button in (
+            (self.import_icon, self.import_button),
+            (self.save_icon, self.save_button),
+            (self.export_annotated_icon, self.export_annotated_button),
+            (self.delete_icon, self.delete_button),
+        ):
+            icon.set_color(fg, QIcon.Mode.Normal)
+            icon.set_color(disabled_fg, QIcon.Mode.Disabled)
+            button.setIcon(icon)
 
 
 class AssignParticipantDialog(QDialog):

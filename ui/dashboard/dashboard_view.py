@@ -16,13 +16,14 @@ from PySide6.QtWidgets import (
     QHeaderView,
     QFrame,
     QSplitter,
+    QApplication,
 )
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QPixmap, QColor, QIcon
 from PySide6.QtCharts import QChart
 
 from managers.export_manager import export_co_occurrence_to_gexf
-from managers.theme_manager import load_settings
+from managers.theme_manager import load_settings, save_settings, apply_theme
 from .charts_widget import ChartsWidget
 from .crosstab_widget import CrosstabWidget
 from .wordcloud_widget import WordCloudWidget
@@ -40,18 +41,23 @@ class DashboardView(QDialog):
     ):
         super().__init__(parent)
         self.project_id = project_id
+        self.project_name = project_name
         self.initial_document_id = current_document_id
         self.settings = load_settings()
+        if self.settings.get("theme") not in ("Light", "Dark"):
+            self.settings["theme"] = "Light"
         self.language = language or self.settings.get("language", "English")
         self.dashboard_service = dashboard_service
         self._loading_thread = None
+        self._latest_results = None
+        self._current_theme = self.settings.get("theme", "Light")
         self.setWindowTitle(
             get_translation("dashboard.title", self.language, project_name=project_name)
         )
         self.setMinimumSize(1100, 800)
         self.docs = database.get_documents_for_project(self.project_id)
         self.participants = database.get_participants_for_project(self.project_id)
-        self.is_dark = self.settings.get("theme") == "Dark"
+        self.is_dark = self._current_theme == "Dark"
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(15, 15, 15, 15)
         main_layout.setSpacing(10)
@@ -85,31 +91,53 @@ class DashboardView(QDialog):
 
         controls_layout = QVBoxLayout()
         doc_scope_layout = QHBoxLayout()
-        doc_scope_layout.addWidget(
-            QLabel(get_translation("dashboard.document_scope", self.language))
+        self.doc_scope_label = QLabel(
+            get_translation("dashboard.document_scope", self.language)
         )
+        doc_scope_layout.addWidget(self.doc_scope_label)
         self.doc_scope_combo = QComboBox()
-        self.doc_scope_combo.addItem("Project Total", -1)
+        self.doc_scope_combo.addItem(
+            get_translation("dashboard.project_total", self.language), -1
+        )
         for doc in self.docs:
             self.doc_scope_combo.addItem(doc["title"], doc["id"])
         doc_scope_layout.addWidget(self.doc_scope_combo)
 
         part_scope_layout = QHBoxLayout()
-        part_scope_layout.addWidget(
-            QLabel(get_translation("dashboard.participant_scope", self.language))
+        self.part_scope_label = QLabel(
+            get_translation("dashboard.participant_scope", self.language)
         )
+        part_scope_layout.addWidget(self.part_scope_label)
         self.part_scope_combo = QComboBox()
-        self.part_scope_combo.addItem("All Participants", -1)
+        self.part_scope_combo.addItem(
+            get_translation("dashboard.all_participants", self.language), -1
+        )
         for p in self.participants:
             self.part_scope_combo.addItem(p["name"], p["id"])
         part_scope_layout.addWidget(self.part_scope_combo)
 
         node_scope_layout = QHBoxLayout()
-        node_scope_layout.addWidget(
-            QLabel(get_translation("dashboard.node_scope", self.language))
+        self.node_scope_label = QLabel(
+            get_translation("dashboard.node_scope", self.language)
         )
+        node_scope_layout.addWidget(self.node_scope_label)
         self.node_scope_combo = QComboBox()
         node_scope_layout.addWidget(self.node_scope_combo)
+
+        theme_layout = QHBoxLayout()
+        self.dashboard_theme_label = QLabel(
+            get_translation("dashboard.theme_label", self.language)
+        )
+        self.dashboard_theme_combo = QComboBox()
+        self.dashboard_theme_combo.addItems(
+            [
+                get_translation("dashboard.theme_dark", self.language),
+                get_translation("dashboard.theme_light", self.language),
+            ]
+        )
+        self._set_theme_combo_value(self._current_theme)
+        theme_layout.addWidget(self.dashboard_theme_label)
+        theme_layout.addWidget(self.dashboard_theme_combo)
 
         export_icon = MaterialIcon("download")
         self.export_button = QPushButton()
@@ -117,21 +145,33 @@ class DashboardView(QDialog):
         self.export_button.setText(
             get_translation("dashboard.export_options", self.language)
         )
-        export_menu = QMenu(self)
-        export_menu.addAction("Export Chart as Image", self.export_chart_as_image)
-        export_menu.addAction("Export Data Table as CSV", self.export_data_as_csv)
-        export_menu.addAction(
-            "Export Co-occurrence Matrix as CSV", self.export_co_occurrence_as_csv
+        self.export_menu = QMenu(self)
+        self.action_export_chart = self.export_menu.addAction(
+            get_translation("dashboard.export_chart_as_image", self.language),
+            self.export_chart_as_image,
         )
-        export_menu.addAction(
-            "Export Co-occurrence as GEXF", self.export_co_occurrence_as_gexf
+        self.action_export_data = self.export_menu.addAction(
+            get_translation("dashboard.export_data_table_as_csv", self.language),
+            self.export_data_as_csv,
         )
-        export_menu.addAction("Export Cross-Tab as CSV", self.export_crosstab_as_csv)
-        self.export_button.setMenu(export_menu)
+        self.action_export_cooccurrence_csv = self.export_menu.addAction(
+            get_translation("dashboard.export_cooccurrence_matrix_csv", self.language),
+            self.export_co_occurrence_as_csv,
+        )
+        self.action_export_cooccurrence_gexf = self.export_menu.addAction(
+            get_translation("dashboard.export_cooccurrence_gexf", self.language),
+            self.export_co_occurrence_as_gexf,
+        )
+        self.action_export_crosstab_csv = self.export_menu.addAction(
+            get_translation("dashboard.export_crosstab_as_csv", self.language),
+            self.export_crosstab_as_csv,
+        )
+        self.export_button.setMenu(self.export_menu)
 
         controls_layout.addLayout(doc_scope_layout)
         controls_layout.addLayout(part_scope_layout)
         controls_layout.addLayout(node_scope_layout)
+        controls_layout.addLayout(theme_layout)
         controls_layout.addWidget(self.export_button, 0, Qt.AlignmentFlag.AlignRight)
 
         top_layout.addWidget(stats_container, 2)
@@ -230,8 +270,12 @@ class DashboardView(QDialog):
         self.doc_scope_combo.currentIndexChanged.connect(self.reload_active_tab)
         self.part_scope_combo.currentIndexChanged.connect(self.reload_active_tab)
         self.node_scope_combo.currentIndexChanged.connect(self.reload_active_tab)
+        self.dashboard_theme_combo.currentIndexChanged.connect(
+            self._on_dashboard_theme_changed
+        )
 
         self.tabs.currentChanged.connect(self.on_tab_changed)
+        self.apply_dashboard_theme(self._current_theme)
 
         if self.initial_document_id:
             index = self.doc_scope_combo.findData(self.initial_document_id)
@@ -239,6 +283,53 @@ class DashboardView(QDialog):
                 self.doc_scope_combo.setCurrentIndex(index)
         else:
             self.reload_active_tab()
+
+    def _set_theme_combo_value(self, theme):
+        key_map = {
+            "Dark": "dashboard.theme_dark",
+            "Light": "dashboard.theme_light",
+        }
+        self.dashboard_theme_combo.setCurrentText(
+            get_translation(key_map.get(theme, "dashboard.theme_light"), self.language)
+        )
+
+    def _on_dashboard_theme_changed(self):
+        selected = self.dashboard_theme_combo.currentText()
+        dark_text = get_translation("dashboard.theme_dark", self.language)
+        light_text = get_translation("dashboard.theme_light", self.language)
+        new_theme = "Light"
+        if selected == dark_text:
+            new_theme = "Dark"
+        elif selected == light_text:
+            new_theme = "Light"
+        self.settings["theme"] = new_theme
+        save_settings(self.settings)
+        app = QApplication.instance()
+        if app:
+            apply_theme(app)
+        self.apply_dashboard_theme(new_theme)
+
+    def apply_dashboard_theme(self, theme: str) -> None:
+        self._current_theme = theme
+        self.is_dark = theme == "Dark"
+        self._apply_stat_label_style(self.total_words_label)
+        self._apply_stat_label_style(self.coded_segments_label)
+        self._apply_stat_label_style(self.coded_words_label)
+        self.charts_widget.set_theme(theme)
+        self.crosstab_widget.set_theme(theme)
+        self.co_occurrence_widget.set_theme(theme)
+        self.wordcloud_widget.set_theme(theme)
+        self._restyle_top_section()
+        if self._latest_results:
+            self._apply_results(self._latest_results)
+
+    def _restyle_top_section(self):
+        container_bg = "#2c2c2c" if self.is_dark else "#f2f2f2"
+        stats_container = self.findChild(QFrame, "statsContainer")
+        if stats_container:
+            stats_container.setStyleSheet(
+                f"#statsContainer {{ background-color: {container_bg}; border-radius: 8px; }}"
+            )
 
     def _calculate_participant_stats(self, segments):
         participant_stats = {}
@@ -289,6 +380,7 @@ class DashboardView(QDialog):
         self._loading_thread.start()
 
     def _apply_results(self, results):
+        self._latest_results = results
         tab_index = self.tabs.currentIndex()
         self._update_stat_labels_from_results(results)
         if tab_index == 0:
@@ -315,16 +407,22 @@ class DashboardView(QDialog):
             parent_segment_count = parent_stats.get("segment_count", 0)
             self._update_stat_label(
                 self.total_words_label,
-                f"Words in '{nodes_map[node_id]['name']}'",
+                get_translation(
+                    "dashboard.stat_words_in_node",
+                    self.language,
+                    node_name=nodes_map[node_id]["name"],
+                ),
                 f"{parent_total_words:,}",
             )
             self._update_stat_label(
                 self.coded_segments_label,
-                "Segments in Node",
+                get_translation("dashboard.stat_segments_in_node", self.language),
                 f"{parent_segment_count:,}",
             )
             self._update_stat_label(
-                self.coded_words_label, "Coded Words", f"{parent_total_words:,}"
+                self.coded_words_label,
+                get_translation("dashboard.stat_coded_words", self.language),
+                f"{parent_total_words:,}",
             )
         else:
             total_words = results.get("total_words", 0)
@@ -335,12 +433,20 @@ class DashboardView(QDialog):
             )
             percent_html = f"{coded_words:,} <span style='font-size: 11pt; font-weight: normal;'>({coded_percentage:.1f}%)</span>"
             self._update_stat_label(
-                self.total_words_label, "Scope Words", f"{total_words:,}"
+                self.total_words_label,
+                get_translation("dashboard.stat_scope_words", self.language),
+                f"{total_words:,}",
             )
             self._update_stat_label(
-                self.coded_segments_label, "Coded Segments", f"{len(segments):,}"
+                self.coded_segments_label,
+                get_translation("dashboard.stat_coded_segments", self.language),
+                f"{len(segments):,}",
             )
-            self._update_stat_label(self.coded_words_label, "Coded Words", percent_html)
+            self._update_stat_label(
+                self.coded_words_label,
+                get_translation("dashboard.stat_coded_words", self.language),
+                percent_html,
+            )
 
     def _update_breakdown_tab(self, results):
         nodes_map = results.get("nodes_map", {})
@@ -478,13 +584,19 @@ class DashboardView(QDialog):
             self.participant_tree_widget.clear()
             self.tree_widget.clear()
             self._update_stat_label(
-                self.total_words_label, "Scope Words", "Calculating..."
+                self.total_words_label,
+                get_translation("dashboard.stat_scope_words", self.language),
+                get_translation("wordcloud.calculating", self.language),
             )
             self._update_stat_label(
-                self.coded_segments_label, "Coded Segments", "Calculating..."
+                self.coded_segments_label,
+                get_translation("dashboard.stat_coded_segments", self.language),
+                get_translation("wordcloud.calculating", self.language),
             )
             self._update_stat_label(
-                self.coded_words_label, "Coded Words", "Calculating..."
+                self.coded_words_label,
+                get_translation("dashboard.stat_coded_words", self.language),
+                get_translation("wordcloud.calculating", self.language),
             )
             self.charts_widget.clear_charts()
             self.crosstab_widget.clear_crosstab()
@@ -513,7 +625,7 @@ class DashboardView(QDialog):
         pixmap = QPixmap(16, 16)
         pixmap.fill(QColor(node["color"]))
         item.setIcon(0, QIcon(pixmap))
-        item.setText(0, f" {node['name']}")
+        item.setText(0, node["name"])
         item.setText(1, f"{word_count:,}")
         item.setText(2, f"{percentage:.1f}%")
         item.setText(3, f"{segment_count:,}")
@@ -525,7 +637,9 @@ class DashboardView(QDialog):
         self.node_scope_combo.blockSignals(True)
         self.node_scope_combo.clear()
 
-        self.node_scope_combo.addItem("All Nodes", -1)
+        self.node_scope_combo.addItem(
+            get_translation("dashboard.all_nodes", self.language), -1
+        )
 
         nodes = database.get_nodes_for_project(self.project_id)
         if nodes:
@@ -557,18 +671,22 @@ class DashboardView(QDialog):
         label = QLabel()
         label.setTextFormat(Qt.RichText)
         label.setAlignment(Qt.AlignCenter)
-        bg_color = "#2c2c2c" if self.is_dark else "#ffffff"
-        border_color = "#4c566a" if self.is_dark else "#d8dee9"
+        self._apply_stat_label_style(label)
         title_color = "#d8dee9" if self.is_dark else "#4c566a"
         value_color = "#eceff4" if self.is_dark else "#2e3440"
-        label.setStyleSheet(
-            f"QLabel {{ background-color: {bg_color}; border: 1px solid {border_color}; border-radius: 6px; padding: 10px; }}"
-        )
         html = f"<div style='color: {title_color}; font-size: 9pt;'>{title_text}</div><div style='color: {value_color}; font-size: 18pt; font-weight: 600;'>N/A</div>"
         label.setText(html)
         return label
 
+    def _apply_stat_label_style(self, label):
+        bg_color = "#2c2c2c" if self.is_dark else "#ffffff"
+        border_color = "#4c566a" if self.is_dark else "#d8dee9"
+        label.setStyleSheet(
+            f"QLabel {{ background-color: {bg_color}; border: 1px solid {border_color}; border-radius: 6px; padding: 10px; }}"
+        )
+
     def _update_stat_label(self, label, title, value):
+        self._apply_stat_label_style(label)
         title_color = "#d8dee9" if self.is_dark else "#4c566a"
         value_color = "#eceff4" if self.is_dark else "#2e3440"
         html = f"<div style='color: {title_color}; font-size: 9pt;'>{title}</div><div style='color: {value_color}; font-size: 18pt; font-weight: 600;'>{value}</div>"
@@ -792,7 +910,7 @@ class DashboardView(QDialog):
                 p = (wc / total_words * 100) if total_words > 0 else 0
 
                 item = self._populate_tree_item(p_item, node_data, wc, sc, p)
-                item.setText(0, f" {prefix}{i + 1}. {node_data['name']}")
+                item.setText(0, f"{prefix}{i + 1}. {node_data['name']}")
 
                 if p_id is None:
                     root_nodes_data.append(
@@ -822,17 +940,99 @@ class DashboardView(QDialog):
             get_translation(
                 "dashboard.title",
                 self.language,
-                project_name=self.windowTitle().split(": ", 1)[-1],
+                project_name=self.project_name,
             )
         )
-        self.total_words_label.setText(
-            get_translation("dashboard.scope_words", self.language)
+        self.doc_scope_label.setText(
+            get_translation("dashboard.document_scope", self.language)
         )
-        self.coded_segments_label.setText(
-            get_translation("dashboard.coded_segments", self.language)
+        self.part_scope_label.setText(
+            get_translation("dashboard.participant_scope", self.language)
         )
-        self.coded_words_label.setText(
-            get_translation("dashboard.coded_words", self.language)
+        self.node_scope_label.setText(
+            get_translation("dashboard.node_scope", self.language)
+        )
+        self.dashboard_theme_label.setText(
+            get_translation("dashboard.theme_label", self.language)
+        )
+        self.dashboard_theme_combo.blockSignals(True)
+        self.dashboard_theme_combo.clear()
+        self.dashboard_theme_combo.addItems(
+            [
+                get_translation("dashboard.theme_dark", self.language),
+                get_translation("dashboard.theme_light", self.language),
+            ]
+        )
+        self._set_theme_combo_value(self._current_theme)
+        self.dashboard_theme_combo.blockSignals(False)
+        self.export_button.setText(
+            get_translation("dashboard.export_options", self.language)
+        )
+        self.action_export_chart.setText(
+            get_translation("dashboard.export_chart_as_image", self.language)
+        )
+        self.action_export_data.setText(
+            get_translation("dashboard.export_data_table_as_csv", self.language)
+        )
+        self.action_export_cooccurrence_csv.setText(
+            get_translation("dashboard.export_cooccurrence_matrix_csv", self.language)
+        )
+        self.action_export_cooccurrence_gexf.setText(
+            get_translation("dashboard.export_cooccurrence_gexf", self.language)
+        )
+        self.action_export_crosstab_csv.setText(
+            get_translation("dashboard.export_crosstab_as_csv", self.language)
+        )
+        current_doc_data = self.doc_scope_combo.currentData()
+        current_part_data = self.part_scope_combo.currentData()
+        current_node_data = self.node_scope_combo.currentData()
+        self.doc_scope_combo.setItemText(
+            0, get_translation("dashboard.project_total", self.language)
+        )
+        self.part_scope_combo.setItemText(
+            0, get_translation("dashboard.all_participants", self.language)
+        )
+        self._populate_node_scope_combo()
+        if current_doc_data is not None:
+            doc_idx = self.doc_scope_combo.findData(current_doc_data)
+            if doc_idx != -1:
+                self.doc_scope_combo.setCurrentIndex(doc_idx)
+        if current_part_data is not None:
+            part_idx = self.part_scope_combo.findData(current_part_data)
+            if part_idx != -1:
+                self.part_scope_combo.setCurrentIndex(part_idx)
+        if current_node_data is not None:
+            node_idx = self.node_scope_combo.findData(current_node_data)
+            if node_idx != -1:
+                self.node_scope_combo.setCurrentIndex(node_idx)
+        self.participant_tree_widget.setHeaderLabels(
+            [
+                get_translation("dashboard.participant", self.language),
+                get_translation("dashboard.coded_words_header", self.language),
+                get_translation("dashboard.percent_of_total", self.language),
+                get_translation("dashboard.segments", self.language),
+            ]
+        )
+        self.tree_widget.setHeaderLabels(
+            [
+                get_translation("dashboard.code_breakdown", self.language),
+                get_translation("dashboard.coded_words_header", self.language),
+                get_translation("dashboard.percent_of_total", self.language),
+                get_translation("dashboard.segments", self.language),
+            ]
+        )
+        self.tabs.setTabText(
+            0, get_translation("dashboard.breakdown_tab", self.language)
+        )
+        self.tabs.setTabText(1, get_translation("dashboard.charts_tab", self.language))
+        self.tabs.setTabText(
+            2, get_translation("dashboard.crosstab_tab", self.language)
+        )
+        self.tabs.setTabText(
+            3, get_translation("dashboard.cooccurrence_tab", self.language)
+        )
+        self.tabs.setTabText(
+            4, get_translation("dashboard.wordcloud_tab", self.language)
         )
         if hasattr(self.charts_widget, "update_language"):
             self.charts_widget.update_language(new_language)
@@ -842,3 +1042,6 @@ class DashboardView(QDialog):
             self.wordcloud_widget.update_language(new_language)
         if hasattr(self.co_occurrence_widget, "update_language"):
             self.co_occurrence_widget.update_language(new_language)
+        self.apply_dashboard_theme(self._current_theme)
+        if self._latest_results:
+            self._apply_results(self._latest_results)

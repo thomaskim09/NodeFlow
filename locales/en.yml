@@ -7,6 +7,9 @@ dashboard:
   participant_scope: 'Participant Scope:'
   node_scope: 'Node Scope:'
   export_options: 'Export Options'
+  project_total: 'Project Total'
+  all_participants: 'All Participants'
+  all_nodes: 'All Nodes'
   participant_breakdown: 'Participant Breakdown'
   code_breakdown: 'Code Breakdown'
   participant: 'Participant'
@@ -23,6 +26,10 @@ dashboard:
   export_cooccurrence_csv: 'Export Co-occurrence Matrix as CSV'
   export_cooccurrence_gexf: 'Export Co-occurrence as GEXF'
   export_crosstab_csv: 'Export Cross-Tab as CSV'
+  export_chart_as_image: 'Export Chart as Image'
+  export_data_table_as_csv: 'Export Data Table as CSV'
+  export_cooccurrence_matrix_csv: 'Export Co-occurrence Matrix as CSV'
+  export_crosstab_as_csv: 'Export Cross-Tab as CSV'
   stat_scope_words: 'Scope Words'
   stat_coded_segments: 'Coded Segments'
   stat_coded_words: 'Coded Words'
@@ -32,6 +39,10 @@ dashboard:
   loading: 'Loading dashboard...'
   error_title: 'Error: {error_type}'
   error_message: 'An error occurred while loading data:\n{error_value}'
+  theme_label: 'Theme:'
+  theme_default: 'Default'
+  theme_dark: 'Dark'
+  theme_light: 'Light'
 
 charts:
   code_distribution_bar: 'Code Distribution (Bar)'
@@ -93,7 +104,7 @@ workspace:
   save: 'Save'
   cancel: 'Cancel'
   settings_saved: 'Settings Saved'
-  settings_saved_message: 'The new theme and language will be applied when you restart the application.'
+  settings_saved_message: 'Theme and language are now applied.'
 
 content_view:
   document_view: 'Document View'
@@ -155,6 +166,8 @@ participant:
   add_dialog_prompt: "Enter participant's name:"
   edit_dialog_title: 'Edit Participant'
   edit_dialog_prompt: 'Enter new name:'
+  stats_with_percent: '{percent}% | {segments} Segments'
+  stats_segments_only: '{segments} Segments'
   delete_confirm_title: 'Confirm Delete'
   delete_confirm_message: "Are you sure you want to delete '{current_name}'? This will also unassign them from any documents or coded segments."
 
@@ -187,6 +200,12 @@ coded_segments:
   col_participant: 'Participant'
   col_document: 'Document'
   search_all: 'All'
+  search_placeholder: 'Search coded segments...'
+  edit_segment_tooltip: "Edit this coded segment's boundaries"
+  delete_segment_tooltip: 'Delete this coded segment (Delete)'
+  confirm_delete_title: 'Confirm Delete'
+  confirm_delete_message: "Are you sure you want to delete this coded segment?\n\n'{preview}'"
+  not_available: 'N/A'
 
 toolbar:
   projects: 'Projects'

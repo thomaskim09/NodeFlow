@@ -584,18 +584,23 @@ def get_light_theme_stylesheet():
 
 def get_default_theme_stylesheet():
     """
-    Returns the QSS for a more obvious highlight color in the default theme.
-    This stylesheet only overrides selection colors for QListWidget and QTreeWidget.
+    Returns selection overrides for the default theme.
+    Default follows system contrast:
+    - dark system: white foreground on selected rows
+    - light system: black foreground on selected rows
     """
+    is_dark = get_system_theme() == "Dark"
+    selected_fg = "white" if is_dark else "black"
+    hover_overlay = "rgba(255, 255, 255, 0.2)" if is_dark else "rgba(0, 0, 0, 0.1)"
     return """
         QListWidget::item:selected {
             background-color: #4A90D9; /* A more obvious blue */
-            color: white; /* Ensure text is readable */
+            color: %s; /* Ensure text is readable */
             border: none; /* Maintain no border */
         }
         QTreeWidget::item:selected {
             background-color: #4A90D9; /* A more obvious blue */
-            color: white; /* Ensure text is readable */
+            color: %s; /* Ensure text is readable */
             border: none; /* Maintain no border */
         }
         /* Ensure buttons/widgets within selected items also show the highlight */
@@ -606,9 +611,9 @@ def get_default_theme_stylesheet():
             background-color: transparent;
         }
         QListWidget::item:selected QPushButton:hover, QTreeWidget::item:selected QPushButton:hover {
-            background-color: rgba(255, 255, 255, 0.2); /* Slight white overlay on hover for selected buttons */
+            background-color: %s; /* Theme-appropriate hover overlay */
         }
-    """
+    """ % (selected_fg, selected_fg, hover_overlay)
 
 
 def load_settings():
@@ -626,9 +631,5 @@ def apply_theme(app):
 
     if theme_setting == "Dark":
         app.setStyleSheet(get_dark_theme_stylesheet())
-    elif theme_setting == "Light":
+    else:
         app.setStyleSheet(get_light_theme_stylesheet())
-    elif theme_setting == "Default":
-        app.setStyleSheet(
-            get_default_theme_stylesheet()
-        )  # Apply specific stylesheet for Default

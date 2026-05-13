@@ -7,6 +7,9 @@ dashboard:
   participant_scope: '参与者范围:'
   node_scope: '节点范围:'
   export_options: '导出选项'
+  project_total: '项目总计'
+  all_participants: '所有参与者'
+  all_nodes: '所有节点'
   participant_breakdown: '参与者分解'
   code_breakdown: '代码分解'
   participant: '参与者'
@@ -23,6 +26,10 @@ dashboard:
   export_cooccurrence_csv: '导出共现矩阵为CSV'
   export_cooccurrence_gexf: '导出共现为GEXF'
   export_crosstab_csv: '导出交叉表为CSV'
+  export_chart_as_image: '导出图表为图片'
+  export_data_table_as_csv: '导出数据表为CSV'
+  export_cooccurrence_matrix_csv: '导出共现矩阵为CSV'
+  export_crosstab_as_csv: '导出交叉表为CSV'
   stat_scope_words: '范围词数'
   stat_coded_segments: '编码片段'
   stat_coded_words: '编码词数'
@@ -32,6 +39,10 @@ dashboard:
   loading: '正在加载仪表板...'
   error_title: '错误: {error_type}'
   error_message: '加载数据时发生错误:\n{error_value}'
+  theme_label: '主题:'
+  theme_default: '默认'
+  theme_dark: '深色'
+  theme_light: '浅色'
 
 charts:
   code_distribution_bar: '代码分布（柱状图）'
@@ -93,7 +104,7 @@ workspace:
   save: '保存'
   cancel: '取消'
   settings_saved: '设置已保存'
-  settings_saved_message: '新主题和语言将在您重新启动应用程序时生效。'
+  settings_saved_message: '主题和语言已立即生效。'
 
 content_view:
   document_view: '文档视图'
@@ -155,6 +166,8 @@ participant:
   add_dialog_prompt: '输入参与者姓名：'
   edit_dialog_title: '编辑参与者'
   edit_dialog_prompt: '输入新姓名：'
+  stats_with_percent: '{percent}% | {segments} 个片段'
+  stats_segments_only: '{segments} 个片段'
   delete_confirm_title: '确认删除'
   delete_confirm_message: "您确定要删除 '{current_name}' 吗？这也会将其从任何文档或编码片段中取消分配。"
 
@@ -187,6 +200,12 @@ coded_segments:
   col_participant: '参与者'
   col_document: '文档'
   search_all: '全部'
+  search_placeholder: '搜索编码片段...'
+  edit_segment_tooltip: '编辑此编码片段的边界'
+  delete_segment_tooltip: '删除此编码片段 (Delete)'
+  confirm_delete_title: '确认删除'
+  confirm_delete_message: "确定要删除此编码片段吗？\n\n'{preview}'"
+  not_available: '无'
 
 toolbar:
   projects: '项目'

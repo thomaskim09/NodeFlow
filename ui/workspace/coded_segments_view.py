@@ -13,10 +13,11 @@ from PySide6.QtWidgets import (
     QAbstractItemView,
 )
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QKeyEvent
+from PySide6.QtGui import QKeyEvent, QColor, QIcon
 import database
 from qt_material_icons import MaterialIcon
 from utils.common import get_translation
+from managers.theme_manager import load_settings, get_system_theme
 
 
 class DeletableTreeWidget(QTreeWidget):
@@ -58,10 +59,10 @@ class CodedSegmentsView(QWidget):
         main_layout.setSpacing(5)
 
         controls_layout = QHBoxLayout()
-        header_label = QLabel(get_translation("coded_segments.header", self.language))
-        font = header_label.font()
+        self.header_label = QLabel(get_translation("coded_segments.header", self.language))
+        font = self.header_label.font()
         font.setBold(True)
-        header_label.setFont(font)
+        self.header_label.setFont(font)
 
         self.scope_combo = QComboBox()
         self.scope_combo.addItems(
@@ -75,13 +76,16 @@ class CodedSegmentsView(QWidget):
         )
 
         self.search_input = QLineEdit()
-        search_icon = MaterialIcon("search")
-        search_icon_label = QLabel()
-        search_icon_label.setPixmap(search_icon.pixmap(16, 16))
+        self.search_input.setPlaceholderText(
+            get_translation("coded_segments.search_placeholder", self.language)
+        )
+        self.search_icon = MaterialIcon("search", fill=False)
+        self.search_icon_label = QLabel()
+        self.search_icon_label.setPixmap(self.search_icon.pixmap(16, 16))
         search_layout = QHBoxLayout()
         search_layout.setContentsMargins(0, 0, 0, 0)
         search_layout.setSpacing(4)
-        search_layout.addWidget(search_icon_label)
+        search_layout.addWidget(self.search_icon_label)
         search_layout.addWidget(self.search_input)
         search_container = QWidget()
         search_container.setLayout(search_layout)
@@ -91,7 +95,7 @@ class CodedSegmentsView(QWidget):
             get_translation("coded_segments.search_scope_tooltip", self.language)
         )
 
-        controls_layout.addWidget(header_label)
+        controls_layout.addWidget(self.header_label)
         controls_layout.addWidget(self.scope_combo)
         controls_layout.addStretch()
         controls_layout.addWidget(search_container)
@@ -99,6 +103,8 @@ class CodedSegmentsView(QWidget):
         main_layout.addLayout(controls_layout)
 
         self.tree_widget = DeletableTreeWidget(self)
+        self.tree_widget.setRootIsDecorated(False)
+        self.tree_widget.setIndentation(0)
         main_layout.addWidget(self.tree_widget)
 
         self.scope_combo.currentTextChanged.connect(self.reload_view)
@@ -110,6 +116,7 @@ class CodedSegmentsView(QWidget):
         self.scope_combo.setCurrentText(
             get_translation("coded_segments.scope_current", self.language)
         )
+        self.update_theme(load_settings().get("theme", "Light"))
         self.reload_view()
 
     def on_segment_activated(self, item: QTreeWidgetItem, column: int):
@@ -124,7 +131,9 @@ class CodedSegmentsView(QWidget):
             return
 
         doc_id = None
-        if self.scope_combo.currentText() == "Current Document":
+        if self.scope_combo.currentText() == get_translation(
+            "coded_segments.scope_current", self.language
+        ):
             doc_id = self.current_document_id
         else:
             doc_id = segment_data.get("document_id")
@@ -171,7 +180,9 @@ class CodedSegmentsView(QWidget):
             edit_button.setIcon(edit_icon)
             edit_button.setObjectName("codedSegmentEditButton")
             edit_button.setFixedSize(20, 20)
-            edit_button.setToolTip("Edit this coded segment's boundaries")
+            edit_button.setToolTip(
+                get_translation("coded_segments.edit_segment_tooltip", self.language)
+            )
             edit_button.clicked.connect(
                 lambda checked=False, sid=segment_id: self.request_segment_edit(sid)
             )
@@ -181,10 +192,22 @@ class CodedSegmentsView(QWidget):
             delete_button.setIcon(delete_icon)
             delete_button.setObjectName("codedSegmentDeleteButton")
             delete_button.setFixedSize(20, 20)
-            delete_button.setToolTip("Delete this coded segment (Delete)")
+            delete_button.setToolTip(
+                get_translation("coded_segments.delete_segment_tooltip", self.language)
+            )
             delete_button.clicked.connect(
                 lambda: self.confirm_delete_segment(segment_id, preview)
             )
+
+            settings = load_settings()
+            theme = settings.get("theme", "Default")
+            is_dark = get_system_theme() == "Dark" if theme == "Default" else theme == "Dark"
+            selected_fg = "#f0f0f0" if is_dark else "#000000"
+            icon_color = QColor(selected_fg)
+            edit_icon.set_color(icon_color)
+            delete_icon.set_color(icon_color)
+            edit_button.setIcon(edit_icon)
+            delete_button.setIcon(delete_icon)
 
             button_container = QWidget()
             button_container.setFixedHeight(20)
@@ -207,8 +230,12 @@ class CodedSegmentsView(QWidget):
 
         reply = QMessageBox.question(
             self,
-            "Confirm Delete",
-            f"Are you sure you want to delete this coded segment?\n\n'{segment_preview}'",
+            get_translation("coded_segments.confirm_delete_title", self.language),
+            get_translation(
+                "coded_segments.confirm_delete_message",
+                self.language,
+                preview=segment_preview,
+            ),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
         )
@@ -231,7 +258,9 @@ class CodedSegmentsView(QWidget):
             return
 
         doc_id = None
-        if self.scope_combo.currentText() == "Current Document":
+        if self.scope_combo.currentText() == get_translation(
+            "coded_segments.scope_current", self.language
+        ):
             doc_id = self.current_document_id
         else:
             doc_id = segment_data.get("document_id")
@@ -250,10 +279,8 @@ class CodedSegmentsView(QWidget):
         self.reload_view()
 
     def reload_view(self):
-        try:
-            self.tree_widget.currentItemChanged.disconnect(self.on_selection_changed)
-        except (TypeError, RuntimeError):
-            pass
+        self.tree_widget.blockSignals(True)
+        self.tree_widget.setCurrentItem(None)
 
         self.tree_widget.clear()
         self.all_segments = []
@@ -319,7 +346,7 @@ class CodedSegmentsView(QWidget):
 
         self.populate_tree(self.all_segments)
         # Reconnect the signal after populating
-        self.tree_widget.currentItemChanged.connect(self.on_selection_changed)
+        self.tree_widget.blockSignals(False)
 
         if self._last_active_node_filter is not None:
             self.filter_by_node_family(self._last_active_node_filter)
@@ -327,21 +354,30 @@ class CodedSegmentsView(QWidget):
             self.filter_tree()
 
     def populate_tree(self, segments):
-        scope = self.scope_combo.currentText()
+        is_entire_project = self.scope_combo.currentText() == get_translation(
+            "coded_segments.scope_project", self.language
+        )
         for segment in segments:
-            preview = segment["content_preview"].strip()
+            preview = (
+                segment["content_preview"]
+                .replace("\n", " ")
+                .replace("\t", " ")
+                .strip()
+            )
             if len(preview) > 100:
                 preview = preview[:100] + "..."
 
             # This line should now work correctly as `segment` is a dict
-            participant_name = segment.get("participant_name") or "N/A"
+            participant_name = segment.get("participant_name") or get_translation(
+                "coded_segments.not_available", self.language
+            )
 
             item_data = [
                 preview,
                 segment["node_name"],
                 participant_name,
             ]
-            if scope == "Entire Project":
+            if is_entire_project:
                 item_data.append(segment["document_title"])
 
             item = QTreeWidgetItem(self.tree_widget, item_data)
@@ -379,10 +415,8 @@ class CodedSegmentsView(QWidget):
         else:
             scope = "All"
 
-        try:
-            self.tree_widget.currentItemChanged.disconnect(self.on_selection_changed)
-        except (TypeError, RuntimeError):
-            pass
+        self.tree_widget.blockSignals(True)
+        self.tree_widget.setCurrentItem(None)
 
         self.tree_widget.clear()
 
@@ -396,7 +430,7 @@ class CodedSegmentsView(QWidget):
             ]
             self.populate_tree(filtered_segments)
 
-        self.tree_widget.currentItemChanged.connect(self.on_selection_changed)
+        self.tree_widget.blockSignals(False)
 
     def _segment_matches_filter(self, seg, search_text, scope, view_scope):
         text_match = search_text in seg["content_preview"].lower()
@@ -427,10 +461,8 @@ class CodedSegmentsView(QWidget):
         self.search_input.clear()
         self._last_active_node_filter = node_ids
 
-        try:
-            self.tree_widget.currentItemChanged.disconnect(self.on_selection_changed)
-        except (TypeError, RuntimeError):
-            pass
+        self.tree_widget.blockSignals(True)
+        self.tree_widget.setCurrentItem(None)
 
         self.tree_widget.clear()
 
@@ -442,16 +474,14 @@ class CodedSegmentsView(QWidget):
             ]
             self.populate_tree(node_filtered_segments)
 
-        self.tree_widget.currentItemChanged.connect(self.on_selection_changed)
+        self.tree_widget.blockSignals(False)
 
     def filter_by_single_node(self, node_id: int):
         self.search_input.clear()
         self._last_active_node_filter = [node_id]
 
-        try:
-            self.tree_widget.currentItemChanged.disconnect(self.on_selection_changed)
-        except (TypeError, RuntimeError):
-            pass
+        self.tree_widget.blockSignals(True)
+        self.tree_widget.setCurrentItem(None)
 
         self.tree_widget.clear()
 
@@ -463,25 +493,53 @@ class CodedSegmentsView(QWidget):
             ]
             self.populate_tree(node_filtered_segments)
 
-        self.tree_widget.currentItemChanged.connect(self.on_selection_changed)
+        self.tree_widget.blockSignals(False)
 
     def filter_segments_by_participant(self, participant_id: int):
-        if not self.segments:
+        if not self.all_segments:
             return
+        self.tree_widget.blockSignals(True)
+        self.tree_widget.setCurrentItem(None)
+        self.tree_widget.clear()
+        if participant_id == 0:
+            target_segments = self.all_segments
+        else:
+            target_segments = [
+                seg
+                for seg in self.all_segments
+                if seg.get("participant_id") == participant_id
+            ]
+        self.populate_tree(target_segments)
+        self.tree_widget.blockSignals(False)
 
-        for i in range(self.list_widget.count()):
-            item = self.list_widget.item(i)
-            widget = self.list_widget.itemWidget(item)
+    def update_language(self, new_language):
+        self.language = new_language
+        self.header_label.setText(get_translation("coded_segments.header", self.language))
+        current_scope_index = self.scope_combo.currentIndex()
+        self.scope_combo.blockSignals(True)
+        self.scope_combo.clear()
+        self.scope_combo.addItems(
+            [
+                get_translation("coded_segments.scope_current", self.language),
+                get_translation("coded_segments.scope_project", self.language),
+            ]
+        )
+        self.scope_combo.setCurrentIndex(max(0, current_scope_index))
+        self.scope_combo.setToolTip(
+            get_translation("coded_segments.scope_tooltip", self.language)
+        )
+        self.scope_combo.blockSignals(False)
+        self.search_input.setPlaceholderText(
+            get_translation("coded_segments.search_placeholder", self.language)
+        )
+        self.search_scope_combo.setToolTip(
+            get_translation("coded_segments.search_scope_tooltip", self.language)
+        )
+        self.update_theme(load_settings().get("theme", "Light"))
+        self.reload_view()
 
-            if not widget:
-                continue
-
-            # If participant_id is 0, clear filter and show all items
-            if participant_id == 0:
-                item.setHidden(False)
-            else:
-                # Hide item if it doesn't match the participant ID
-                is_coded_by_participant = (
-                    widget.segment["participant_id"] == participant_id
-                )
-                item.setHidden(not is_coded_by_participant)
+    def update_theme(self, theme):
+        is_dark = theme == "Dark"
+        fg = QColor("#e8e8e8" if is_dark else "#4a4a4a")
+        self.search_icon.set_color(fg, QIcon.Mode.Normal)
+        self.search_icon_label.setPixmap(self.search_icon.pixmap(16, color=fg))

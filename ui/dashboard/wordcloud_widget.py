@@ -16,9 +16,11 @@ class WordCloudWidget(QWidget):
         super().__init__(parent)
         self.settings = theme_settings
         self.language = language or self.settings.get("language", "English")
-        self.is_dark = self.settings.get("theme") == "Dark"
+        self.theme = self.settings.get("theme", "Default")
+        self.is_dark = self.theme == "Dark"
         self._original_pixmap = None
         self._worker = None
+        self._last_segments = []
 
         layout = QVBoxLayout(self)
         self.image_label = QLabel()
@@ -39,6 +41,7 @@ class WordCloudWidget(QWidget):
 
     def update_wordcloud(self, segments):
         """Generate and display the word cloud without blocking the UI."""
+        self._last_segments = list(segments)
         self.message_label.setText(
             get_translation("wordcloud.generating", self.language)
         )
@@ -126,3 +129,9 @@ class WordCloudWidget(QWidget):
         self.image_label.setText(
             get_translation("wordcloud.calculating", self.language)
         )
+
+    def set_theme(self, theme: str):
+        self.theme = theme
+        self.is_dark = theme == "Dark"
+        if self._last_segments:
+            self.update_wordcloud(self._last_segments)

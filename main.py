@@ -1,7 +1,7 @@
 import sys
 from PySide6.QtWidgets import QApplication, QMainWindow, QSplashScreen
-from PySide6.QtCore import QSize
-from PySide6.QtGui import QIcon, QPixmap
+from PySide6.QtCore import QSize, Qt
+from PySide6.QtGui import QIcon, QPixmap, QColor
 import os
 
 from ui.startup_view import StartupView
@@ -47,12 +47,40 @@ class MainWindow(QMainWindow):
 if __name__ == "__main__":
     configure_logging()
     app = QApplication(sys.argv)
-    pixmap = QPixmap(get_resource_path("splashscreen.png"))
+    splash_path = get_resource_path("splashscreen.png")
+    pixmap = QPixmap(splash_path) if os.path.exists(splash_path) else QPixmap()
     splash = QSplashScreen(pixmap)
     splash.show()
+    splash.showMessage(
+        "Starting NodeFlow...",
+        Qt.AlignmentFlag.AlignBottom | Qt.AlignmentFlag.AlignHCenter,
+        QColor("#f0f0f0"),
+    )
+    app.processEvents()
+
+    splash.showMessage(
+        "Applying theme...",
+        Qt.AlignmentFlag.AlignBottom | Qt.AlignmentFlag.AlignHCenter,
+        QColor("#f0f0f0"),
+    )
     apply_theme(app)
+    app.processEvents()
+
+    splash.showMessage(
+        "Initializing database...",
+        Qt.AlignmentFlag.AlignBottom | Qt.AlignmentFlag.AlignHCenter,
+        QColor("#f0f0f0"),
+    )
     database.create_tables()
+    app.processEvents()
+
+    splash.showMessage(
+        "Loading workspace...",
+        Qt.AlignmentFlag.AlignBottom | Qt.AlignmentFlag.AlignHCenter,
+        QColor("#f0f0f0"),
+    )
     window = MainWindow()
     window.show()
+    app.processEvents()
     splash.finish(window)
     sys.exit(app.exec())

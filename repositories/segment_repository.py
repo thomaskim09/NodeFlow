@@ -4,6 +4,18 @@ from repositories.base import get_connection
 
 
 class SegmentRepository:
+    @staticmethod
+    def _with_live_preview(rows) -> list[dict]:
+        normalized = []
+        for row in rows:
+            item = dict(row)
+            live_preview = item.get("live_preview")
+            if live_preview is not None:
+                item["content_preview"] = live_preview
+            item.pop("live_preview", None)
+            normalized.append(item)
+        return normalized
+
     def add(
         self,
         document_id: int,
@@ -28,7 +40,14 @@ class SegmentRepository:
         placeholders = ",".join("?" * len(node_ids))
         params = [project_id] + node_ids
         sql = f"""
-            SELECT cs.*, d.title AS document_title, d.id AS document_id, n.name AS node_name, n.color AS node_color, p.name AS participant_name
+            SELECT
+                cs.*,
+                substr(d.content, cs.segment_start + 1, cs.segment_end - cs.segment_start) AS live_preview,
+                d.title AS document_title,
+                d.id AS document_id,
+                n.name AS node_name,
+                n.color AS node_color,
+                p.name AS participant_name
             FROM coded_segments cs
             JOIN documents d ON cs.document_id = d.id
             JOIN nodes n ON cs.node_id = n.id
@@ -41,7 +60,7 @@ class SegmentRepository:
         sql += " ORDER BY d.title, cs.id"
         with get_connection() as conn:
             rows = conn.execute(sql, tuple(params)).fetchall()
-        return [dict(row) for row in rows]
+        return self._with_live_preview(rows)
 
     def get_for_document(self, document_id: int) -> list[dict]:
         with get_connection() as conn:
@@ -49,6 +68,7 @@ class SegmentRepository:
                 """
                 SELECT
                     s.id, s.document_id, s.segment_start, s.segment_end, s.content_preview,
+                    substr(d.content, s.segment_start + 1, s.segment_end - s.segment_start) AS live_preview,
                     n.id AS node_id, n.name AS node_name, n.color AS node_color,
                     d.participant_id, p.name AS participant_name, d.title AS document_title
                 FROM coded_segments s
@@ -60,13 +80,20 @@ class SegmentRepository:
                 """,
                 (document_id,),
             ).fetchall()
-        return [dict(row) for row in rows]
+        return self._with_live_preview(rows)
 
     def get_for_project(self, project_id: int) -> list[dict]:
         with get_connection() as conn:
             rows = conn.execute(
                 """
-                SELECT cs.*, d.title AS document_title, d.id AS document_id, n.name AS node_name, n.color AS node_color, p.name AS participant_name
+                SELECT
+                    cs.*,
+                    substr(d.content, cs.segment_start + 1, cs.segment_end - cs.segment_start) AS live_preview,
+                    d.title AS document_title,
+                    d.id AS document_id,
+                    n.name AS node_name,
+                    n.color AS node_color,
+                    p.name AS participant_name
                 FROM coded_segments cs
                 JOIN documents d ON cs.document_id = d.id
                 JOIN nodes n ON cs.node_id = n.id
@@ -76,13 +103,20 @@ class SegmentRepository:
                 """,
                 (project_id,),
             ).fetchall()
-        return [dict(row) for row in rows]
+        return self._with_live_preview(rows)
 
     def get_for_participant(self, project_id: int, participant_id: int) -> list[dict]:
         with get_connection() as conn:
             rows = conn.execute(
                 """
-                SELECT cs.*, d.title AS document_title, d.id AS document_id, n.name AS node_name, n.color AS node_color, p.name AS participant_name
+                SELECT
+                    cs.*,
+                    substr(d.content, cs.segment_start + 1, cs.segment_end - cs.segment_start) AS live_preview,
+                    d.title AS document_title,
+                    d.id AS document_id,
+                    n.name AS node_name,
+                    n.color AS node_color,
+                    p.name AS participant_name
                 FROM coded_segments cs
                 JOIN documents d ON cs.document_id = d.id
                 JOIN nodes n ON cs.node_id = n.id
@@ -92,7 +126,7 @@ class SegmentRepository:
                 """,
                 (project_id, participant_id),
             ).fetchall()
-        return [dict(row) for row in rows]
+        return self._with_live_preview(rows)
 
     def delete(self, segment_id: int) -> None:
         with get_connection() as conn:

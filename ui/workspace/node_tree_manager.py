@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (
     QComboBox,
 )
 from PySide6.QtCore import Qt, Signal, QTimer
-from PySide6.QtGui import QDropEvent, QKeyEvent
+from PySide6.QtGui import QDropEvent, QKeyEvent, QColor, QIcon
 from managers.export_manager import (
     export_node_family_to_word,
     export_node_family_to_excel,
@@ -25,6 +25,8 @@ from managers.export_manager import (
 import database
 from qt_material_icons import MaterialIcon
 from utils.common import get_translation
+from managers.theme_manager import load_settings
+from urllib.parse import quote
 
 PRESET_COLORS = [
     "#FFB3BA",
@@ -79,10 +81,29 @@ PRESET_COLORS = [
     "#66FFCC",
 ]
 
+def _branch_icon_data_uri(stroke_color: str, direction: str) -> str:
+    if direction == "right":
+        path = "M5 4 L11 8 L5 12"
+    else:
+        path = "M4 5 L8 11 L12 5"
+    svg = (
+        "<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16'>"
+        f"<path d='{path}' fill='none' stroke='{stroke_color}' stroke-width='2' "
+        "stroke-linecap='round' stroke-linejoin='round'/>"
+        "</svg>"
+    )
+    return f"data:image/svg+xml;utf8,{quote(svg)}"
+
 
 class NodeItemWidget(QWidget):
     def __init__(
-        self, node_id, node_color, name_text, stats_text, parent_manager, language=None
+        self,
+        node_id,
+        node_color,
+        name_text,
+        stats_text,
+        parent_manager,
+        language=None,
     ):
         super().__init__()
         self.node_id = node_id
@@ -103,8 +124,8 @@ class NodeItemWidget(QWidget):
         self.stats_label = QLabel(stats_text)
         self.stats_label.setStyleSheet("color: #888;")
         self.export_button = QPushButton()
-        export_icon = MaterialIcon("download")
-        self.export_button.setIcon(export_icon)
+        self.export_icon = MaterialIcon("download")
+        self.export_button.setIcon(self.export_icon)
         self.export_button.setFixedSize(24, 24)
         self.export_button.setToolTip(
             get_translation("node_tree.export_tooltip", self.language)
@@ -112,8 +133,8 @@ class NodeItemWidget(QWidget):
         self.export_button.clicked.connect(self.on_export)
         self.export_button.setVisible(False)
         self.filter_button = QPushButton()
-        filter_icon = MaterialIcon("filter_list")
-        self.filter_button.setIcon(filter_icon)
+        self.filter_icon = MaterialIcon("filter_list")
+        self.filter_button.setIcon(self.filter_icon)
         self.filter_button.setFixedSize(24, 24)
         self.filter_button.setToolTip(
             get_translation("node_tree.filter_tooltip", self.language)
@@ -121,8 +142,8 @@ class NodeItemWidget(QWidget):
         self.filter_button.clicked.connect(self.on_filter)
         self.filter_button.setVisible(False)
         self.add_button = QPushButton()
-        add_icon = MaterialIcon("add")
-        self.add_button.setIcon(add_icon)
+        self.add_icon = MaterialIcon("add")
+        self.add_button.setIcon(self.add_icon)
         self.add_button.setFixedSize(24, 24)
         self.add_button.setToolTip(
             get_translation("node_tree.add_child_tooltip", self.language)
@@ -130,8 +151,8 @@ class NodeItemWidget(QWidget):
         self.add_button.clicked.connect(self.on_add_child)
         self.add_button.setVisible(False)
         self.edit_button = QPushButton()
-        edit_icon = MaterialIcon("edit")
-        self.edit_button.setIcon(edit_icon)
+        self.edit_icon = MaterialIcon("edit")
+        self.edit_button.setIcon(self.edit_icon)
         self.edit_button.setFixedSize(24, 24)
         self.edit_button.setToolTip(
             get_translation("node_tree.rename_tooltip", self.language)
@@ -139,8 +160,8 @@ class NodeItemWidget(QWidget):
         self.edit_button.clicked.connect(self.on_rename)
         self.edit_button.setVisible(False)
         self.delete_button = QPushButton()
-        delete_icon = MaterialIcon("delete")
-        self.delete_button.setIcon(delete_icon)
+        self.delete_icon = MaterialIcon("delete")
+        self.delete_button.setIcon(self.delete_icon)
         self.delete_button.setFixedSize(24, 24)
         self.delete_button.setToolTip(
             get_translation("node_tree.delete_tooltip", self.language)
@@ -156,6 +177,7 @@ class NodeItemWidget(QWidget):
         layout.addWidget(self.add_button)
         layout.addWidget(self.edit_button)
         layout.addWidget(self.delete_button)
+        self.set_selected_style(False)
 
     def set_button_color(self, color_hex):
         self.color_button.setStyleSheet(
@@ -170,10 +192,47 @@ class NodeItemWidget(QWidget):
         self.delete_button.setVisible(visible)
 
     def set_selected_style(self, is_selected: bool):
+        settings = load_settings()
+        theme = settings.get("theme", "Default")
+        is_dark = theme == "Dark"
+        selected_fg = "#f0f0f0" if is_dark else "#000000"
         if is_selected:
-            self.stats_label.setStyleSheet("color: white;")
+            self.name_label.setStyleSheet(f"color: {selected_fg};")
+            self.stats_label.setStyleSheet(f"color: {selected_fg};")
+            self.export_button.setStyleSheet(f"color: {selected_fg};")
+            self.filter_button.setStyleSheet(f"color: {selected_fg};")
+            self.add_button.setStyleSheet(f"color: {selected_fg};")
+            self.edit_button.setStyleSheet(f"color: {selected_fg};")
+            self.delete_button.setStyleSheet(f"color: {selected_fg};")
+            icon_color = QColor(selected_fg)
+            self.export_icon.set_color(icon_color)
+            self.filter_icon.set_color(icon_color)
+            self.add_icon.set_color(icon_color)
+            self.edit_icon.set_color(icon_color)
+            self.delete_icon.set_color(icon_color)
+            self.export_button.setIcon(self.export_icon)
+            self.filter_button.setIcon(self.filter_icon)
+            self.add_button.setIcon(self.add_icon)
+            self.edit_button.setIcon(self.edit_icon)
+            self.delete_button.setIcon(self.delete_icon)
         else:
+            self.name_label.setStyleSheet("")
             self.stats_label.setStyleSheet("color: #888;")
+            self.export_button.setStyleSheet("")
+            self.filter_button.setStyleSheet("")
+            self.add_button.setStyleSheet("")
+            self.edit_button.setStyleSheet("")
+            self.delete_button.setStyleSheet("")
+            self.export_icon._init_colors()
+            self.filter_icon._init_colors()
+            self.add_icon._init_colors()
+            self.edit_icon._init_colors()
+            self.delete_icon._init_colors()
+            self.export_button.setIcon(self.export_icon)
+            self.filter_button.setIcon(self.filter_icon)
+            self.add_button.setIcon(self.add_icon)
+            self.edit_button.setIcon(self.edit_icon)
+            self.delete_button.setIcon(self.delete_icon)
 
     def on_color_change(self):
         current_color = self.color_button.palette().button().color()
@@ -243,8 +302,8 @@ class NodeTreeManager(QWidget):
         font.setBold(True)
         self.header_label.setFont(font)
         self.add_root_button = QPushButton()
-        add_root_icon = MaterialIcon("add")
-        self.add_root_button.setIcon(add_root_icon)
+        self.add_root_icon = MaterialIcon("add")
+        self.add_root_button.setIcon(self.add_root_icon)
         self.add_root_button.setText(
             get_translation("node_tree.add_root", self.language)
         )
@@ -253,8 +312,8 @@ class NodeTreeManager(QWidget):
         )
         self.add_root_button.clicked.connect(self.add_root_node)
         self.clear_filter_button = QPushButton()
-        clear_filter_icon = MaterialIcon("filter_list")
-        self.clear_filter_button.setIcon(clear_filter_icon)
+        self.clear_filter_icon = MaterialIcon("filter_list")
+        self.clear_filter_button.setIcon(self.clear_filter_icon)
         self.clear_filter_button.setText(
             get_translation("node_tree.show_all", self.language)
         )
@@ -285,6 +344,7 @@ class NodeTreeManager(QWidget):
         main_layout.addLayout(header_layout)
         self.tree_widget = QTreeWidget()
         self.tree_widget.setHeaderHidden(True)
+        self.tree_widget.setRootIsDecorated(True)
         self.tree_widget.setIndentation(20)
         self.tree_widget.setDragDropMode(QAbstractItemView.DragDropMode.InternalMove)
         self.tree_widget.setSelectionMode(
@@ -300,6 +360,7 @@ class NodeTreeManager(QWidget):
         self.original_tree_widget_dropEvent = self.tree_widget.dropEvent
         self.tree_widget.dropEvent = self.dropEvent
         self.tree_widget.keyPressEvent = self.keyPressEvent
+        self.update_theme(load_settings().get("theme", "Light"))
         self.load_nodes()
 
     def set_highlighting_active(self, active):
@@ -388,11 +449,8 @@ class NodeTreeManager(QWidget):
             super(QTreeWidget, self.tree_widget).keyPressEvent(event)
 
     def load_nodes(self, node_id_to_reselect=None):
-        try:
-            self.tree_widget.currentItemChanged.disconnect(self.on_selection_changed)
-        except RuntimeError:
-            pass
-
+        self.tree_widget.blockSignals(True)
+        self.tree_widget.setCurrentItem(None)
         self.tree_widget.clear()
         scope = self.scope_combo.currentText()
         total_words = 0
@@ -471,7 +529,7 @@ class NodeTreeManager(QWidget):
                     name_text,
                     stats_text,
                     self,
-                    self.language,
+                    language=self.language,
                 )
                 self.tree_widget.setItemWidget(tree_item, 0, item_widget)
 
@@ -483,7 +541,7 @@ class NodeTreeManager(QWidget):
         self.tree_widget.expandAll()
         if item_to_reselect:
             self.tree_widget.setCurrentItem(item_to_reselect)
-        self.tree_widget.currentItemChanged.connect(self.on_selection_changed)
+        self.tree_widget.blockSignals(False)
 
     def set_current_document_id(self, doc_id):
         self.current_document_id = doc_id
@@ -848,6 +906,7 @@ class NodeTreeManager(QWidget):
         self.clear_filter_button.setToolTip(
             get_translation("node_tree.show_all_tooltip", self.language)
         )
+        self.update_theme(load_settings().get("theme", "Light"))
         self.scope_combo.blockSignals(True)
         self.scope_combo.clear()
         self.scope_combo.addItems(
@@ -871,6 +930,32 @@ class NodeTreeManager(QWidget):
             if widget and hasattr(widget, "update_language"):
                 widget.update_language(new_language)
             it += 1
+
+    def update_theme(self, theme):
+        is_dark = theme == "Dark"
+        fg = QColor("#f0f0f0" if is_dark else "#000000")
+        disabled_fg = QColor("#a8a8a8" if is_dark else "#5e5e5e")
+        branch_color = "#d8d8d8" if is_dark else "#4a4a4a"
+        right_icon = _branch_icon_data_uri(branch_color, "right")
+        down_icon = _branch_icon_data_uri(branch_color, "down")
+        self.add_root_icon.set_color(fg, QIcon.Mode.Normal)
+        self.add_root_icon.set_color(disabled_fg, QIcon.Mode.Disabled)
+        self.clear_filter_icon.set_color(fg, QIcon.Mode.Normal)
+        self.clear_filter_icon.set_color(disabled_fg, QIcon.Mode.Disabled)
+        self.add_root_button.setIcon(self.add_root_icon)
+        self.clear_filter_button.setIcon(self.clear_filter_icon)
+        self.tree_widget.setStyleSheet(
+            f"""
+            QTreeView::branch:has-children:closed,
+            QTreeView::branch:closed:has-children:has-siblings {{
+                image: url("{right_icon}");
+            }}
+            QTreeView::branch:open:has-children,
+            QTreeView::branch:open:has-children:has-siblings {{
+                image: url("{down_icon}");
+            }}
+            """
+        )
 
     def get_selected_node_id(self):
         """

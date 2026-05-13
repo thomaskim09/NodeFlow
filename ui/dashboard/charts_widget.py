@@ -21,19 +21,24 @@ class ChartsWidget(QWidget):
         super().__init__(parent)
         self.settings = theme_settings
         self.language = language or self.settings.get("language", "English")
+        self.theme = self.settings.get("theme", "Default")
+        self._last_root_nodes_data = []
         layout = QHBoxLayout(self)
         self.bar_chart_view = QChartView()
         self.pie_chart_view = QChartView()
+        self.bar_chart_view.setObjectName("dashboardBarChartView")
+        self.pie_chart_view.setObjectName("dashboardPieChartView")
         layout.addWidget(self.bar_chart_view)
         layout.addWidget(self.pie_chart_view)
 
     def update_charts(self, root_nodes_data):
         """Public method to update both charts with new data."""
+        self._last_root_nodes_data = list(root_nodes_data)
         self._create_bar_chart(root_nodes_data)
         self._create_pie_chart(root_nodes_data)
 
     def _apply_theme_to_chart(self, chart):
-        is_dark = self.settings.get("theme") == "Dark"
+        is_dark = self.theme == "Dark"
         bg_color = QColor("#2E2E2E") if is_dark else QColor("#FFFFFF")
         text_color = QColor("#F0F0F0") if is_dark else QColor("#333333")
         grid_color = QColor("#4A4A4A") if is_dark else QColor("#DCDCDC")
@@ -85,7 +90,7 @@ class ChartsWidget(QWidget):
         series = QPieSeries()
         series.setHoleSize(0.35)
 
-        is_dark = self.settings.get("theme") == "Dark"
+        is_dark = self.theme == "Dark"
         label_color = QColor("white") if is_dark else QColor("black")
         # Keep a small preset color list for the 'Other' slice
         other_slice_color = "#e377c2"
@@ -135,7 +140,19 @@ class ChartsWidget(QWidget):
         self.bar_chart_view.setChart(QChart())
         self.pie_chart_view.setChart(QChart())
 
+    def set_theme(self, theme: str):
+        self.theme = theme
+        # Keep chart views aligned with dashboard panel in both themes.
+        if theme == "Dark":
+            self.bar_chart_view.setStyleSheet("background-color: #1f1f1f; border: none;")
+            self.pie_chart_view.setStyleSheet("background-color: #1f1f1f; border: none;")
+        else:
+            self.bar_chart_view.setStyleSheet("background-color: #ffffff; border: none;")
+            self.pie_chart_view.setStyleSheet("background-color: #ffffff; border: none;")
+        if self._last_root_nodes_data:
+            self.update_charts(self._last_root_nodes_data)
+
     def update_language(self, new_language):
         self.language = new_language
-        # Redraw charts with translated titles
-        # You may need to call update_charts with the last data if you want to update titles
+        if self._last_root_nodes_data:
+            self.update_charts(self._last_root_nodes_data)

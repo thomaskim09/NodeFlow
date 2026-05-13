@@ -7,7 +7,6 @@ from PySide6.QtWidgets import (
     QPushButton,
     QApplication,
     QToolBar,
-    QMessageBox,
     QDialog,
     QFormLayout,
     QComboBox,
@@ -15,7 +14,7 @@ from PySide6.QtWidgets import (
     QDialogButtonBox,
 )
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QAction
+from PySide6.QtGui import QAction, QColor, QIcon
 
 from .participant_manager import ParticipantManager
 from .node_tree_manager import NodeTreeManager
@@ -24,7 +23,7 @@ from .coded_segments_view import CodedSegmentsView
 from ui.dashboard.dashboard_view import DashboardView
 
 from managers.export_manager import export_to_word, export_to_json, export_to_excel
-from managers.theme_manager import save_settings, load_settings
+from managers.theme_manager import save_settings, load_settings, apply_theme
 import database
 from qt_material_icons import MaterialIcon
 from utils.common import get_translation
@@ -32,6 +31,7 @@ from utils.common import get_translation
 
 class SettingsDialog(QDialog):
     theme_changed = Signal()
+    settings_applied = Signal(str, str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -42,8 +42,13 @@ class SettingsDialog(QDialog):
         layout = QVBoxLayout(self)
         form_layout = QFormLayout()
         self.theme_combo = QComboBox()
-        self.theme_combo.addItems(["Default", "Light", "Dark"])
-        self.theme_combo.setCurrentText(self.settings.get("theme", "Default"))
+        self.theme_combo.addItems(["Light", "Dark"])
+        saved_theme = self.settings.get("theme", "Light")
+        if saved_theme not in ("Light", "Dark"):
+            saved_theme = "Light"
+        self.theme_combo.setCurrentText(saved_theme)
+        self.theme_combo.setMinimumContentsLength(12)
+        self.theme_combo.setMinimumWidth(180)
         form_layout.addRow(
             QLabel(get_translation("workspace.application_theme", self.language)),
             self.theme_combo,
@@ -52,6 +57,8 @@ class SettingsDialog(QDialog):
         self.language_combo = QComboBox()
         self.language_combo.addItems(["English", "Chinese"])
         self.language_combo.setCurrentText(self.settings.get("language", "English"))
+        self.language_combo.setMinimumContentsLength(12)
+        self.language_combo.setMinimumWidth(180)
         form_layout.addRow(
             QLabel(get_translation("workspace.language", self.language)),
             self.language_combo,
@@ -76,14 +83,12 @@ class SettingsDialog(QDialog):
         self.settings["theme"] = self.theme_combo.currentText()
         self.settings["language"] = self.language_combo.currentText()
         save_settings(self.settings)
-        QMessageBox.information(
-            self,
-            get_translation(
-                "workspace.settings_saved", self.language_combo.currentText()
-            ),
-            get_translation(
-                "workspace.settings_saved_message", self.language_combo.currentText()
-            ),
+        app = QApplication.instance()
+        if app:
+            apply_theme(app)
+        self.settings_applied.emit(
+            self.settings["theme"],
+            self.settings["language"],
         )
         self.accept()
 
@@ -97,25 +102,29 @@ class WorkspaceView(QWidget):
         self.back_to_startup_callback = back_to_startup_callback
         self._last_added_doc_id = None
         self._in_edit_mode = False
+        self._open_dashboards = []
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_splitter = QSplitter(Qt.Orientation.Horizontal)
-        toolbar = QToolBar(get_translation("toolbar.projects", self.language))
-        toolbar.setMovable(False)
-        back_action = QAction(get_translation("toolbar.projects", self.language), self)
-        back_action.triggered.connect(self.back_to_startup_callback)
-        dashboard_action = QAction(
+        self.toolbar = QToolBar(get_translation("toolbar.projects", self.language))
+        self.toolbar.setMovable(False)
+        self.toolbar.setStyleSheet(
+            "QToolButton { font-size: 12px; font-weight: 600; padding: 6px 10px; }"
+        )
+        self.back_action = QAction(get_translation("toolbar.projects", self.language), self)
+        self.back_action.triggered.connect(self.back_to_startup_callback)
+        self.dashboard_action = QAction(
             get_translation("toolbar.dashboard", self.language), self
         )
-        dashboard_action.triggered.connect(self.open_dashboard)
-        settings_action = QAction(
+        self.dashboard_action.triggered.connect(self.open_dashboard)
+        self.settings_action = QAction(
             get_translation("toolbar.settings", self.language), self
         )
-        settings_action.triggered.connect(self.open_settings)
-        toolbar.addAction(back_action)
-        toolbar.addAction(dashboard_action)
-        toolbar.addAction(settings_action)
-        main_layout.addWidget(toolbar)
+        self.settings_action.triggered.connect(self.open_settings)
+        self.toolbar.addAction(self.back_action)
+        self.toolbar.addAction(self.dashboard_action)
+        self.toolbar.addAction(self.settings_action)
+        main_layout.addWidget(self.toolbar)
         self.left_pane = QFrame()
         self.left_pane_layout = QVBoxLayout(self.left_pane)
         self.center_pane = ContentView(self.project_id, self.language)
@@ -124,13 +133,13 @@ class WorkspaceView(QWidget):
         self.node_tree_manager = NodeTreeManager(self.project_id, self.language)
         self.left_pane_layout.addWidget(self.participant_manager)
         self.left_pane_layout.addWidget(self.node_tree_manager)
-        export_icon = MaterialIcon("download")
-        export_button = QPushButton()
-        export_button.setIcon(export_icon)
-        export_button.setText(
+        self.export_all_icon = MaterialIcon("download")
+        self.export_button = QPushButton()
+        self.export_button.setIcon(self.export_all_icon)
+        self.export_button.setText(
             get_translation("export.export_all_coded_data", self.language)
         )
-        export_button.setToolTip(
+        self.export_button.setToolTip(
             get_translation("export.export_all_coded_data_tooltip", self.language)
         )
         export_menu = QMenu(self)
@@ -143,9 +152,9 @@ class WorkspaceView(QWidget):
         self.action_export_excel = export_menu.addAction(
             get_translation("export.excel", self.language)
         )
-        export_button.setMenu(export_menu)
+        self.export_button.setMenu(export_menu)
         self.left_pane_layout.addStretch()
-        self.left_pane_layout.addWidget(export_button)
+        self.left_pane_layout.addWidget(self.export_button)
         self.left_pane_layout.setStretchFactor(self.participant_manager, 2)
         self.left_pane_layout.setStretchFactor(self.node_tree_manager, 5)
         right_splitter = QSplitter(Qt.Orientation.Vertical)
@@ -207,6 +216,7 @@ class WorkspaceView(QWidget):
 
         # Initial Load
         self.center_pane.load_document_content()
+        self._apply_theme_icons(load_settings().get("theme", "Light"))
         self.on_document_changed()
         # Ensure coded segments view is refreshed on first open
         if hasattr(self.center_pane, "current_document_id"):
@@ -218,12 +228,60 @@ class WorkspaceView(QWidget):
 
     def open_dashboard(self):
         current_doc_id = self.center_pane.current_document_id
-        dialog = DashboardView(self.project_id, self.project_name, current_doc_id, self)
+        dialog = DashboardView(
+            self.project_id,
+            self.project_name,
+            current_doc_id,
+            self,
+            language=self.language,
+        )
+        self._open_dashboards.append(dialog)
+        dialog.finished.connect(lambda _: self._remove_dashboard(dialog))
         dialog.exec()
+
+    def _remove_dashboard(self, dialog):
+        if dialog in self._open_dashboards:
+            self._open_dashboards.remove(dialog)
 
     def open_settings(self):
         dialog = SettingsDialog(self)
+        dialog.settings_applied.connect(self._apply_runtime_settings)
         dialog.exec()
+
+    def _apply_runtime_settings(self, theme, language):
+        self.language = language
+        self.toolbar.setWindowTitle(get_translation("toolbar.projects", self.language))
+        self.back_action.setText(get_translation("toolbar.projects", self.language))
+        self.dashboard_action.setText(get_translation("toolbar.dashboard", self.language))
+        self.settings_action.setText(get_translation("toolbar.settings", self.language))
+        if hasattr(self.node_tree_manager, "update_language"):
+            self.node_tree_manager.update_language(self.language)
+        if hasattr(self.node_tree_manager, "update_theme"):
+            self.node_tree_manager.update_theme(theme)
+        if hasattr(self.participant_manager, "update_language"):
+            self.participant_manager.update_language(self.language)
+        if hasattr(self.participant_manager, "update_theme"):
+            self.participant_manager.update_theme(theme)
+        if hasattr(self.center_pane, "update_language"):
+            self.center_pane.update_language(self.language)
+        if hasattr(self.center_pane, "update_theme"):
+            self.center_pane.update_theme(theme)
+        self._apply_theme_icons(theme)
+        if hasattr(self.bottom_pane, "update_language"):
+            self.bottom_pane.update_language(self.language)
+        if hasattr(self.bottom_pane, "update_theme"):
+            self.bottom_pane.update_theme(theme)
+        for dialog in list(self._open_dashboards):
+            if hasattr(dialog, "update_language"):
+                dialog.update_language(self.language)
+
+    def _apply_theme_icons(self, theme):
+        is_dark = theme == "Dark"
+        fg = QColor("#f0f0f0" if is_dark else "#000000")
+        disabled_fg = QColor("#a8a8a8" if is_dark else "#5e5e5e")
+        self.export_all_icon.set_color(fg, QIcon.Mode.Normal)
+        self.export_all_icon.set_color(disabled_fg, QIcon.Mode.Disabled)
+        self.export_button.setIcon(self.export_all_icon)
 
     def on_segment_deleted(self):
         self.center_pane.apply_all_highlights()

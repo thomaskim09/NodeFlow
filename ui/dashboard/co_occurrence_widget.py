@@ -30,7 +30,10 @@ class CoOccurrenceWidget(QWidget):
         super().__init__(parent)
         self.settings = settings
         self.language = language or self.settings.get("language", "English")
-        self.is_dark = self.settings.get("theme") == "Dark"
+        self.theme = self.settings.get("theme", "Default")
+        self.is_dark = self.theme == "Dark"
+        self._last_matrix_data = {}
+        self._last_headers = []
         self.layout = QVBoxLayout(self)
         self.layout.setContentsMargins(10, 10, 10, 10)
 
@@ -90,22 +93,27 @@ class CoOccurrenceWidget(QWidget):
             lambda: self.stacked_widget.setCurrentIndex(1)
         )
 
+        self._apply_theme_styles()
         self.clear_views()
 
     def update_data(self, matrix_data, headers):
         """
         Updates both the matrix and graph views with new data.
         """
+        self._last_matrix_data = dict(matrix_data)
+        self._last_headers = list(headers)
         self._update_matrix_view(matrix_data, headers)
         self._update_graph_view(matrix_data, headers)
 
     def _update_matrix_view(self, matrix_data, headers):
         if not matrix_data or not headers:
+            self._reset_table_state()
             self.table_widget.clear()
             self.table_widget.setRowCount(0)
             self.table_widget.setColumnCount(0)
             return
 
+        self._reset_table_state()
         self.table_widget.setRowCount(len(headers))
         self.table_widget.setColumnCount(len(headers))
         self.table_widget.setHorizontalHeaderLabels(headers)
@@ -227,6 +235,31 @@ class CoOccurrenceWidget(QWidget):
     def clear_views(self):
         self._update_matrix_view({}, [])
         self._update_graph_view({}, [])
+
+    def _reset_table_state(self):
+        # Avoid stale accessibility/current-index references while table size changes.
+        self.table_widget.clearSelection()
+        self.table_widget.setCurrentItem(None)
+        self.table_widget.setCurrentCell(-1, -1)
+
+    def _apply_theme_styles(self):
+        if self.is_dark:
+            self.table_widget.setStyleSheet(
+                "QTableWidget { background-color: #2e2e2e; color: #f0f0f0; gridline-color: #4a4a4a; }"
+            )
+            self.graph_view.setStyleSheet("background-color: #1f1f1f; border: none;")
+        else:
+            self.table_widget.setStyleSheet(
+                "QTableWidget { background-color: #ffffff; color: #333333; gridline-color: #d0d0d0; }"
+            )
+            self.graph_view.setStyleSheet("background-color: #ffffff; border: none;")
+
+    def set_theme(self, theme: str):
+        self.theme = theme
+        self.is_dark = theme == "Dark"
+        self._apply_theme_styles()
+        if self._last_headers:
+            self.update_data(self._last_matrix_data, self._last_headers)
 
     def get_matrix_for_export(self):
         return self.table_widget

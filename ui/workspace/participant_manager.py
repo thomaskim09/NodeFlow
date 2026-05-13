@@ -12,9 +12,10 @@ from PySide6.QtWidgets import (
     QAbstractItemView,
 )
 from PySide6.QtCore import Signal, Qt
-from PySide6.QtGui import QKeyEvent
+from PySide6.QtGui import QKeyEvent, QColor, QIcon
 from qt_material_icons import MaterialIcon
 from utils.common import get_translation
+from managers.theme_manager import load_settings
 
 import database
 
@@ -61,14 +62,14 @@ class ParticipantItemWidget(QWidget):
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(5, 3, 5, 8)
-        name_label = QLabel(participant_name)
+        self.name_label = QLabel(participant_name)
 
         self.stats_label = QLabel(stats_text)
         self.stats_label.setStyleSheet("color: #888;")
 
         self.edit_button = QPushButton()
-        edit_icon = MaterialIcon("edit")
-        self.edit_button.setIcon(edit_icon)
+        self.edit_icon = MaterialIcon("edit")
+        self.edit_button.setIcon(self.edit_icon)
         self.edit_button.setFixedSize(24, 24)
         self.edit_button.setToolTip(
             get_translation("participant.edit_tooltip", parent_manager.language)
@@ -77,8 +78,8 @@ class ParticipantItemWidget(QWidget):
         self.edit_button.setVisible(False)
 
         self.delete_button = QPushButton()
-        delete_icon = MaterialIcon("delete")
-        self.delete_button.setIcon(delete_icon)
+        self.delete_icon = MaterialIcon("delete")
+        self.delete_button.setIcon(self.delete_icon)
         self.delete_button.setFixedSize(24, 24)
         self.delete_button.setToolTip(
             get_translation("participant.delete_tooltip", parent_manager.language)
@@ -86,7 +87,7 @@ class ParticipantItemWidget(QWidget):
         self.delete_button.clicked.connect(self.on_delete_clicked)
         self.delete_button.setVisible(False)
 
-        layout.addWidget(name_label)
+        layout.addWidget(self.name_label)
         layout.addStretch()
         layout.addWidget(self.stats_label)
         layout.addWidget(self.edit_button)
@@ -97,10 +98,29 @@ class ParticipantItemWidget(QWidget):
         self.delete_button.setVisible(visible)
 
     def set_selected_style(self, is_selected: bool):
+        settings = load_settings()
+        theme = settings.get("theme", "Default")
+        is_dark = theme == "Dark"
+        selected_fg = "#f0f0f0" if is_dark else "#000000"
         if is_selected:
-            self.stats_label.setStyleSheet("color: white;")
+            self.name_label.setStyleSheet(f"color: {selected_fg};")
+            self.stats_label.setStyleSheet(f"color: {selected_fg};")
+            self.edit_button.setStyleSheet(f"color: {selected_fg};")
+            self.delete_button.setStyleSheet(f"color: {selected_fg};")
+            icon_color = QColor(selected_fg)
+            self.edit_icon.set_color(icon_color)
+            self.delete_icon.set_color(icon_color)
+            self.edit_button.setIcon(self.edit_icon)
+            self.delete_button.setIcon(self.delete_icon)
         else:
+            self.name_label.setStyleSheet("")
             self.stats_label.setStyleSheet("color: #888;")
+            self.edit_button.setStyleSheet("")
+            self.delete_button.setStyleSheet("")
+            self.edit_icon._init_colors()
+            self.delete_icon._init_colors()
+            self.edit_button.setIcon(self.edit_icon)
+            self.delete_button.setIcon(self.delete_icon)
 
     def on_edit_clicked(self):
         self.parent_manager.edit_participant(self.participant_id, self.participant_name)
@@ -126,10 +146,10 @@ class ParticipantManager(QWidget):
         main_layout.setSpacing(5)
 
         header_layout = QHBoxLayout()
-        header_label = QLabel(get_translation("participant.header", self.language))
-        font = header_label.font()
+        self.header_label = QLabel(get_translation("participant.header", self.language))
+        font = self.header_label.font()
         font.setBold(True)
-        header_label.setFont(font)
+        self.header_label.setFont(font)
 
         self.scope_combo = QComboBox()
         self.scope_combo.addItems(
@@ -146,8 +166,8 @@ class ParticipantManager(QWidget):
         )
 
         self.show_all_button = QPushButton()
-        show_all_icon = MaterialIcon("filter_list")
-        self.show_all_button.setIcon(show_all_icon)
+        self.show_all_icon = MaterialIcon("filter_list")
+        self.show_all_button.setIcon(self.show_all_icon)
         self.show_all_button.setText(
             get_translation("participant.show_all", self.language)
         )
@@ -156,18 +176,20 @@ class ParticipantManager(QWidget):
         )
         self.show_all_button.clicked.connect(self.clear_selection)
 
-        add_button = QPushButton()
-        add_icon = MaterialIcon("add")
-        add_button.setIcon(add_icon)
-        add_button.setText(get_translation("participant.add", self.language))
-        add_button.setToolTip(get_translation("participant.add_tooltip", self.language))
-        add_button.clicked.connect(self.add_participant)
+        self.add_button = QPushButton()
+        self.add_icon = MaterialIcon("add")
+        self.add_button.setIcon(self.add_icon)
+        self.add_button.setText(get_translation("participant.add", self.language))
+        self.add_button.setToolTip(
+            get_translation("participant.add_tooltip", self.language)
+        )
+        self.add_button.clicked.connect(self.add_participant)
 
-        header_layout.addWidget(header_label)
+        header_layout.addWidget(self.header_label)
         header_layout.addStretch()
         header_layout.addWidget(self.scope_combo)
         header_layout.addWidget(self.show_all_button)
-        header_layout.addWidget(add_button)
+        header_layout.addWidget(self.add_button)
         main_layout.addLayout(header_layout)
 
         self.list_widget = RenamableListWidget(self)
@@ -175,11 +197,14 @@ class ParticipantManager(QWidget):
         main_layout.addWidget(self.list_widget)
 
         self.scope_combo.currentTextChanged.connect(self.load_participants)
+        self.update_theme(load_settings().get("theme", "Light"))
         self.load_participants()
 
     def set_current_document_id(self, doc_id):
         self.current_document_id = doc_id
-        if self.scope_combo.currentText() == "Current Document":
+        if self.scope_combo.currentText() == get_translation(
+            "participant.scope_current", self.language
+        ):
             self.load_participants()
 
     def on_selection_changed(self, current_item, previous_item):
@@ -200,10 +225,8 @@ class ParticipantManager(QWidget):
 
     def load_participants(self):
         # Safely disconnect to prevent warnings
-        try:
-            self.list_widget.currentItemChanged.disconnect(self.on_selection_changed)
-        except RuntimeError:
-            pass  # Signal was not connected
+        self.list_widget.blockSignals(True)
+        self.list_widget.setCurrentItem(None)
 
         self.list_widget.clear()
         participants = database.get_participants_for_project(self.project_id)
@@ -212,7 +235,7 @@ class ParticipantManager(QWidget):
         total_words = 0
         all_segments_in_scope = []
 
-        if scope == "Current Document":
+        if scope == get_translation("participant.scope_current", self.language):
             if self.current_document_id:
                 total_words = database.get_document_word_count(self.current_document_id)
                 all_segments_in_scope = database.get_coded_segments_for_document(
@@ -249,9 +272,18 @@ class ParticipantManager(QWidget):
                 stats_text = ""
                 if segment_count > 0 and total_words > 0:
                     percentage = (word_count / total_words) * 100
-                    stats_text = f"{percentage:.1f}% | {segment_count} Segments"
+                    stats_text = get_translation(
+                        "participant.stats_with_percent",
+                        self.language,
+                        percent=f"{percentage:.1f}",
+                        segments=segment_count,
+                    )
                 elif segment_count > 0:
-                    stats_text = f"{segment_count} Segments"
+                    stats_text = get_translation(
+                        "participant.stats_segments_only",
+                        self.language,
+                        segments=segment_count,
+                    )
 
                 list_item = QListWidgetItem(self.list_widget)
                 item_widget = ParticipantItemWidget(
@@ -261,7 +293,7 @@ class ParticipantManager(QWidget):
                 self.list_widget.addItem(list_item)
                 self.list_widget.setItemWidget(list_item, item_widget)
 
-        self.list_widget.currentItemChanged.connect(self.on_selection_changed)
+        self.list_widget.blockSignals(False)
 
     def add_participant(self):
         name, ok = QInputDialog.getText(
@@ -342,3 +374,39 @@ class ParticipantManager(QWidget):
             )
 
         self.list_widget.blockSignals(False)
+
+    def update_language(self, new_language):
+        was_current_scope = self.scope_combo.currentText() == get_translation(
+            "participant.scope_current", self.language
+        )
+        self.language = new_language
+        self.header_label.setText(get_translation("participant.header", self.language))
+        self.scope_combo.blockSignals(True)
+        self.scope_combo.clear()
+        self.scope_combo.addItems(
+            [
+                get_translation("participant.scope_current", self.language),
+                get_translation("participant.scope_project", self.language),
+            ]
+        )
+        self.scope_combo.setCurrentIndex(0 if was_current_scope else 1)
+        self.scope_combo.blockSignals(False)
+        self.show_all_button.setText(get_translation("participant.show_all", self.language))
+        self.show_all_button.setToolTip(
+            get_translation("participant.show_all_tooltip", self.language)
+        )
+        self.add_button.setText(get_translation("participant.add", self.language))
+        self.add_button.setToolTip(get_translation("participant.add_tooltip", self.language))
+        self.update_theme(load_settings().get("theme", "Light"))
+        self.load_participants()
+
+    def update_theme(self, theme):
+        is_dark = theme == "Dark"
+        fg = QColor("#f0f0f0" if is_dark else "#000000")
+        disabled_fg = QColor("#a8a8a8" if is_dark else "#5e5e5e")
+        self.show_all_icon.set_color(fg, QIcon.Mode.Normal)
+        self.show_all_icon.set_color(disabled_fg, QIcon.Mode.Disabled)
+        self.add_icon.set_color(fg, QIcon.Mode.Normal)
+        self.add_icon.set_color(disabled_fg, QIcon.Mode.Disabled)
+        self.show_all_button.setIcon(self.show_all_icon)
+        self.add_button.setIcon(self.add_icon)
