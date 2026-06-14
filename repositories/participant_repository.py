@@ -4,13 +4,14 @@ from repositories.base import get_connection
 
 
 class ParticipantRepository:
-    def add(self, project_id: int, name: str, details: str = "") -> None:
+    def add(self, project_id: int, name: str, details: str = "") -> int:
         with get_connection() as conn:
             with conn:
-                conn.execute(
+                cursor = conn.execute(
                     "INSERT INTO participants (project_id, name, details) VALUES (?, ?, ?)",
                     (project_id, name, details),
                 )
+                return cursor.lastrowid
 
     def list_for_project(self, project_id: int) -> list[dict]:
         with get_connection() as conn:

@@ -40,6 +40,30 @@ NodeFlow is a user-friendly desktop application designed to assist researchers a
 
 ## macOS: Step-by-Step (Run from Source)
 
+### Quick Script
+
+```bash
+./scripts/start-nodeflow.sh
+```
+
+This script is lightweight for normal use:
+
+- first run: creates `.venv`, installs runtime dependencies, then launches
+- later runs: launches directly without reinstalling everything
+
+If you need to refresh the environment:
+
+```bash
+./scripts/start-nodeflow.sh --reinstall
+```
+
+For straightforward debugging, you can also run the app directly:
+
+```bash
+source .venv/bin/activate
+python main.py
+```
+
 ### Recommended (with `.venv`)
 
 1. **Open Terminal and go to the project**
@@ -102,11 +126,15 @@ If macOS blocks package installation, use the recommended `.venv` flow above.
 
 ```powershell
 cd C:\path\to\NodeFlow
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install --upgrade pip
-python -m pip install -e ".[dev]"
-python main.py
+.\scripts\start-nodeflow.ps1
+```
+
+This PowerShell script only installs dependencies on first run, then starts the app directly on later runs.
+
+To refresh the environment:
+
+```powershell
+.\scripts\start-nodeflow.ps1 --reinstall
 ```
 
 ## Packaging
@@ -114,14 +142,20 @@ python main.py
 PyInstaller builds must be produced on the target OS. Build the Windows bundle on Windows and the macOS app on macOS.
 
 ### Windows
-```bash
-pyinstaller packaging/windows.spec
+```powershell
+.\scripts\package-nodeflow.ps1
 ```
 
 ### macOS
 ```bash
-pyinstaller packaging/macos.spec
+./scripts/package-nodeflow.sh
 ```
+
+### Packaging Targets
+
+- `./scripts/package-nodeflow.sh macos` builds the macOS app bundle on macOS.
+- `.\scripts\package-nodeflow.ps1 windows` builds the Windows executable on Windows.
+- Cross-packaging is not supported here: Windows builds should be made on Windows, and macOS builds should be made on macOS.
 
 ## Testing
 

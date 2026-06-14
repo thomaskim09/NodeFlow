@@ -2,11 +2,11 @@ from PySide6.QtWidgets import (
     QDialog,
     QVBoxLayout,
     QLabel,
-    QComboBox,
     QDialogButtonBox,
     QFormLayout,
 )
 import openpyxl
+from ui.combo_box import FitPopupComboBox
 
 
 class ExcelImportDialog(QDialog):
@@ -28,13 +28,13 @@ class ExcelImportDialog(QDialog):
         form_layout.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapAllRows)
 
         # --- Column Mapping Fields ---
-        self.title_combo = QComboBox()
+        self.title_combo = FitPopupComboBox()
         self.title_combo.addItems(self.column_headers)
 
-        self.content_combo = QComboBox()
+        self.content_combo = FitPopupComboBox()
         self.content_combo.addItems(self.column_headers)
 
-        self.participant_combo = QComboBox()
+        self.participant_combo = FitPopupComboBox()
         self.participant_combo.addItem("<Assign Later>", None)
         self.participant_combo.addItems(self.column_headers)
 

@@ -2,7 +2,7 @@ from repositories.participant_repository import participant_repository
 
 
 def add_participant(project_id, name, details=""):
-    participant_repository.add(project_id, name, details)
+    return participant_repository.add(project_id, name, details)
 
 
 def get_participants_for_project(project_id):

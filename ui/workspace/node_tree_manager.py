@@ -12,21 +12,27 @@ from PySide6.QtWidgets import (
     QAbstractItemView,
     QMenu,
     QColorDialog,
-    QComboBox,
+    QDialog,
+    QDialogButtonBox,
+    QFormLayout,
 )
 from PySide6.QtCore import Qt, Signal, QTimer
 from PySide6.QtGui import QDropEvent, QKeyEvent, QColor, QIcon
 from managers.export_manager import (
+    export_project_to_excel_single_sheet,
     export_node_family_to_word,
     export_node_family_to_excel,
     export_node_family_to_excel_multi_sheet,
-    export_overall_participants_to_excel,
+    export_to_excel,
 )
 import database
 from qt_material_icons import MaterialIcon
 from utils.common import get_translation
-from managers.theme_manager import load_settings
+from managers.theme_manager import load_settings, get_system_theme
 from urllib.parse import quote
+from repositories.workspace_snapshot_repository import workspace_snapshot_repository
+from services.workspace_history_service import WorkspaceCommand
+from ui.combo_box import FitPopupComboBox
 
 PRESET_COLORS = [
     "#FFB3BA",
@@ -109,9 +115,10 @@ class NodeItemWidget(QWidget):
         self.node_id = node_id
         self.parent_manager = parent_manager
         self.language = language or getattr(parent_manager, "language", "English")
+        self.setMinimumHeight(32)
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(0, 2, 5, 7)
-        layout.setSpacing(5)
+        layout.setContentsMargins(0, 4, 8, 4)
+        layout.setSpacing(8)
         self.color_button = QPushButton()
         self.color_button.setObjectName("nodeColorButton")
         self.color_button.setFixedSize(18, 18)
@@ -121,62 +128,25 @@ class NodeItemWidget(QWidget):
         self.set_button_color(node_color)
         self.color_button.clicked.connect(self.on_color_change)
         self.name_label = QLabel(name_text)
+        self.name_label.setAlignment(Qt.AlignmentFlag.AlignVCenter)
         self.stats_label = QLabel(stats_text)
         self.stats_label.setStyleSheet("color: #888;")
-        self.export_button = QPushButton()
-        self.export_icon = MaterialIcon("download")
-        self.export_button.setIcon(self.export_icon)
-        self.export_button.setFixedSize(24, 24)
-        self.export_button.setToolTip(
-            get_translation("node_tree.export_tooltip", self.language)
+        self.stats_label.setAlignment(
+            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
         )
-        self.export_button.clicked.connect(self.on_export)
-        self.export_button.setVisible(False)
-        self.filter_button = QPushButton()
-        self.filter_icon = MaterialIcon("filter_list")
-        self.filter_button.setIcon(self.filter_icon)
-        self.filter_button.setFixedSize(24, 24)
-        self.filter_button.setToolTip(
-            get_translation("node_tree.filter_tooltip", self.language)
+        self.stats_label.setMinimumWidth(170)
+        self.menu_button = QPushButton()
+        self.menu_icon = MaterialIcon("more_vert")
+        self.menu_button.setIcon(self.menu_icon)
+        self.menu_button.setFixedSize(22, 22)
+        self.menu_button.setToolTip(
+            get_translation("node_tree.more_actions_tooltip", self.language)
         )
-        self.filter_button.clicked.connect(self.on_filter)
-        self.filter_button.setVisible(False)
-        self.add_button = QPushButton()
-        self.add_icon = MaterialIcon("add")
-        self.add_button.setIcon(self.add_icon)
-        self.add_button.setFixedSize(24, 24)
-        self.add_button.setToolTip(
-            get_translation("node_tree.add_child_tooltip", self.language)
-        )
-        self.add_button.clicked.connect(self.on_add_child)
-        self.add_button.setVisible(False)
-        self.edit_button = QPushButton()
-        self.edit_icon = MaterialIcon("edit")
-        self.edit_button.setIcon(self.edit_icon)
-        self.edit_button.setFixedSize(24, 24)
-        self.edit_button.setToolTip(
-            get_translation("node_tree.rename_tooltip", self.language)
-        )
-        self.edit_button.clicked.connect(self.on_rename)
-        self.edit_button.setVisible(False)
-        self.delete_button = QPushButton()
-        self.delete_icon = MaterialIcon("delete")
-        self.delete_button.setIcon(self.delete_icon)
-        self.delete_button.setFixedSize(24, 24)
-        self.delete_button.setToolTip(
-            get_translation("node_tree.delete_tooltip", self.language)
-        )
-        self.delete_button.clicked.connect(self.on_delete)
-        self.delete_button.setVisible(False)
+        self.menu_button.clicked.connect(self.show_actions_menu)
         layout.addWidget(self.color_button)
-        layout.addWidget(self.name_label)
-        layout.addStretch()
+        layout.addWidget(self.name_label, 1)
         layout.addWidget(self.stats_label)
-        layout.addWidget(self.export_button)
-        layout.addWidget(self.filter_button)
-        layout.addWidget(self.add_button)
-        layout.addWidget(self.edit_button)
-        layout.addWidget(self.delete_button)
+        layout.addWidget(self.menu_button)
         self.set_selected_style(False)
 
     def set_button_color(self, color_hex):
@@ -185,66 +155,53 @@ class NodeItemWidget(QWidget):
         )
 
     def set_icons_visible(self, visible):
-        self.export_button.setVisible(visible)
-        self.filter_button.setVisible(visible)
-        self.add_button.setVisible(visible)
-        self.edit_button.setVisible(visible)
-        self.delete_button.setVisible(visible)
+        self.menu_button.setVisible(True)
 
     def set_selected_style(self, is_selected: bool):
         settings = load_settings()
         theme = settings.get("theme", "Default")
-        is_dark = theme == "Dark"
+        is_dark = get_system_theme() == "Dark" if theme == "Default" else theme == "Dark"
         selected_fg = "#f0f0f0" if is_dark else "#000000"
+        normal_fg = "#f0f0f0" if is_dark else "#333333"
+        stats_fg = "#b8b8b8" if is_dark else "#888888"
+        current_fg = selected_fg if is_selected else normal_fg
         if is_selected:
-            self.name_label.setStyleSheet(f"color: {selected_fg};")
-            self.stats_label.setStyleSheet(f"color: {selected_fg};")
-            self.export_button.setStyleSheet(f"color: {selected_fg};")
-            self.filter_button.setStyleSheet(f"color: {selected_fg};")
-            self.add_button.setStyleSheet(f"color: {selected_fg};")
-            self.edit_button.setStyleSheet(f"color: {selected_fg};")
-            self.delete_button.setStyleSheet(f"color: {selected_fg};")
-            icon_color = QColor(selected_fg)
-            self.export_icon.set_color(icon_color)
-            self.filter_icon.set_color(icon_color)
-            self.add_icon.set_color(icon_color)
-            self.edit_icon.set_color(icon_color)
-            self.delete_icon.set_color(icon_color)
-            self.export_button.setIcon(self.export_icon)
-            self.filter_button.setIcon(self.filter_icon)
-            self.add_button.setIcon(self.add_icon)
-            self.edit_button.setIcon(self.edit_icon)
-            self.delete_button.setIcon(self.delete_icon)
+            self.menu_button.setStyleSheet(f"color: {current_fg};")
         else:
-            self.name_label.setStyleSheet("")
-            self.stats_label.setStyleSheet("color: #888;")
-            self.export_button.setStyleSheet("")
-            self.filter_button.setStyleSheet("")
-            self.add_button.setStyleSheet("")
-            self.edit_button.setStyleSheet("")
-            self.delete_button.setStyleSheet("")
-            self.export_icon._init_colors()
-            self.filter_icon._init_colors()
-            self.add_icon._init_colors()
-            self.edit_icon._init_colors()
-            self.delete_icon._init_colors()
-            self.export_button.setIcon(self.export_icon)
-            self.filter_button.setIcon(self.filter_icon)
-            self.add_button.setIcon(self.add_icon)
-            self.edit_button.setIcon(self.edit_icon)
-            self.delete_button.setIcon(self.delete_icon)
+            self.menu_button.setStyleSheet(f"color: {current_fg};")
+        self.name_label.setStyleSheet(f"color: {current_fg};")
+        self.stats_label.setStyleSheet(
+            f"color: {current_fg if is_selected else stats_fg};"
+        )
+        self.menu_icon.set_color(QColor(current_fg))
+        self.menu_button.setIcon(self.menu_icon)
 
     def on_color_change(self):
         current_color = self.color_button.palette().button().color()
         color = QColorDialog.getColor(current_color, self)
         if color.isValid():
             new_color_hex = color.name()
-            self.set_button_color(new_color_hex)
-            database.update_node_color(self.node_id, new_color_hex)
-            self.parent_manager.node_updated.emit()
+            old_color_hex = self.parent_manager.nodes_map[self.node_id]["color"]
+
+            def do():
+                database.update_node_color(self.node_id, new_color_hex)
+
+            def undo():
+                database.update_node_color(self.node_id, old_color_hex)
+
+            self.parent_manager.execute_workspace_command(
+                WorkspaceCommand(
+                    "Change Node Color",
+                    do,
+                    undo,
+                    lambda: self.parent_manager.refresh_tree_and_emit_update(
+                        node_id_to_reselect=self.node_id
+                    ),
+                )
+            )
 
     def on_export(self):
-        self.parent_manager.show_node_export_menu(self.node_id, self.export_button)
+        self.parent_manager.show_node_export_menu(self.node_id, self.menu_button)
 
     def on_filter(self):
         self.parent_manager.filter_by_single_node(self.node_id)
@@ -258,26 +215,116 @@ class NodeItemWidget(QWidget):
     def on_delete(self):
         self.parent_manager.delete_node(self.node_id)
 
+    def show_actions_menu(self):
+        menu = QMenu(self.parent_manager)
+        menu.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        menu.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, False)
+        menu.setWindowOpacity(1.0)
+        export_action = menu.addAction(
+            get_translation("node_tree.export_tooltip", self.language)
+        )
+        filter_action = menu.addAction(
+            get_translation("node_tree.filter_tooltip", self.language)
+        )
+        add_child_action = menu.addAction(
+            get_translation("node_tree.add_child_tooltip", self.language)
+        )
+        rename_action = menu.addAction(
+            get_translation("node_tree.rename_tooltip", self.language)
+        )
+        delete_action = menu.addAction(
+            get_translation("node_tree.delete_tooltip", self.language)
+        )
+        action = menu.exec(self.menu_button.mapToGlobal(self.menu_button.rect().bottomLeft()))
+        if action == export_action:
+            self.on_export()
+        elif action == filter_action:
+            self.on_filter()
+        elif action == add_child_action:
+            self.on_add_child()
+        elif action == rename_action:
+            self.on_rename()
+        elif action == delete_action:
+            self.on_delete()
+
     def update_language(self, new_language):
         self.language = new_language
         self.color_button.setToolTip(
             get_translation("node_tree.color_tooltip", self.language)
         )
-        self.export_button.setToolTip(
-            get_translation("node_tree.export_tooltip", self.language)
+        self.menu_button.setToolTip(
+            get_translation("node_tree.more_actions_tooltip", self.language)
         )
-        self.filter_button.setToolTip(
-            get_translation("node_tree.filter_tooltip", self.language)
+
+
+class ExcelExportDialog(QDialog):
+    def __init__(self, language, participants, parent=None):
+        super().__init__(parent)
+        self.language = language
+        self.participants = participants
+        self.setWindowTitle(get_translation("node_tree.export_excel_option", language))
+        self.setMinimumWidth(460)
+
+        layout = QVBoxLayout(self)
+        title_label = QLabel(
+            get_translation("node_tree.export_excel_question", self.language)
         )
-        self.add_button.setToolTip(
-            get_translation("node_tree.add_child_tooltip", self.language)
+        title_font = title_label.font()
+        title_font.setBold(True)
+        title_label.setFont(title_font)
+        info_label = QLabel(
+            get_translation("node_tree.export_excel_info", self.language)
         )
-        self.edit_button.setToolTip(
-            get_translation("node_tree.rename_tooltip", self.language)
+        info_label.setWordWrap(True)
+
+        self.mode_combo = FitPopupComboBox()
+        self.mode_combo.addItem(
+            get_translation("node_tree.export_excel_single", self.language), "single"
         )
-        self.delete_button.setToolTip(
-            get_translation("node_tree.delete_tooltip", self.language)
+        self.mode_combo.addItem(
+            get_translation("node_tree.export_excel_multi", self.language), "multi"
         )
+
+        self.participant_combo = FitPopupComboBox()
+        self.participant_combo.addItem(
+            get_translation("node_tree.export_excel_participants_all", self.language),
+            None,
+        )
+        for participant in sorted(self.participants, key=lambda item: item["name"].lower()):
+            self.participant_combo.addItem(participant["name"], participant["id"])
+
+        form_layout = QFormLayout()
+        form_layout.addRow(
+            get_translation("node_tree.export_excel_sheet_field", self.language),
+            self.mode_combo,
+        )
+        form_layout.addRow(
+            get_translation("node_tree.export_excel_participant_field", self.language),
+            self.participant_combo,
+        )
+
+        button_box = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        button_box.accepted.connect(self.accept)
+        button_box.rejected.connect(self.reject)
+        button_box.button(QDialogButtonBox.StandardButton.Ok).setText(
+            get_translation("node_tree.export_excel_confirm", self.language)
+        )
+        button_box.button(QDialogButtonBox.StandardButton.Cancel).setText(
+            get_translation("workspace.cancel", self.language)
+        )
+
+        layout.addWidget(title_label)
+        layout.addWidget(info_label)
+        layout.addLayout(form_layout)
+        layout.addWidget(button_box)
+
+    def selected_mode(self):
+        return self.mode_combo.currentData()
+
+    def selected_participant_id(self):
+        return self.participant_combo.currentData()
 
 
 class NodeTreeManager(QWidget):
@@ -291,6 +338,7 @@ class NodeTreeManager(QWidget):
         self.project_id = project_id
         self.language = language or "English"
         self.nodes_map = {}
+        self.undo_executor = None
         self.setAcceptDrops(True)
         self._is_selection_mode = False
         self.current_document_id = None
@@ -321,7 +369,7 @@ class NodeTreeManager(QWidget):
             get_translation("node_tree.show_all_tooltip", self.language)
         )
         self.clear_filter_button.clicked.connect(self.clear_all_filters)
-        self.scope_combo = QComboBox()
+        self.scope_combo = FitPopupComboBox()
         self.scope_combo.addItems(
             [
                 get_translation("node_tree.scope_current", self.language),
@@ -357,15 +405,32 @@ class NodeTreeManager(QWidget):
         self.tree_widget.currentItemChanged.connect(self.on_selection_changed)
         self.tree_widget.itemClicked.connect(self.on_item_clicked)
         self.tree_widget.customContextMenuRequested.connect(self.show_context_menu)
+        self.tree_widget.mousePressEvent = self.mousePressEvent
         self.original_tree_widget_dropEvent = self.tree_widget.dropEvent
         self.tree_widget.dropEvent = self.dropEvent
         self.tree_widget.keyPressEvent = self.keyPressEvent
         self.update_theme(load_settings().get("theme", "Light"))
         self.load_nodes()
 
+    def set_undo_executor(self, undo_executor):
+        self.undo_executor = undo_executor
+
+    def execute_workspace_command(self, command: WorkspaceCommand):
+        if self.undo_executor:
+            self.undo_executor(command)
+        else:
+            command.do()
+            command.after_refresh()
+
     def set_highlighting_active(self, active):
         """Public slot to enable/disable drag-drop highlighting."""
         self.tree_widget.highlighting_enabled = active
+
+    def mousePressEvent(self, event):
+        if self.tree_widget.itemAt(event.position().toPoint()) is None:
+            self.tree_widget.clearSelection()
+            self.tree_widget.setCurrentItem(None)
+        super(QTreeWidget, self.tree_widget).mousePressEvent(event)
 
     def dropEvent(self, event: QDropEvent):
         """
@@ -385,6 +450,7 @@ class NodeTreeManager(QWidget):
         if source_id is None:
             event.ignore()
             return
+        before_layout = workspace_snapshot_repository.get_node_layout(self.project_id)
         self.original_tree_widget_dropEvent(event)
         it = QTreeWidgetItemIterator(self.tree_widget)
         new_item = None
@@ -402,8 +468,6 @@ class NodeTreeManager(QWidget):
         new_parent_item = new_item.parent()
         new_parent_id = new_parent_item.data(0, 1) if new_parent_item else None
 
-        database.update_node_parent(source_id, new_parent_id)
-
         if new_parent_item:
             siblings = [
                 new_parent_item.child(i) for i in range(new_parent_item.childCount())
@@ -420,11 +484,26 @@ class NodeTreeManager(QWidget):
             if item.data(0, 1) is not None
         ]
 
-        if db_order_updates:
-            database.update_node_order(db_order_updates)
+        def do():
+            database.update_node_parent(source_id, new_parent_id)
+            if db_order_updates:
+                database.update_node_order(db_order_updates)
 
-        QTimer.singleShot(
-            0, lambda: self.refresh_tree_and_emit_update(node_id_to_reselect=source_id)
+        def undo():
+            workspace_snapshot_repository.restore_node_layout(before_layout)
+
+        self.execute_workspace_command(
+            WorkspaceCommand(
+                "Move Node",
+                do,
+                undo,
+                lambda: QTimer.singleShot(
+                    0,
+                    lambda: self.refresh_tree_and_emit_update(
+                        node_id_to_reselect=source_id
+                    ),
+                ),
+            )
         )
 
     def keyPressEvent(self, event: QKeyEvent):
@@ -571,6 +650,7 @@ class NodeTreeManager(QWidget):
 
     def clear_all_filters(self):
         self.tree_widget.clearSelection()
+        self.tree_widget.setCurrentItem(None)
         self.filter_by_node_family_signal.emit([])
 
     def on_selection_changed(
@@ -579,13 +659,11 @@ class NodeTreeManager(QWidget):
         if previous_item:
             widget = self.tree_widget.itemWidget(previous_item, 0)
             if widget:
-                widget.set_icons_visible(False)
                 widget.set_selected_style(False)
 
         if current_item:
             widget = self.tree_widget.itemWidget(current_item, 0)
             if widget:
-                widget.set_icons_visible(True)
                 widget.set_selected_style(True)
 
             node_id = current_item.data(0, 1)
@@ -610,8 +688,24 @@ class NodeTreeManager(QWidget):
             self, "Rename Node", "Enter new name:", text=current_name
         )
         if ok and new_name.strip() and new_name.strip() != current_name:
-            database.update_node_name(node_id, new_name.strip())
-            self.refresh_tree_and_emit_update(node_id_to_reselect=node_id)
+            cleaned_name = new_name.strip()
+
+            def do():
+                database.update_node_name(node_id, cleaned_name)
+
+            def undo():
+                database.update_node_name(node_id, current_name)
+
+            self.execute_workspace_command(
+                WorkspaceCommand(
+                    "Rename Node",
+                    do,
+                    undo,
+                    lambda: self.refresh_tree_and_emit_update(
+                        node_id_to_reselect=node_id
+                    ),
+                )
+            )
 
     def set_stats_scope(self, scope, document_id=None):
         self.current_filter_scope = scope
@@ -631,8 +725,39 @@ class NodeTreeManager(QWidget):
                     break
             try:
                 pid = int(self.project_id)
-                database.add_node(pid, name.strip(), parent_id, new_color)
-                self.refresh_tree_and_emit_update(node_id_to_reselect=parent_id)
+                node_id = None
+                snapshot = None
+
+                def do():
+                    nonlocal node_id, snapshot
+                    if snapshot:
+                        workspace_snapshot_repository.restore_node_subtree_snapshot(
+                            snapshot
+                        )
+                    else:
+                        node_id = database.add_node(
+                            pid, name.strip(), parent_id, new_color
+                        )
+                        snapshot = (
+                            workspace_snapshot_repository.get_node_subtree_snapshot(
+                                node_id
+                            )
+                        )
+
+                def undo():
+                    if node_id:
+                        database.delete_node_and_children(node_id)
+
+                self.execute_workspace_command(
+                    WorkspaceCommand(
+                        "Add Node",
+                        do,
+                        undo,
+                        lambda: self.refresh_tree_and_emit_update(
+                            node_id_to_reselect=node_id or parent_id
+                        ),
+                    )
+                )
             except (ValueError, TypeError) as e:
                 QMessageBox.critical(
                     self,
@@ -662,8 +787,24 @@ class NodeTreeManager(QWidget):
         )
 
         if reply == QMessageBox.StandardButton.Yes:
-            database.delete_node_and_children(node_id)
-            self.refresh_tree_and_emit_update(node_id_to_reselect=parent_id_to_reselect)
+            snapshot = workspace_snapshot_repository.get_node_subtree_snapshot(node_id)
+
+            def do():
+                database.delete_node_and_children(node_id)
+
+            def undo():
+                workspace_snapshot_repository.restore_node_subtree_snapshot(snapshot)
+
+            self.execute_workspace_command(
+                WorkspaceCommand(
+                    "Delete Node",
+                    do,
+                    undo,
+                    lambda: self.refresh_tree_and_emit_update(
+                        node_id_to_reselect=parent_id_to_reselect
+                    ),
+                )
+            )
 
     def filter_by_single_node(self, node_id):
         self.filter_by_single_node_signal.emit(node_id)
@@ -699,7 +840,7 @@ class NodeTreeManager(QWidget):
             self.add_node(parent_id=node_id)
         elif action == export_action:
             widget = self.tree_widget.itemWidget(item, 0)
-            self.show_node_export_menu(node_id, widget.export_button)
+            self.show_node_export_menu(node_id, widget.menu_button)
 
     def show_node_export_menu(self, node_id, button):
         menu = QMenu(self)
@@ -717,69 +858,42 @@ class NodeTreeManager(QWidget):
         )
         menu.exec(button.mapToGlobal(button.rect().bottomLeft()))
 
-    def show_excel_export_options(self):
+    def show_excel_export_options(self, node_id=None):
         """
         Displays a dialog box with all available Excel export options.
         This can be called from the node tree context menu or the main menu.
         """
-        node_id = self.get_selected_node_id()
-        # The overall participants export does not need a selected node,
-        # but the other two formats do.
-        is_node_selected = node_id is not None
-
-        msg_box = QMessageBox(self)
-        msg_box.setWindowTitle(
-            get_translation("node_tree.export_excel_option", self.language)
-        )
-        msg_box.setText(
-            get_translation("node_tree.export_excel_question", self.language)
-        )
-        msg_box.setInformativeText(
-            get_translation("node_tree.export_excel_info", self.language)
-        )
-
-        single_sheet_button = msg_box.addButton(
-            get_translation("node_tree.export_excel_single", self.language),
-            QMessageBox.ButtonRole.ActionRole,
-        )
-        single_sheet_button.setEnabled(
-            is_node_selected
-        )  # Disable if no node is selected
-
-        multi_sheet_button = msg_box.addButton(
-            get_translation("node_tree.export_excel_multi", self.language),
-            QMessageBox.ButtonRole.ActionRole,
-        )
-        multi_sheet_button.setEnabled(
-            is_node_selected
-        )  # Disable if no node is selected
-
-        overall_participants_button = msg_box.addButton(
-            get_translation(
-                "node_tree.export_excel_overall_participants", self.language
-            ),
-            QMessageBox.ButtonRole.ActionRole,
-        )
-
-        msg_box.addButton(QMessageBox.StandardButton.Cancel)
-        msg_box.exec()
-
-        clicked_button = msg_box.clickedButton()
-        if clicked_button is None:
+        if node_id is None:
+            node_id = self.get_selected_node_id()
+        participants = database.get_participants_for_project(self.project_id)
+        dialog = ExcelExportDialog(self.language, participants, self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
             return
-        if clicked_button == single_sheet_button:
-            export_node_family_to_excel(self.project_id, node_id, self)
-        elif clicked_button == multi_sheet_button:
-            export_node_family_to_excel_multi_sheet(self.project_id, node_id, self)
-        elif clicked_button == overall_participants_button:
-            export_overall_participants_to_excel(self.project_id, self)
+        selected_mode = dialog.selected_mode()
+        participant_id = dialog.selected_participant_id()
+        if selected_mode == "single":
+            if node_id is None:
+                export_project_to_excel_single_sheet(
+                    self.project_id, self, participant_id=participant_id
+                )
+            else:
+                export_node_family_to_excel(
+                    self.project_id, node_id, self, participant_id=participant_id
+                )
+        elif selected_mode == "multi":
+            if node_id is None:
+                export_to_excel(self.project_id, self, participant_id=participant_id)
+            else:
+                export_node_family_to_excel_multi_sheet(
+                    self.project_id, node_id, self, participant_id=participant_id
+                )
 
     def export_node_family_to_excel_handler(self, node_id):
         """
         This handler is specifically for the right-click context menu.
         It now calls the main dialog function.
         """
-        self.show_excel_export_options()
+        self.show_excel_export_options(node_id=node_id)
 
     def add_root_node(self):
         name, ok = QInputDialog.getText(
@@ -796,8 +910,37 @@ class NodeTreeManager(QWidget):
                     break
             try:
                 pid = int(self.project_id)
-                database.add_node(pid, name.strip(), None, new_color)
-                self.refresh_tree_and_emit_update(node_id_to_reselect=None)
+                node_id = None
+                snapshot = None
+
+                def do():
+                    nonlocal node_id, snapshot
+                    if snapshot:
+                        workspace_snapshot_repository.restore_node_subtree_snapshot(
+                            snapshot
+                        )
+                    else:
+                        node_id = database.add_node(pid, name.strip(), None, new_color)
+                        snapshot = (
+                            workspace_snapshot_repository.get_node_subtree_snapshot(
+                                node_id
+                            )
+                        )
+
+                def undo():
+                    if node_id:
+                        database.delete_node_and_children(node_id)
+
+                self.execute_workspace_command(
+                    WorkspaceCommand(
+                        "Add Root Node",
+                        do,
+                        undo,
+                        lambda: self.refresh_tree_and_emit_update(
+                            node_id_to_reselect=node_id
+                        ),
+                    )
+                )
             except (ValueError, TypeError) as e:
                 QMessageBox.critical(
                     self,
@@ -851,7 +994,7 @@ class NodeTreeManager(QWidget):
         """
         Highlights (selects and scrolls to) the node with the given ID in the tree widget,
         but does NOT trigger filtering or emit any signals. Used for visual highlight only.
-        Also updates the stats style and hides the action buttons on the last item.
+        Also updates the stats style for the highlighted item.
         """
         self.tree_widget.blockSignals(True)
 
@@ -860,15 +1003,12 @@ class NodeTreeManager(QWidget):
         if previous_item:
             prev_widget = self.tree_widget.itemWidget(previous_item, 0)
             if prev_widget:
-                prev_widget.set_icons_visible(False)
                 prev_widget.set_selected_style(False)
 
         it = QTreeWidgetItemIterator(self.tree_widget)
         found_item = None
-        last_item = None
         while it.value():
             item = it.value()
-            last_item = item
             if item.data(0, 1) == node_id:
                 found_item = item
             it += 1
@@ -880,14 +1020,7 @@ class NodeTreeManager(QWidget):
             )
             widget = self.tree_widget.itemWidget(found_item, 0)
             if widget:
-                widget.set_icons_visible(False)
                 widget.set_selected_style(True)
-
-        # Hide the action buttons on the last listview item (if any)
-        if last_item:
-            last_widget = self.tree_widget.itemWidget(last_item, 0)
-            if last_widget:
-                last_widget.set_icons_visible(False)
 
         self.tree_widget.blockSignals(False)
 

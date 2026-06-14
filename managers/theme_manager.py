@@ -1,5 +1,4 @@
 # managers/theme_manager.py
-import json
 import os
 from PySide6.QtGui import QPalette
 from PySide6.QtWidgets import QApplication
@@ -103,12 +102,16 @@ def get_dark_theme_stylesheet():
             selection-color: #ffffff;
             padding: 3px; /* Add some padding inside inputs */
         }
+        QComboBox {
+            padding-right: 16px;
+        }
         QComboBox::drop-down {
             border: none; /* Remove border from dropdown arrow */
             background-color: #363636;
+            width: 14px;
+            subcontrol-origin: padding;
+            subcontrol-position: center right;
         }
-        /* Assuming you have a light arrow icon for dark theme */
-        /* QComboBox::down-arrow { image: url(icons/down_arrow_light.png); } */
         QSplitter::handle {
             background-color: #505050;
             border: none;
@@ -154,9 +157,26 @@ def get_dark_theme_stylesheet():
             background-color: #3a3a3a;
             border: 1px solid #505050;
             color: #f0f0f0;
+            padding: 4px;
+        }
+        QMenu::item {
+            padding: 6px 24px 6px 10px;
+            margin: 1px 0;
+            border-radius: 4px;
         }
         QMenu::item:selected {
             background-color: #2a6096; /* Less contrasting blue for menu selection */
+        }
+        QMenu::separator {
+            height: 1px;
+            background: #505050;
+            margin: 4px 6px;
+        }
+        QToolTip {
+            background-color: #161616;
+            color: #f5f5f5;
+            border: 1px solid #5c5c5c;
+            padding: 4px 6px;
         }
 
         /* Specific style for the NodeItemWidget color button */
@@ -383,12 +403,16 @@ def get_light_theme_stylesheet():
             selection-color: #000000;
             padding: 3px;
         }
+        QComboBox {
+            padding-right: 16px;
+        }
         QComboBox::drop-down {
             border: none;
             background-color: #ffffff;
+            width: 14px;
+            subcontrol-origin: padding;
+            subcontrol-position: center right;
         }
-        /* Assuming you have a dark arrow icon for light theme */
-        /* QComboBox::down-arrow { image: url(icons/down_arrow_dark.png); } */
         QSplitter::handle {
             background-color: #cccccc;
             border: none;
@@ -431,9 +455,26 @@ def get_light_theme_stylesheet():
             background-color: #e0e0e0;
             border: 1px solid #cccccc;
             color: #333333;
+            padding: 4px;
+        }
+        QMenu::item {
+            padding: 6px 24px 6px 10px;
+            margin: 1px 0;
+            border-radius: 4px;
         }
         QMenu::item:selected {
             background-color: #a6d5ff; /* Light blue for menu selection */
+        }
+        QMenu::separator {
+            height: 1px;
+            background: #cccccc;
+            margin: 4px 6px;
+        }
+        QToolTip {
+            background-color: #222222;
+            color: #ffffff;
+            border: 1px solid #666666;
+            padding: 4px 6px;
         }
 
         NodeItemWidget #nodeColorButton {

@@ -24,13 +24,14 @@ class SegmentRepository:
         start: int,
         end: int,
         text_preview: str,
-    ) -> None:
+    ) -> int:
         with get_connection() as conn:
             with conn:
-                conn.execute(
+                cursor = conn.execute(
                     "INSERT INTO coded_segments (document_id, node_id, participant_id, segment_start, segment_end, content_preview) VALUES (?, ?, ?, ?, ?, ?)",
                     (document_id, node_id, participant_id, start, end, text_preview),
                 )
+                return cursor.lastrowid
 
     def get_for_nodes(
         self, project_id: int, node_ids: list[int], document_id: int | None = None

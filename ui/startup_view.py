@@ -9,16 +9,17 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QInputDialog,
     QProgressDialog,
+    QMenu,
 )
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QFont, QPixmap, QKeyEvent
+from PySide6.QtGui import QFont, QPixmap, QKeyEvent, QColor
 from qt_material_icons import MaterialIcon
 from PySide6.QtWidgets import QApplication
 
 import database
 from utils.common import get_resource_path, get_translation
 from ui.workspace.workspace_main_window import WorkspaceMainWindow
-from managers.theme_manager import load_settings
+from managers.theme_manager import load_settings, get_system_theme
 
 
 class ProjectListWidget(QListWidget):
@@ -63,44 +64,59 @@ class ProjectItemWidget(QWidget):
         self.language = load_settings().get("language", "English")
         layout = QHBoxLayout(self)
         layout.setContentsMargins(5, 5, 5, 10)
-        name_label = QLabel(project_name)
-        font = name_label.font()
+        self.name_label = QLabel(project_name)
+        font = self.name_label.font()
         font.setPointSize(12)
-        name_label.setFont(font)
-        # Edit button with pencil icon
-        self.edit_button = QPushButton()
-        pencil_icon = MaterialIcon("edit")
-        self.edit_button.setIcon(pencil_icon)
-        font = self.edit_button.font()
-        font.setPointSize(12)
-        self.edit_button.setFont(font)
-        self.edit_button.setFixedSize(24, 24)
-        self.edit_button.setToolTip(
-            get_translation("startup.rename_project", self.language)
+        self.name_label.setFont(font)
+        self.menu_button = QPushButton()
+        self.menu_icon = MaterialIcon("more_vert")
+        self.menu_button.setIcon(self.menu_icon)
+        self.menu_button.setFixedSize(24, 24)
+        self.menu_button.setToolTip(
+            get_translation("startup.project_actions", self.language)
         )
-        self.edit_button.clicked.connect(self.on_rename_clicked)
-        self.edit_button.setVisible(False)
-        # Delete button with trash icon
-        self.delete_button = QPushButton()
-        trash_icon = MaterialIcon("delete")
-        self.delete_button.setIcon(trash_icon)
-        font = self.delete_button.font()
-        font.setPointSize(12)
-        self.delete_button.setFont(font)
-        self.delete_button.setFixedSize(24, 24)
-        self.delete_button.setToolTip(
-            get_translation("startup.delete_project", self.language)
-        )
-        self.delete_button.clicked.connect(self.on_delete_clicked)
-        self.delete_button.setVisible(False)
-        layout.addWidget(name_label)
+        self.menu_button.clicked.connect(self.show_actions_menu)
+        self.menu_button.setVisible(False)
+        layout.addWidget(self.name_label)
         layout.addStretch()
-        layout.addWidget(self.edit_button)
-        layout.addWidget(self.delete_button)
+        layout.addWidget(self.menu_button)
+        self.set_selected_style(False)
 
     def set_icons_visible(self, visible):
-        self.edit_button.setVisible(visible)
-        self.delete_button.setVisible(visible)
+        self.menu_button.setVisible(visible)
+
+    def set_selected_style(self, is_selected: bool):
+        settings = load_settings()
+        theme = settings.get("theme", "Default")
+        is_dark = get_system_theme() == "Dark" if theme == "Default" else theme == "Dark"
+        selected_fg = "#f0f0f0" if is_dark else "#000000"
+        normal_fg = "#f0f0f0" if is_dark else "#333333"
+        if is_selected:
+            self.name_label.setStyleSheet(f"color: {selected_fg};")
+            self.menu_button.setStyleSheet(f"color: {selected_fg};")
+            self.menu_icon.set_color(QColor(selected_fg))
+        else:
+            self.name_label.setStyleSheet(f"color: {normal_fg};")
+            self.menu_button.setStyleSheet(f"color: {normal_fg};")
+            self.menu_icon.set_color(QColor(normal_fg))
+        self.menu_button.setIcon(self.menu_icon)
+
+    def show_actions_menu(self):
+        menu = QMenu(self.parent_view)
+        menu.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        menu.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, False)
+        menu.setWindowOpacity(1.0)
+        rename_action = menu.addAction(
+            get_translation("startup.rename_project", self.language)
+        )
+        delete_action = menu.addAction(
+            get_translation("startup.delete_project", self.language)
+        )
+        action = menu.exec(self.menu_button.mapToGlobal(self.menu_button.rect().bottomLeft()))
+        if action == rename_action:
+            self.on_rename_clicked()
+        elif action == delete_action:
+            self.on_delete_clicked()
 
     def on_rename_clicked(self):
         self.parent_view.rename_project(self.project_id, self.project_name)
@@ -178,11 +194,13 @@ class StartupView(QWidget):
             widget = self.project_list_widget.itemWidget(previous_item)
             if widget:
                 widget.set_icons_visible(False)
+                widget.set_selected_style(False)
 
         if current_item:
             widget = self.project_list_widget.itemWidget(current_item)
             if widget:
                 widget.set_icons_visible(True)
+                widget.set_selected_style(True)
 
     def load_projects(self):
         self.project_list_widget.currentItemChanged.disconnect(

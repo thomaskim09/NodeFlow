@@ -5,12 +5,14 @@ from PySide6.QtWidgets import (
     QTreeWidgetItem,
     QLineEdit,
     QHBoxLayout,
-    QComboBox,
     QLabel,
     QPushButton,
     QMessageBox,
     QTreeWidgetItemIterator,
     QAbstractItemView,
+    QFrame,
+    QMenu,
+    QHeaderView,
 )
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QKeyEvent, QColor, QIcon
@@ -18,6 +20,9 @@ import database
 from qt_material_icons import MaterialIcon
 from utils.common import get_translation
 from managers.theme_manager import load_settings, get_system_theme
+from repositories.workspace_snapshot_repository import workspace_snapshot_repository
+from services.workspace_history_service import WorkspaceCommand
+from ui.combo_box import FitPopupComboBox
 
 
 class DeletableTreeWidget(QTreeWidget):
@@ -32,12 +37,64 @@ class DeletableTreeWidget(QTreeWidget):
             current_item = self.currentItem()
             if current_item:
                 segment_id = current_item.data(0, 1)
-                preview = current_item.text(0)
+                preview = current_item.text(self.parent_view.preview_column)
                 if segment_id is not None:
                     self.parent_view.confirm_delete_segment(segment_id, preview)
                     event.accept()
                     return
         super().keyPressEvent(event)
+
+
+class ColorSwatch(QFrame):
+    def __init__(self, color_hex: str):
+        super().__init__()
+        self.setFixedSize(14, 14)
+        self.setStyleSheet(
+            f"background-color: {color_hex}; border: 1px solid #888; border-radius: 2px;"
+        )
+
+
+class ColorSwatchCell(QWidget):
+    def __init__(self, color_hex: str, tooltip: str):
+        super().__init__()
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        swatch = ColorSwatch(color_hex)
+        swatch.setToolTip(tooltip)
+        layout.addWidget(swatch)
+
+
+class SegmentActionCell(QWidget):
+    def __init__(self, language, click_handler):
+        super().__init__()
+        self.menu_button = QPushButton()
+        self.menu_icon = MaterialIcon("more_vert")
+        self.menu_button.setIcon(self.menu_icon)
+        self.menu_button.setObjectName("codedSegmentActionButton")
+        self.menu_button.setFixedSize(20, 20)
+        self.menu_button.setToolTip(
+            get_translation("coded_segments.more_actions_tooltip", language)
+        )
+        self.menu_button.clicked.connect(click_handler)
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(self.menu_button)
+        self.set_selected(False)
+
+    def set_selected(self, is_selected: bool):
+        settings = load_settings()
+        theme = settings.get("theme", "Default")
+        is_dark = get_system_theme() == "Dark" if theme == "Default" else theme == "Dark"
+        selected_fg = "#f0f0f0" if is_dark else "#000000"
+        normal_fg = "#d8d8d8" if is_dark else "#222222"
+        current_fg = selected_fg if is_selected else normal_fg
+        self.menu_button.setStyleSheet(f"color: {current_fg};")
+        self.menu_icon.set_color(QColor(current_fg))
+        self.menu_button.setIcon(self.menu_icon)
 
 
 class CodedSegmentsView(QWidget):
@@ -53,6 +110,9 @@ class CodedSegmentsView(QWidget):
         self.segments = []
         self.all_segments = []
         self._last_active_node_filter = None
+        self.undo_executor = None
+        self.color_column = 0
+        self.preview_column = 1
 
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(10, 10, 10, 10)
@@ -64,7 +124,7 @@ class CodedSegmentsView(QWidget):
         font.setBold(True)
         self.header_label.setFont(font)
 
-        self.scope_combo = QComboBox()
+        self.scope_combo = FitPopupComboBox()
         self.scope_combo.addItems(
             [
                 get_translation("coded_segments.scope_current", self.language),
@@ -90,7 +150,7 @@ class CodedSegmentsView(QWidget):
         search_container = QWidget()
         search_container.setLayout(search_layout)
 
-        self.search_scope_combo = QComboBox()
+        self.search_scope_combo = FitPopupComboBox()
         self.search_scope_combo.setToolTip(
             get_translation("coded_segments.search_scope_tooltip", self.language)
         )
@@ -105,6 +165,13 @@ class CodedSegmentsView(QWidget):
         self.tree_widget = DeletableTreeWidget(self)
         self.tree_widget.setRootIsDecorated(False)
         self.tree_widget.setIndentation(0)
+        self.tree_widget.setUniformRowHeights(True)
+        self.tree_widget.setAllColumnsShowFocus(True)
+        self.tree_widget.setHorizontalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
+        header = self.tree_widget.header()
+        header.setSectionsMovable(False)
+        header.setStretchLastSection(False)
+        header.setMinimumSectionSize(24)
         main_layout.addWidget(self.tree_widget)
 
         self.scope_combo.currentTextChanged.connect(self.reload_view)
@@ -118,6 +185,16 @@ class CodedSegmentsView(QWidget):
         )
         self.update_theme(load_settings().get("theme", "Light"))
         self.reload_view()
+
+    def set_undo_executor(self, undo_executor):
+        self.undo_executor = undo_executor
+
+    def execute_workspace_command(self, command: WorkspaceCommand):
+        if self.undo_executor:
+            self.undo_executor(command)
+        else:
+            command.do()
+            command.after_refresh()
 
     def on_segment_activated(self, item: QTreeWidgetItem, column: int):
         segment_id = item.data(0, 1)
@@ -167,61 +244,39 @@ class CodedSegmentsView(QWidget):
 
     def on_selection_changed(self, current, previous):
         if previous:
-            self.tree_widget.setItemWidget(
-                previous, self.tree_widget.columnCount() - 1, None
+            previous_widget = self.tree_widget.itemWidget(
+                previous, self.tree_widget.columnCount() - 1
             )
+            if isinstance(previous_widget, SegmentActionCell):
+                previous_widget.set_selected(False)
 
         if current:
-            segment_id = current.data(0, 1)
-            preview = current.text(0)
-
-            edit_button = QPushButton()
-            edit_icon = MaterialIcon("edit")
-            edit_button.setIcon(edit_icon)
-            edit_button.setObjectName("codedSegmentEditButton")
-            edit_button.setFixedSize(20, 20)
-            edit_button.setToolTip(
-                get_translation("coded_segments.edit_segment_tooltip", self.language)
+            current_widget = self.tree_widget.itemWidget(
+                current, self.tree_widget.columnCount() - 1
             )
-            edit_button.clicked.connect(
-                lambda checked=False, sid=segment_id: self.request_segment_edit(sid)
-            )
+            if isinstance(current_widget, SegmentActionCell):
+                current_widget.set_selected(True)
 
-            delete_button = QPushButton()
-            delete_icon = MaterialIcon("delete")
-            delete_button.setIcon(delete_icon)
-            delete_button.setObjectName("codedSegmentDeleteButton")
-            delete_button.setFixedSize(20, 20)
-            delete_button.setToolTip(
-                get_translation("coded_segments.delete_segment_tooltip", self.language)
+    def show_segment_actions_menu(self, segment_id, preview, source):
+        menu = QMenu(self)
+        edit_action = menu.addAction(
+            get_translation("coded_segments.edit_segment_tooltip", self.language)
+        )
+        delete_action = menu.addAction(
+            get_translation("coded_segments.delete_segment_tooltip", self.language)
+        )
+        button = source
+        if isinstance(source, QTreeWidgetItem):
+            action_widget = self.tree_widget.itemWidget(
+                source, self.tree_widget.columnCount() - 1
             )
-            delete_button.clicked.connect(
-                lambda: self.confirm_delete_segment(segment_id, preview)
-            )
-
-            settings = load_settings()
-            theme = settings.get("theme", "Default")
-            is_dark = get_system_theme() == "Dark" if theme == "Default" else theme == "Dark"
-            selected_fg = "#f0f0f0" if is_dark else "#000000"
-            icon_color = QColor(selected_fg)
-            edit_icon.set_color(icon_color)
-            delete_icon.set_color(icon_color)
-            edit_button.setIcon(edit_icon)
-            delete_button.setIcon(delete_icon)
-
-            button_container = QWidget()
-            button_container.setFixedHeight(20)
-            button_layout = QHBoxLayout(button_container)
-            button_layout.setContentsMargins(0, 0, 0, 0)
-            button_layout.setSpacing(5)
-            button_layout.addStretch()
-            button_layout.addWidget(edit_button)
-            button_layout.addWidget(delete_button)
-            button_layout.addStretch()
-
-            self.tree_widget.setItemWidget(
-                current, self.tree_widget.columnCount() - 1, button_container
-            )
+            if isinstance(action_widget, SegmentActionCell):
+                button = action_widget.menu_button
+        action = menu.exec(button.mapToGlobal(button.rect().bottomLeft()))
+        if action == edit_action:
+            self.request_segment_edit(segment_id)
+        elif action == delete_action:
+            self.confirm_delete_segment(segment_id, preview)
 
     def confirm_delete_segment(self, segment_id, segment_preview):
         current_item = self.tree_widget.currentItem()
@@ -240,12 +295,24 @@ class CodedSegmentsView(QWidget):
             QMessageBox.StandardButton.No,
         )
         if reply == QMessageBox.StandardButton.Yes:
-            database.delete_coded_segment(segment_id)
-            self.all_segments = [s for s in self.all_segments if s["id"] != segment_id]
-            (current_item.parent() or self.tree_widget.invisibleRootItem()).removeChild(
-                current_item
+            snapshot = workspace_snapshot_repository.get_segment(segment_id)
+            if not snapshot:
+                return
+
+            def do():
+                database.delete_coded_segment(segment_id)
+
+            def undo():
+                workspace_snapshot_repository.restore_segment(snapshot)
+
+            self.execute_workspace_command(
+                WorkspaceCommand(
+                    "Delete Coded Segment",
+                    do,
+                    undo,
+                    lambda: (self.reload_view(), self.segment_deleted.emit()),
+                )
             )
-            self.segment_deleted.emit()
 
     def request_segment_edit(self, segment_id):
         if segment_id is None:
@@ -295,16 +362,14 @@ class CodedSegmentsView(QWidget):
 
         if scope == "Current Document":
             headers = [
+                "",
                 get_translation("coded_segments.col_coded_text", self.language),
                 get_translation("coded_segments.col_node", self.language),
                 get_translation("coded_segments.col_participant", self.language),
                 "",
             ]
             self.tree_widget.setHeaderLabels(headers)
-            self.tree_widget.setColumnWidth(0, 300)
-            self.tree_widget.setColumnWidth(1, 150)
-            self.tree_widget.setColumnWidth(2, 150)
-            self.tree_widget.setColumnWidth(3, 50)
+            self._configure_columns(is_entire_project=False)
             self.search_scope_combo.clear()
             self.search_scope_combo.addItems(
                 [
@@ -320,6 +385,7 @@ class CodedSegmentsView(QWidget):
                 )
         elif scope == "Entire Project":
             headers = [
+                "",
                 get_translation("coded_segments.col_coded_text", self.language),
                 get_translation("coded_segments.col_node", self.language),
                 get_translation("coded_segments.col_participant", self.language),
@@ -327,11 +393,7 @@ class CodedSegmentsView(QWidget):
                 "",
             ]
             self.tree_widget.setHeaderLabels(headers)
-            self.tree_widget.setColumnWidth(0, 300)
-            self.tree_widget.setColumnWidth(1, 150)
-            self.tree_widget.setColumnWidth(2, 150)
-            self.tree_widget.setColumnWidth(3, 200)
-            self.tree_widget.setColumnWidth(4, 50)
+            self._configure_columns(is_entire_project=True)
             self.search_scope_combo.clear()
             self.search_scope_combo.addItems(
                 [
@@ -353,6 +415,28 @@ class CodedSegmentsView(QWidget):
         else:
             self.filter_tree()
 
+    def _configure_columns(self, is_entire_project: bool):
+        header = self.tree_widget.header()
+        action_column = 5 if is_entire_project else 4
+
+        header.setSectionResizeMode(self.color_column, QHeaderView.ResizeMode.Fixed)
+        header.resizeSection(self.color_column, 48)
+
+        header.setSectionResizeMode(self.preview_column, QHeaderView.ResizeMode.Stretch)
+
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+        header.resizeSection(2, 140)
+
+        header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
+        header.resizeSection(3, 120)
+
+        if is_entire_project:
+            header.setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
+            header.resizeSection(4, 180)
+
+        header.setSectionResizeMode(action_column, QHeaderView.ResizeMode.Fixed)
+        header.resizeSection(action_column, 34)
+
     def populate_tree(self, segments):
         is_entire_project = self.scope_combo.currentText() == get_translation(
             "coded_segments.scope_project", self.language
@@ -373,15 +457,30 @@ class CodedSegmentsView(QWidget):
             )
 
             item_data = [
+                "",
                 preview,
                 segment["node_name"],
                 participant_name,
             ]
             if is_entire_project:
                 item_data.append(segment["document_title"])
+            item_data.append("")
 
             item = QTreeWidgetItem(self.tree_widget, item_data)
             item.setData(0, 1, segment["id"])
+            item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsDropEnabled)
+            item.setTextAlignment(self.color_column, Qt.AlignmentFlag.AlignCenter)
+            swatch = ColorSwatchCell(segment["node_color"], segment["node_name"])
+            self.tree_widget.setItemWidget(item, self.color_column, swatch)
+            action_widget = SegmentActionCell(
+                self.language,
+                lambda checked=False, sid=segment["id"], seg_preview=preview, tree_item=item: self.show_segment_actions_menu(
+                    sid, seg_preview, tree_item
+                ),
+            )
+            self.tree_widget.setItemWidget(
+                item, self.tree_widget.columnCount() - 1, action_widget
+            )
 
     def filter_tree(self):
         self._last_active_node_filter = None

@@ -6,7 +6,7 @@ from typing import Any
 
 from utils.app_paths import get_settings_path
 
-DEFAULT_SETTINGS = {"theme": "Default", "language": "English"}
+DEFAULT_SETTINGS = {"theme": "Default", "language": "English", "undo_depth": 100}
 
 
 class SettingsService:

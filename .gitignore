@@ -12,6 +12,7 @@ __pycache__/
 # IDE/Editor specific files
 .vscode/
 .idea/
+.codegraph/
 
 # PyInstaller build files
 dist/

@@ -11,7 +11,6 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QTabWidget,
     QWidget,
-    QComboBox,
     QMenu,
     QHeaderView,
     QFrame,
@@ -33,6 +32,7 @@ from qt_material_icons import MaterialIcon
 from utils.common import get_translation
 from services.dashboard_service import DashboardQuery, dashboard_service
 from services.worker_service import TaskThread
+from ui.combo_box import FitPopupComboBox
 
 
 class DashboardView(QDialog):
@@ -95,7 +95,7 @@ class DashboardView(QDialog):
             get_translation("dashboard.document_scope", self.language)
         )
         doc_scope_layout.addWidget(self.doc_scope_label)
-        self.doc_scope_combo = QComboBox()
+        self.doc_scope_combo = FitPopupComboBox()
         self.doc_scope_combo.addItem(
             get_translation("dashboard.project_total", self.language), -1
         )
@@ -108,7 +108,7 @@ class DashboardView(QDialog):
             get_translation("dashboard.participant_scope", self.language)
         )
         part_scope_layout.addWidget(self.part_scope_label)
-        self.part_scope_combo = QComboBox()
+        self.part_scope_combo = FitPopupComboBox()
         self.part_scope_combo.addItem(
             get_translation("dashboard.all_participants", self.language), -1
         )
@@ -121,14 +121,14 @@ class DashboardView(QDialog):
             get_translation("dashboard.node_scope", self.language)
         )
         node_scope_layout.addWidget(self.node_scope_label)
-        self.node_scope_combo = QComboBox()
+        self.node_scope_combo = FitPopupComboBox()
         node_scope_layout.addWidget(self.node_scope_combo)
 
         theme_layout = QHBoxLayout()
         self.dashboard_theme_label = QLabel(
             get_translation("dashboard.theme_label", self.language)
         )
-        self.dashboard_theme_combo = QComboBox()
+        self.dashboard_theme_combo = FitPopupComboBox()
         self.dashboard_theme_combo.addItems(
             [
                 get_translation("dashboard.theme_dark", self.language),

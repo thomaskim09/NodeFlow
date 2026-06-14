@@ -2,9 +2,9 @@ from PySide6.QtWidgets import (
     QWidget,
     QVBoxLayout,
     QHBoxLayout,
-    QComboBox,
     QPushButton,
     QTextEdit,
+    QLineEdit,
     QFileDialog,
     QMessageBox,
     QDialog,
@@ -14,14 +14,19 @@ from PySide6.QtWidgets import (
     QFrame,
     QStackedLayout,
     QInputDialog,
+    QMenu,
+    QToolTip,
 )
-from PySide6.QtCore import Qt, Signal, QSize
+from PySide6.QtCore import Qt, Signal, QSize, QPoint
 from PySide6.QtGui import (
+    QAction,
     QTextCursor,
     QColor,
     QTextDocument,
     QFont,
     QIcon,
+    QKeySequence,
+    QShortcut,
 )
 import os
 import database
@@ -35,6 +40,21 @@ from utils.common import get_translation
 from services.import_service import import_service
 from services.settings_service import settings_service
 from services.worker_service import TaskThread
+from repositories.workspace_snapshot_repository import workspace_snapshot_repository
+from services.workspace_history_service import WorkspaceCommand
+from ui.combo_box import FitPopupComboBox
+
+
+class InstantToolTipButton(QPushButton):
+    def enterEvent(self, event):
+        if self.toolTip():
+            anchor = self.mapToGlobal(self.rect().center()) + QPoint(0, 12)
+            QToolTip.showText(anchor, self.toolTip(), self, self.rect())
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        QToolTip.hideText()
+        super().leaveEvent(event)
 
 
 class ContentView(QWidget):
@@ -61,6 +81,9 @@ class ContentView(QWidget):
         self._coded_segments_cache = []
         self._pending_highlight = None
         self._import_thread = None
+        self._excel_import_before_ids = None
+        self.undo_executor = None
+        self.applied_command_recorder = None
         self.setAcceptDrops(True)
         main_layout = QVBoxLayout(self)
         top_bar_layout = QHBoxLayout()
@@ -70,16 +93,16 @@ class ContentView(QWidget):
         font = self.title_label.font()
         font.setBold(True)
         self.title_label.setFont(font)
-        self.doc_selector = QComboBox()
+        self.doc_selector = FitPopupComboBox()
         self.doc_selector.setMinimumWidth(300)
 
-        self.import_button = QPushButton()
+        self.import_button = InstantToolTipButton()
         self.import_icon = MaterialIcon("upload")
         self.import_button.setIcon(self.import_icon)
         self.import_button.setToolTip(
             get_translation("content_view.import_tooltip", self.language)
         )
-        self.save_button = QPushButton()
+        self.save_button = InstantToolTipButton()
         self.save_icon = MaterialIcon("save")
         self.save_button.setIcon(self.save_icon)
         self.save_button.setToolTip(
@@ -88,7 +111,33 @@ class ContentView(QWidget):
         self.save_button.setFixedSize(28, 28)
         self.save_button.setIconSize(QSize(16, 16))
         self.save_button.setEnabled(False)
-        self.delete_button = QPushButton()
+        self.undo_button = InstantToolTipButton()
+        self.undo_icon = MaterialIcon("undo")
+        self.undo_button.setIcon(self.undo_icon)
+        self.undo_button.setToolTip(
+            get_translation("content_view.undo_tooltip", self.language)
+        )
+        self.undo_button.setFixedSize(28, 28)
+        self.undo_button.setIconSize(QSize(16, 16))
+        self.undo_button.setEnabled(False)
+        self.redo_button = InstantToolTipButton()
+        self.redo_icon = MaterialIcon("redo")
+        self.redo_button.setIcon(self.redo_icon)
+        self.redo_button.setToolTip(
+            get_translation("content_view.redo_tooltip", self.language)
+        )
+        self.redo_button.setFixedSize(28, 28)
+        self.redo_button.setIconSize(QSize(16, 16))
+        self.redo_button.setEnabled(False)
+        self.find_button = InstantToolTipButton()
+        self.find_icon = MaterialIcon("search")
+        self.find_button.setIcon(self.find_icon)
+        self.find_button.setToolTip(
+            get_translation("content_view.find_tooltip", self.language)
+        )
+        self.find_button.setFixedSize(28, 28)
+        self.find_button.setIconSize(QSize(16, 16))
+        self.delete_button = InstantToolTipButton()
         self.delete_icon = MaterialIcon("delete")
         self.delete_button.setIcon(self.delete_icon)
         self.delete_button.setToolTip(
@@ -96,7 +145,7 @@ class ContentView(QWidget):
         )
         self.delete_button.setFixedSize(28, 28)
         self.delete_button.setIconSize(QSize(16, 16))
-        self.export_annotated_button = QPushButton()
+        self.export_annotated_button = InstantToolTipButton()
         self.export_annotated_icon = MaterialIcon("description")
         self.export_annotated_button.setIcon(self.export_annotated_icon)
         self.export_annotated_button.setToolTip(
@@ -106,6 +155,89 @@ class ContentView(QWidget):
         self.export_annotated_button.setIconSize(QSize(16, 16))
         self.import_button.setFixedSize(28, 28)
         self.import_button.setIconSize(QSize(16, 16))
+        self.document_menu_button = InstantToolTipButton()
+        self.document_menu_icon = MaterialIcon("more_vert")
+        self.document_menu_button.setIcon(self.document_menu_icon)
+        self.document_menu_button.setToolTip(
+            get_translation("content_view.document_actions_tooltip", self.language)
+        )
+        self.document_menu_button.setFixedSize(28, 28)
+        self.document_menu_button.setIconSize(QSize(16, 16))
+        self.document_menu = QMenu(self)
+        self.import_action = QAction(
+            get_translation("content_view.import_tooltip", self.language), self
+        )
+        self.export_annotated_action = QAction(
+            get_translation("content_view.export_annotated_tooltip", self.language), self
+        )
+        self.delete_document_action = QAction(
+            get_translation("content_view.delete_tooltip", self.language), self
+        )
+        self.document_menu.addAction(self.import_action)
+        self.document_menu.addAction(self.export_annotated_action)
+        self.document_menu.addAction(self.delete_document_action)
+
+        self.find_bar = QFrame()
+        self.find_bar.setObjectName("findBar")
+        find_bar_layout = QHBoxLayout(self.find_bar)
+        find_bar_layout.setContentsMargins(5, 2, 5, 2)
+        find_bar_layout.setSpacing(6)
+        self.find_input = QLineEdit()
+        self.find_input.setPlaceholderText(
+            get_translation("content_view.find_placeholder", self.language)
+        )
+        self.find_input.setMinimumWidth(180)
+        self.replace_input = QLineEdit()
+        self.replace_input.setPlaceholderText(
+            get_translation("content_view.replace_placeholder", self.language)
+        )
+        self.replace_input.setMinimumWidth(180)
+        self.find_previous_button = QPushButton(
+            get_translation("content_view.find_previous", self.language)
+        )
+        self.find_previous_button.setFixedWidth(92)
+        self.find_next_button = QPushButton(
+            get_translation("content_view.find_next", self.language)
+        )
+        self.find_next_button.setFixedWidth(92)
+        self.replace_button = QPushButton(
+            get_translation("content_view.replace_one", self.language)
+        )
+        self.replace_button.setFixedWidth(92)
+        self.replace_all_button = QPushButton(
+            get_translation("content_view.replace_all", self.language)
+        )
+        self.replace_all_button.setFixedWidth(150)
+        self.find_count_label = QLabel("")
+        self.find_count_label.setFixedWidth(130)
+        self.find_count_label.setAlignment(
+            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+        )
+        self.find_status_label = QLabel("")
+        self.find_status_label.setFixedWidth(150)
+        self.find_status_label.setAlignment(
+            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+        )
+        self.find_close_button = QPushButton()
+        self.find_close_icon = MaterialIcon("close")
+        self.find_close_button.setIcon(self.find_close_icon)
+        self.find_close_button.setToolTip(
+            get_translation("content_view.find_close", self.language)
+        )
+        self.find_close_button.setFixedSize(28, 28)
+        self.find_close_button.setIconSize(QSize(16, 16))
+        find_bar_layout.addWidget(self.find_input, 1)
+        find_bar_layout.addWidget(self.replace_input, 1)
+        find_bar_layout.addWidget(self.find_previous_button)
+        find_bar_layout.addWidget(self.find_next_button)
+        find_bar_layout.addWidget(self.replace_button)
+        find_bar_layout.addWidget(self.replace_all_button)
+        find_bar_layout.addStretch()
+        find_bar_layout.addSpacing(12)
+        find_bar_layout.addWidget(self.find_count_label)
+        find_bar_layout.addWidget(self.find_status_label)
+        find_bar_layout.addWidget(self.find_close_button)
+        self.find_bar.setVisible(False)
 
         self.text_edit = QTextEdit()
         self.text_edit.setReadOnly(False)
@@ -149,10 +281,11 @@ class ContentView(QWidget):
         top_bar_layout.addWidget(self.title_label)
         top_bar_layout.addWidget(self.doc_selector)
         top_bar_layout.addStretch()
-        top_bar_layout.addWidget(self.import_button)
+        top_bar_layout.addWidget(self.undo_button)
+        top_bar_layout.addWidget(self.redo_button)
+        top_bar_layout.addWidget(self.find_button)
         top_bar_layout.addWidget(self.save_button)
-        top_bar_layout.addWidget(self.export_annotated_button)
-        top_bar_layout.addWidget(self.delete_button)
+        top_bar_layout.addWidget(self.document_menu_button)
 
         # Edit Mode Bar
         self.edit_bar = QFrame()
@@ -175,14 +308,19 @@ class ContentView(QWidget):
         self.edit_bar.setVisible(False)
 
         main_layout.addLayout(top_bar_layout)
+        main_layout.addWidget(self.find_bar)
         main_layout.addWidget(self.edit_bar)
         main_layout.addLayout(self.stacked_layout)
         main_layout.addWidget(info_bar)
 
-        self.import_button.clicked.connect(self.open_import_dialog)
+        self.import_action.triggered.connect(self.open_import_dialog)
+        self.undo_button.clicked.connect(self.text_edit.undo)
+        self.redo_button.clicked.connect(self.text_edit.redo)
+        self.find_button.clicked.connect(self.show_find_bar)
         self.save_button.clicked.connect(self.save_document)
-        self.export_annotated_button.clicked.connect(self.export_annotated)
-        self.delete_button.clicked.connect(self.delete_current_document)
+        self.document_menu_button.clicked.connect(self.show_document_actions_menu)
+        self.export_annotated_action.triggered.connect(self.export_annotated)
+        self.delete_document_action.triggered.connect(self.delete_current_document)
         self.text_edit.selectionChanged.connect(self.on_edit_selection_changed)
         self.save_edit_button.clicked.connect(self.save_segment_edit)
         self.cancel_edit_button.clicked.connect(self.cancel_segment_edit)
@@ -190,8 +328,204 @@ class ContentView(QWidget):
         self.text_edit.textChanged.connect(self.on_text_changed)
         self.text_edit.cursorPositionChanged.connect(self.on_cursor_position_changed)
         self.text_edit.selectionChanged.connect(self.on_selection_changed_for_coding)
+        self.find_input.returnPressed.connect(self.find_next)
+        self.replace_input.returnPressed.connect(self.replace_current)
+        self.find_previous_button.clicked.connect(self.find_previous)
+        self.find_next_button.clicked.connect(self.find_next)
+        self.replace_button.clicked.connect(self.replace_current)
+        self.replace_all_button.clicked.connect(self.replace_all)
+        self.find_close_button.clicked.connect(self.hide_find_bar)
+        self.find_input.textChanged.connect(self.clear_find_status)
+        self.replace_input.textChanged.connect(self.clear_find_status)
+        self.find_input.textChanged.connect(self.update_match_count)
+        self.find_shortcut = QShortcut(QKeySequence.StandardKey.Find, self)
+        self.find_shortcut.activated.connect(self.show_find_bar)
+        self.find_close_shortcut = QShortcut(QKeySequence(Qt.Key.Key_Escape), self.find_bar)
+        self.find_close_shortcut.activated.connect(self.hide_find_bar)
+        self.text_edit.undoAvailable.connect(self.undo_button.setEnabled)
+        self.text_edit.redoAvailable.connect(self.redo_button.setEnabled)
         self.load_document_list()
         self.update_theme(load_settings().get("theme", "Light"))
+
+    def set_undo_executor(self, undo_executor):
+        self.undo_executor = undo_executor
+
+    def set_applied_command_recorder(self, applied_command_recorder):
+        self.applied_command_recorder = applied_command_recorder
+
+    def execute_workspace_command(self, command: WorkspaceCommand):
+        if self.undo_executor:
+            self.undo_executor(command)
+        else:
+            command.do()
+            command.after_refresh()
+
+    def record_applied_command(self, command: WorkspaceCommand):
+        if self.applied_command_recorder:
+            self.applied_command_recorder(command)
+
+    def show_find_bar(self):
+        self.find_bar.setVisible(True)
+        selected_text = self.text_edit.textCursor().selectedText().replace("\u2029", "\n")
+        if selected_text and "\n" not in selected_text:
+            self.find_input.setText(selected_text)
+        self.clear_find_status()
+        self.update_match_count()
+        self.find_input.setFocus()
+        self.find_input.selectAll()
+
+    def hide_find_bar(self):
+        self.find_bar.setVisible(False)
+        self.clear_find_status()
+        self.find_count_label.setText("")
+        self.text_edit.setFocus()
+
+    def show_document_actions_menu(self):
+        self.document_menu.popup(
+            self.document_menu_button.mapToGlobal(
+                self.document_menu_button.rect().bottomLeft()
+            )
+        )
+
+    def clear_find_status(self):
+        self.find_status_label.setText("")
+
+    def update_match_count(self):
+        search_text = self.find_input.text()
+        if not search_text:
+            self.find_count_label.setText("")
+            return 0
+        count = self.text_edit.toPlainText().count(search_text)
+        self.find_count_label.setText(
+            get_translation("content_view.find_match_count", self.language, count=count)
+        )
+        return count
+
+    def _find_text(self, backward=False):
+        search_text = self.find_input.text()
+        if not search_text:
+            self.find_status_label.setText(
+                get_translation("content_view.find_enter_text", self.language)
+            )
+            return False
+
+        flags = QTextDocument.FindFlag(0)
+        if backward:
+            flags |= QTextDocument.FindFlag.FindBackward
+
+        found = self.text_edit.find(search_text, flags)
+        if found:
+            self.find_status_label.setText("")
+            return True
+
+        cursor = self.text_edit.textCursor()
+        if backward:
+            cursor.movePosition(QTextCursor.MoveOperation.End)
+        else:
+            cursor.movePosition(QTextCursor.MoveOperation.Start)
+        self.text_edit.setTextCursor(cursor)
+        found = self.text_edit.find(search_text, flags)
+        if found:
+            self.find_status_label.setText("")
+            return True
+
+        self.find_status_label.setText(
+            get_translation("content_view.find_not_found", self.language)
+        )
+        return False
+
+    def find_next(self):
+        self._find_text(backward=False)
+
+    def find_previous(self):
+        self._find_text(backward=True)
+
+    def replace_current(self):
+        search_text = self.find_input.text()
+        if not search_text:
+            self.find_status_label.setText(
+                get_translation("content_view.find_enter_text", self.language)
+            )
+            return
+
+        cursor = self.text_edit.textCursor()
+        selected_text = cursor.selectedText().replace("\u2029", "\n")
+        if selected_text != search_text and not self._find_text(backward=False):
+            return
+        reply = QMessageBox.question(
+            self,
+            get_translation("content_view.replace_confirm_title", self.language),
+            get_translation(
+                "content_view.replace_confirm_message",
+                self.language,
+                search=search_text,
+                replacement=self.replace_input.text(),
+            ),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        cursor = self.text_edit.textCursor()
+        cursor.insertText(self.replace_input.text())
+        self.text_edit.setTextCursor(cursor)
+        self.apply_all_highlights()
+        self.find_status_label.setText(
+            get_translation("content_view.replace_done", self.language)
+        )
+        self.update_match_count()
+        self.find_next()
+
+    def replace_all(self):
+        search_text = self.find_input.text()
+        if not search_text:
+            self.find_status_label.setText(
+                get_translation("content_view.find_enter_text", self.language)
+            )
+            return
+
+        replacement = self.replace_input.text()
+        count = self.update_match_count()
+        if count == 0:
+            self.find_status_label.setText(
+                get_translation("content_view.find_not_found", self.language)
+            )
+            return
+        reply = QMessageBox.question(
+            self,
+            get_translation("content_view.replace_all_confirm_title", self.language),
+            get_translation(
+                "content_view.replace_all_confirm_message",
+                self.language,
+                count=count,
+                search=search_text,
+                replacement=replacement,
+            ),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+
+        cursor = self.text_edit.textCursor()
+        cursor.beginEditBlock()
+        cursor.movePosition(QTextCursor.MoveOperation.Start)
+        self.text_edit.setTextCursor(cursor)
+
+        replaced_count = 0
+        while self.text_edit.find(search_text):
+            replace_cursor = self.text_edit.textCursor()
+            replace_cursor.insertText(replacement)
+            replaced_count += 1
+        cursor.endEditBlock()
+
+        self.apply_all_highlights()
+        self.find_status_label.setText(
+            get_translation(
+                "content_view.replace_all_done", self.language, count=replaced_count
+            )
+        )
+        self.update_match_count()
 
     def _select_and_scroll(self, start, end):
         cursor = self.text_edit.textCursor()
@@ -261,12 +595,30 @@ class ContentView(QWidget):
         new_end = cursor.selectionEnd()
         new_text = cursor.selectedText()
 
-        database.update_coded_segment(
-            self.editing_segment_id, new_start, new_end, new_text
-        )
+        segment_id = self.editing_segment_id
+        old_segment = workspace_snapshot_repository.get_segment(segment_id)
+        if not old_segment:
+            return
 
-        self.end_segment_edit_mode()
-        self.segments_changed.emit()
+        def do():
+            database.update_coded_segment(segment_id, new_start, new_end, new_text)
+
+        def undo():
+            database.update_coded_segment(
+                segment_id,
+                old_segment["segment_start"],
+                old_segment["segment_end"],
+                old_segment["content_preview"],
+            )
+
+        self.execute_workspace_command(
+            WorkspaceCommand(
+                "Edit Coded Segment",
+                do,
+                undo,
+                lambda: (self.end_segment_edit_mode(), self.segments_changed.emit()),
+            )
+        )
 
         self.is_dirty = False
         self.text_edit.document().setModified(False)
@@ -274,7 +626,7 @@ class ContentView(QWidget):
         # Find the updated segment in the cache (after highlights are reapplied)
         for segment in self._coded_segments_cache:
             if (
-                segment["id"] == self.editing_segment_id
+                segment["id"] == segment_id
                 and segment["segment_start"] == new_start
                 and segment["segment_end"] == new_end
             ):
@@ -337,6 +689,9 @@ class ContentView(QWidget):
             QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
             self._import_thread = TaskThread(
                 excel_import_manager.import_data, self.project_id, file_path, mappings
+            )
+            self._excel_import_before_ids = (
+                workspace_snapshot_repository.get_project_entity_ids(self.project_id)
             )
             self._import_thread.succeeded.connect(
                 lambda result, filename=os.path.basename(file_path): self._finish_excel_import(
@@ -402,15 +757,10 @@ class ContentView(QWidget):
                         "You must create at least one participant to import documents.",
                     )
                     return
-                database.add_participant(self.project_id, name.strip())
-                participants = database.get_participants_for_project(self.project_id)
-                if not participants:
-                    QMessageBox.critical(
-                        self,
-                        "Error",
-                        "Failed to create participant. Please try again.",
-                    )
-                    return
+                self._import_and_add_document_with_new_participant(
+                    name.strip(), title, content
+                )
+                return
             if len(participants) == 1:
                 self._import_and_add_document(participants[0]["id"], title, content)
             else:
@@ -486,13 +836,81 @@ class ContentView(QWidget):
         self.handle_document_switch(new_index)
 
     def _import_and_add_document(self, participant_id, title, content):
-        try:
-            new_doc_id = database.add_document(
-                self.project_id, title, content, participant_id
-            )
+        new_doc_id = None
+        snapshot = None
+
+        def do():
+            nonlocal new_doc_id, snapshot
+            if snapshot:
+                workspace_snapshot_repository.restore_document_snapshot(snapshot)
+            else:
+                new_doc_id = database.add_document(
+                    self.project_id, title, content, participant_id
+                )
+                snapshot = workspace_snapshot_repository.get_document_snapshot(
+                    new_doc_id
+                )
+
+        def undo():
+            if new_doc_id:
+                database.delete_document(new_doc_id)
+
+        def after_refresh():
             self.is_dirty = False
             self.save_button.setEnabled(False)
             self.document_added.emit(new_doc_id)
+
+        try:
+            self.execute_workspace_command(
+                WorkspaceCommand("Import Document", do, undo, after_refresh)
+            )
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to import file: {e}")
+
+    def _import_and_add_document_with_new_participant(self, participant_name, title, content):
+        participant_id = None
+        document_id = None
+        participant_snapshot = None
+        document_snapshot = None
+
+        def do():
+            nonlocal participant_id, document_id, participant_snapshot, document_snapshot
+            if participant_snapshot and document_snapshot:
+                workspace_snapshot_repository.restore_participant_snapshot(
+                    participant_snapshot
+                )
+                workspace_snapshot_repository.restore_document_snapshot(document_snapshot)
+            else:
+                participant_id = database.add_participant(
+                    self.project_id, participant_name
+                )
+                document_id = database.add_document(
+                    self.project_id, title, content, participant_id
+                )
+                participant_snapshot = (
+                    workspace_snapshot_repository.get_participant_snapshot(
+                        participant_id
+                    )
+                )
+                document_snapshot = workspace_snapshot_repository.get_document_snapshot(
+                    document_id
+                )
+
+        def undo():
+            if document_id:
+                database.delete_document(document_id)
+            if participant_id:
+                database.delete_participant(participant_id)
+
+        def after_refresh():
+            self.is_dirty = False
+            self.save_button.setEnabled(False)
+            self.document_added.emit(document_id)
+
+        try:
+            self.execute_workspace_command(
+                WorkspaceCommand("Import Document", do, undo, after_refresh)
+            )
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to import file: {e}")
 
@@ -509,23 +927,54 @@ class ContentView(QWidget):
             QMessageBox.StandardButton.No,
         )
         if reply == QMessageBox.StandardButton.Yes:
-            self.is_dirty = False
-            database.delete_document(self.current_document_id)
-            self.document_deleted.emit()
+            document_id = self.current_document_id
+            snapshot = workspace_snapshot_repository.get_document_snapshot(document_id)
+            if not snapshot:
+                return
+
+            def do():
+                database.delete_document(document_id)
+
+            def undo():
+                workspace_snapshot_repository.restore_document_snapshot(snapshot)
+
+            def after_refresh():
+                self.is_dirty = False
+                self.document_deleted.emit()
+
+            self.execute_workspace_command(
+                WorkspaceCommand("Delete Document", do, undo, after_refresh)
+            )
 
     def on_text_changed(self):
         if not self.text_edit.isReadOnly():
             self.is_dirty = True
             self.save_button.setEnabled(True)
+            if self.find_bar.isVisible():
+                self.update_match_count()
 
     def save_document(self, show_success_prompt=True):
         if not self.is_dirty or not self.current_document_id:
             return
-        database.update_document_text_only(
-            self.current_document_id, self.text_edit.toPlainText()
+        document_id = self.current_document_id
+        old_content, _ = database.get_document_content(document_id)
+        new_content = self.text_edit.toPlainText()
+
+        def do():
+            database.update_document_text_only(document_id, new_content)
+
+        def undo():
+            database.update_document_text_only(document_id, old_content)
+
+        def after_refresh():
+            self.load_document_content()
+            self.segments_changed.emit()
+            self.is_dirty = False
+            self.save_button.setEnabled(False)
+
+        self.execute_workspace_command(
+            WorkspaceCommand("Save Document Text", do, undo, after_refresh)
         )
-        self.is_dirty = False
-        self.save_button.setEnabled(False)
         if show_success_prompt:
             QMessageBox.information(
                 self, "Success", "Document text saved successfully."
@@ -615,12 +1064,16 @@ class ContentView(QWidget):
                 self._pending_highlight = None
 
             self.text_edit.textChanged.connect(self.on_text_changed)
+            self.clear_find_status()
+            self.update_match_count()
         finally:
             QApplication.restoreOverrideCursor()
 
     def _finish_excel_import(self, filename, result):
         QApplication.restoreOverrideCursor()
         docs_imported, errors = result
+        if docs_imported > 0:
+            self._record_excel_import_command()
         if docs_imported > 0:
             self.bulk_documents_added.emit()
         summary_message = (
@@ -640,8 +1093,53 @@ class ContentView(QWidget):
 
     def _handle_background_error(self, error_tuple):
         QApplication.restoreOverrideCursor()
+        self._excel_import_before_ids = None
         _, error, _ = error_tuple
         QMessageBox.critical(self, "Error", str(error))
+
+    def _record_excel_import_command(self):
+        if self._excel_import_before_ids is None:
+            return
+        before_ids = self._excel_import_before_ids
+        self._excel_import_before_ids = None
+        after_ids = workspace_snapshot_repository.get_project_entity_ids(self.project_id)
+        document_ids = sorted(after_ids["documents"] - before_ids["documents"])
+        participant_ids = sorted(
+            after_ids["participants"] - before_ids["participants"]
+        )
+        document_snapshots = [
+            workspace_snapshot_repository.get_document_snapshot(document_id)
+            for document_id in document_ids
+        ]
+        participant_snapshots = [
+            workspace_snapshot_repository.get_participant_snapshot(participant_id)
+            for participant_id in participant_ids
+        ]
+        document_snapshots = [snapshot for snapshot in document_snapshots if snapshot]
+        participant_snapshots = [
+            snapshot for snapshot in participant_snapshots if snapshot
+        ]
+
+        def do():
+            for snapshot in participant_snapshots:
+                workspace_snapshot_repository.restore_participant_snapshot(snapshot)
+            for snapshot in document_snapshots:
+                workspace_snapshot_repository.restore_document_snapshot(snapshot)
+
+        def undo():
+            for snapshot in reversed(document_snapshots):
+                database.delete_document(snapshot["document"]["id"])
+            for snapshot in reversed(participant_snapshots):
+                database.delete_participant(snapshot["participant"]["id"])
+
+        self.record_applied_command(
+            WorkspaceCommand(
+                "Import Excel Documents",
+                do,
+                undo,
+                self.bulk_documents_added.emit,
+            )
+        )
 
     def apply_all_highlights(self):
         self.text_edit.blockSignals(True)
@@ -745,16 +1243,58 @@ class ContentView(QWidget):
         self.import_button.setToolTip(
             get_translation("content_view.import_tooltip", self.language)
         )
+        self.import_action.setText(
+            get_translation("content_view.import_tooltip", self.language)
+        )
+        self.undo_button.setToolTip(
+            get_translation("content_view.undo_tooltip", self.language)
+        )
+        self.redo_button.setToolTip(
+            get_translation("content_view.redo_tooltip", self.language)
+        )
+        self.find_button.setToolTip(
+            get_translation("content_view.find_tooltip", self.language)
+        )
         self.save_button.setToolTip(
             get_translation("content_view.save_tooltip", self.language)
         )
         self.delete_button.setToolTip(
             get_translation("content_view.delete_tooltip", self.language)
         )
+        self.delete_document_action.setText(
+            get_translation("content_view.delete_tooltip", self.language)
+        )
         self.export_annotated_button.setToolTip(
             get_translation("content_view.export_annotated_tooltip", self.language)
         )
+        self.export_annotated_action.setText(
+            get_translation("content_view.export_annotated_tooltip", self.language)
+        )
+        self.document_menu_button.setToolTip(
+            get_translation("content_view.document_actions_tooltip", self.language)
+        )
         self.drop_text_label.setText(get_translation("content_view.drop_text", self.language))
+        self.find_input.setPlaceholderText(
+            get_translation("content_view.find_placeholder", self.language)
+        )
+        self.replace_input.setPlaceholderText(
+            get_translation("content_view.replace_placeholder", self.language)
+        )
+        self.find_previous_button.setText(
+            get_translation("content_view.find_previous", self.language)
+        )
+        self.find_next_button.setText(
+            get_translation("content_view.find_next", self.language)
+        )
+        self.replace_button.setText(
+            get_translation("content_view.replace_one", self.language)
+        )
+        self.replace_all_button.setText(
+            get_translation("content_view.replace_all", self.language)
+        )
+        self.find_close_button.setToolTip(
+            get_translation("content_view.find_close", self.language)
+        )
         self.edit_label.setText(get_translation("edit_bar.editing_segment", self.language))
         self.save_edit_button.setText(get_translation("edit_bar.save_changes", self.language))
         self.cancel_edit_button.setText(get_translation("edit_bar.cancel", self.language))
@@ -762,6 +1302,8 @@ class ContentView(QWidget):
             len(self.text_edit.toPlainText().split()),
             len(self._coded_segments_cache),
         )
+        self.clear_find_status()
+        self.update_match_count()
 
     def update_theme(self, theme):
         is_dark = theme == "Dark"
@@ -769,13 +1311,23 @@ class ContentView(QWidget):
         disabled_fg = QColor("#a8a8a8" if is_dark else "#5e5e5e")
         for icon, button in (
             (self.import_icon, self.import_button),
+            (self.undo_icon, self.undo_button),
+            (self.redo_icon, self.redo_button),
+            (self.find_icon, self.find_button),
             (self.save_icon, self.save_button),
             (self.export_annotated_icon, self.export_annotated_button),
             (self.delete_icon, self.delete_button),
+            (self.document_menu_icon, self.document_menu_button),
         ):
             icon.set_color(fg, QIcon.Mode.Normal)
             icon.set_color(disabled_fg, QIcon.Mode.Disabled)
             button.setIcon(icon)
+        self.import_action.setIcon(self.import_icon)
+        self.export_annotated_action.setIcon(self.export_annotated_icon)
+        self.delete_document_action.setIcon(self.delete_icon)
+        self.find_close_icon.set_color(fg, QIcon.Mode.Normal)
+        self.find_close_icon.set_color(disabled_fg, QIcon.Mode.Disabled)
+        self.find_close_button.setIcon(self.find_close_icon)
 
 
 class AssignParticipantDialog(QDialog):
@@ -785,7 +1337,7 @@ class AssignParticipantDialog(QDialog):
         self.participants = {p["name"]: p["id"] for p in participants}
         layout = QVBoxLayout(self)
         label = QLabel("Assign this document to which participant?")
-        self.combo = QComboBox()
+        self.combo = FitPopupComboBox()
         self.combo.addItems(sorted(self.participants.keys()))
         button_box = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel

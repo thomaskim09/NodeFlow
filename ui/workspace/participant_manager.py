@@ -8,16 +8,19 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QInputDialog,
     QLabel,
-    QComboBox,
     QAbstractItemView,
+    QMenu,
 )
 from PySide6.QtCore import Signal, Qt
 from PySide6.QtGui import QKeyEvent, QColor, QIcon
 from qt_material_icons import MaterialIcon
 from utils.common import get_translation
-from managers.theme_manager import load_settings
+from managers.theme_manager import load_settings, get_system_theme
 
 import database
+from repositories.workspace_snapshot_repository import workspace_snapshot_repository
+from services.workspace_history_service import WorkspaceCommand
+from ui.combo_box import FitPopupComboBox
 
 
 class RenamableListWidget(QListWidget):
@@ -52,6 +55,12 @@ class RenamableListWidget(QListWidget):
         else:
             super().keyPressEvent(event)
 
+    def mousePressEvent(self, event):
+        if self.itemAt(event.position().toPoint()) is None:
+            self.clearSelection()
+            self.setCurrentItem(None)
+        super().mousePressEvent(event)
+
 
 class ParticipantItemWidget(QWidget):
     def __init__(self, participant_id, participant_name, stats_text, parent_manager):
@@ -59,68 +68,72 @@ class ParticipantItemWidget(QWidget):
         self.participant_id = participant_id
         self.participant_name = participant_name
         self.parent_manager = parent_manager
+        self.setMinimumHeight(32)
 
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(5, 3, 5, 8)
+        layout.setContentsMargins(10, 4, 8, 4)
+        layout.setSpacing(8)
         self.name_label = QLabel(participant_name)
+        self.name_label.setAlignment(Qt.AlignmentFlag.AlignVCenter)
 
         self.stats_label = QLabel(stats_text)
         self.stats_label.setStyleSheet("color: #888;")
-
-        self.edit_button = QPushButton()
-        self.edit_icon = MaterialIcon("edit")
-        self.edit_button.setIcon(self.edit_icon)
-        self.edit_button.setFixedSize(24, 24)
-        self.edit_button.setToolTip(
-            get_translation("participant.edit_tooltip", parent_manager.language)
+        self.stats_label.setAlignment(
+            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
         )
-        self.edit_button.clicked.connect(self.on_edit_clicked)
-        self.edit_button.setVisible(False)
+        self.stats_label.setMinimumWidth(170)
 
-        self.delete_button = QPushButton()
-        self.delete_icon = MaterialIcon("delete")
-        self.delete_button.setIcon(self.delete_icon)
-        self.delete_button.setFixedSize(24, 24)
-        self.delete_button.setToolTip(
-            get_translation("participant.delete_tooltip", parent_manager.language)
+        self.menu_button = QPushButton()
+        self.menu_icon = MaterialIcon("more_vert")
+        self.menu_button.setIcon(self.menu_icon)
+        self.menu_button.setFixedSize(22, 22)
+        self.menu_button.setToolTip(
+            get_translation("participant.more_actions_tooltip", parent_manager.language)
         )
-        self.delete_button.clicked.connect(self.on_delete_clicked)
-        self.delete_button.setVisible(False)
+        self.menu_button.clicked.connect(self.show_actions_menu)
 
-        layout.addWidget(self.name_label)
-        layout.addStretch()
+        layout.addWidget(self.name_label, 1)
         layout.addWidget(self.stats_label)
-        layout.addWidget(self.edit_button)
-        layout.addWidget(self.delete_button)
+        layout.addWidget(self.menu_button)
 
     def set_icons_visible(self, visible):
-        self.edit_button.setVisible(visible)
-        self.delete_button.setVisible(visible)
+        self.menu_button.setVisible(True)
 
     def set_selected_style(self, is_selected: bool):
         settings = load_settings()
         theme = settings.get("theme", "Default")
-        is_dark = theme == "Dark"
+        is_dark = get_system_theme() == "Dark" if theme == "Default" else theme == "Dark"
         selected_fg = "#f0f0f0" if is_dark else "#000000"
+        normal_fg = "#f0f0f0" if is_dark else "#333333"
+        stats_fg = "#b8b8b8" if is_dark else "#888888"
+        current_fg = selected_fg if is_selected else normal_fg
         if is_selected:
-            self.name_label.setStyleSheet(f"color: {selected_fg};")
-            self.stats_label.setStyleSheet(f"color: {selected_fg};")
-            self.edit_button.setStyleSheet(f"color: {selected_fg};")
-            self.delete_button.setStyleSheet(f"color: {selected_fg};")
-            icon_color = QColor(selected_fg)
-            self.edit_icon.set_color(icon_color)
-            self.delete_icon.set_color(icon_color)
-            self.edit_button.setIcon(self.edit_icon)
-            self.delete_button.setIcon(self.delete_icon)
+            self.menu_button.setStyleSheet(f"color: {current_fg};")
         else:
-            self.name_label.setStyleSheet("")
-            self.stats_label.setStyleSheet("color: #888;")
-            self.edit_button.setStyleSheet("")
-            self.delete_button.setStyleSheet("")
-            self.edit_icon._init_colors()
-            self.delete_icon._init_colors()
-            self.edit_button.setIcon(self.edit_icon)
-            self.delete_button.setIcon(self.delete_icon)
+            self.menu_button.setStyleSheet(f"color: {current_fg};")
+        self.name_label.setStyleSheet(f"color: {current_fg};")
+        self.stats_label.setStyleSheet(
+            f"color: {current_fg if is_selected else stats_fg};"
+        )
+        self.menu_icon.set_color(QColor(current_fg))
+        self.menu_button.setIcon(self.menu_icon)
+
+    def show_actions_menu(self):
+        menu = QMenu(self.parent_manager)
+        menu.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        menu.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, False)
+        menu.setWindowOpacity(1.0)
+        edit_action = menu.addAction(
+            get_translation("participant.edit_tooltip", self.parent_manager.language)
+        )
+        delete_action = menu.addAction(
+            get_translation("participant.delete_tooltip", self.parent_manager.language)
+        )
+        action = menu.exec(self.menu_button.mapToGlobal(self.menu_button.rect().bottomLeft()))
+        if action == edit_action:
+            self.on_edit_clicked()
+        elif action == delete_action:
+            self.on_delete_clicked()
 
     def on_edit_clicked(self):
         self.parent_manager.edit_participant(self.participant_id, self.participant_name)
@@ -140,6 +153,7 @@ class ParticipantManager(QWidget):
         self.project_id = project_id
         self.language = language or "English"
         self.current_document_id = None
+        self.undo_executor = None
 
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(0, 0, 0, 0)
@@ -151,7 +165,7 @@ class ParticipantManager(QWidget):
         font.setBold(True)
         self.header_label.setFont(font)
 
-        self.scope_combo = QComboBox()
+        self.scope_combo = FitPopupComboBox()
         self.scope_combo.addItems(
             [
                 get_translation("participant.scope_current", self.language),
@@ -200,6 +214,16 @@ class ParticipantManager(QWidget):
         self.update_theme(load_settings().get("theme", "Light"))
         self.load_participants()
 
+    def set_undo_executor(self, undo_executor):
+        self.undo_executor = undo_executor
+
+    def execute_workspace_command(self, command: WorkspaceCommand):
+        if self.undo_executor:
+            self.undo_executor(command)
+        else:
+            command.do()
+            command.after_refresh()
+
     def set_current_document_id(self, doc_id):
         self.current_document_id = doc_id
         if self.scope_combo.currentText() == get_translation(
@@ -211,13 +235,11 @@ class ParticipantManager(QWidget):
         if previous_item:
             widget = self.list_widget.itemWidget(previous_item)
             if widget:
-                widget.set_icons_visible(False)
                 widget.set_selected_style(False)
 
         if current_item:
             widget = self.list_widget.itemWidget(current_item)
             if widget:
-                widget.set_icons_visible(True)
                 widget.set_selected_style(True)
                 self.participant_selected.emit(widget.participant_id)
         else:
@@ -302,9 +324,33 @@ class ParticipantManager(QWidget):
             get_translation("participant.add_dialog_prompt", self.language),
         )
         if ok and name.strip():
-            database.add_participant(self.project_id, name.strip())
-            self.load_participants()
-            self.participant_updated.emit()
+            participant_id = None
+            snapshot = None
+
+            def do():
+                nonlocal participant_id, snapshot
+                if snapshot:
+                    workspace_snapshot_repository.restore_participant_snapshot(snapshot)
+                else:
+                    participant_id = database.add_participant(
+                        self.project_id, name.strip()
+                    )
+                    snapshot = workspace_snapshot_repository.get_participant_snapshot(
+                        participant_id
+                    )
+
+            def undo():
+                if participant_id:
+                    database.delete_participant(participant_id)
+
+            self.execute_workspace_command(
+                WorkspaceCommand(
+                    "Add Participant",
+                    do,
+                    undo,
+                    lambda: (self.load_participants(), self.participant_updated.emit()),
+                )
+            )
 
     def edit_participant(self, participant_id, current_name):
         new_name, ok = QInputDialog.getText(
@@ -314,9 +360,22 @@ class ParticipantManager(QWidget):
             text=current_name,
         )
         if ok and new_name.strip() and new_name.strip() != current_name:
-            database.update_participant(participant_id, new_name.strip(), "")
-            self.load_participants()
-            self.participant_updated.emit()
+            cleaned_name = new_name.strip()
+
+            def do():
+                database.update_participant(participant_id, cleaned_name, "")
+
+            def undo():
+                database.update_participant(participant_id, current_name, "")
+
+            self.execute_workspace_command(
+                WorkspaceCommand(
+                    "Rename Participant",
+                    do,
+                    undo,
+                    lambda: (self.load_participants(), self.participant_updated.emit()),
+                )
+            )
 
     def delete_participant(self, participant_id, current_name):
         reply = QMessageBox.question(
@@ -332,13 +391,31 @@ class ParticipantManager(QWidget):
         )
 
         if reply == QMessageBox.StandardButton.Yes:
-            database.delete_participant(participant_id)
-            self.load_participants()
-            self.participant_updated.emit()
+            snapshot = workspace_snapshot_repository.get_participant_snapshot(
+                participant_id
+            )
+            if not snapshot:
+                return
+
+            def do():
+                database.delete_participant(participant_id)
+
+            def undo():
+                workspace_snapshot_repository.restore_participant_snapshot(snapshot)
+
+            self.execute_workspace_command(
+                WorkspaceCommand(
+                    "Delete Participant",
+                    do,
+                    undo,
+                    lambda: (self.load_participants(), self.participant_updated.emit()),
+                )
+            )
 
     def clear_selection(self):
         """Clears the current selection in the list widget."""
         self.list_widget.clearSelection()
+        self.list_widget.setCurrentItem(None)
 
     def highlight_participant_by_id(self, participant_id: int):
         """

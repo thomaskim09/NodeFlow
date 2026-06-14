@@ -14,6 +14,46 @@ from services.export_service import export_service
 from services.platform_service import platform_service
 
 
+def _get_project_name(project_id: int) -> str:
+    for project in database.get_all_projects():
+        if project["id"] == project_id:
+            return project["name"]
+    return f"project_{project_id}"
+
+
+def _sanitize_file_stem(name: str) -> str:
+    cleaned = re.sub(r'[<>:"/\\|?*]+', "_", name).strip()
+    return cleaned or "NodeFlow_Export"
+
+
+def _default_export_filename(stem: str, extension: str) -> str:
+    return f"{_sanitize_file_stem(stem)}.{extension}"
+
+
+def _get_participants_map(project_id: int) -> dict[int, str]:
+    return {
+        participant["id"]: participant["name"]
+        for participant in database.get_participants_for_project(project_id)
+    }
+
+
+def _filter_segments_for_participant(coded_segments, participant_id):
+    if participant_id is None:
+        return coded_segments
+    return [
+        segment
+        for segment in coded_segments
+        if segment.get("participant_id") == participant_id
+    ]
+
+
+def _participant_file_suffix(project_id: int, participant_id) -> str:
+    if participant_id is None:
+        return "all_participants"
+    participant_name = _get_participants_map(project_id).get(participant_id)
+    return _sanitize_file_stem(participant_name or f"participant_{participant_id}")
+
+
 def _show_export_saved(parent_widget, message, file_path):
     msg_box = QMessageBox(parent_widget)
     msg_box.setWindowTitle("Export Successful")
@@ -140,18 +180,90 @@ def export_to_json(project_id, parent_widget=None):
         export_service.show_unexpected_error(parent_widget, "Export Error", e)
 
 
-def export_to_excel(project_id, parent_widget=None):
+def export_project_to_excel_single_sheet(
+    project_id, parent_widget=None, participant_id=None
+):
+    """Exports project coded segments to a single Excel worksheet."""
+    file_path, _ = QFileDialog.getSaveFileName(
+        parent_widget,
+        "Save Excel Report",
+        _default_export_filename(
+            f"NodeFlow_{_get_project_name(project_id)}_single_sheet_{_participant_file_suffix(project_id, participant_id)}",
+            "xlsx",
+        ),
+        "Excel Files (*.xlsx)",
+    )
+    if not file_path:
+        return
+
+    nodes = database.get_nodes_for_project(project_id)
+    coded_segments = _filter_segments_for_participant(
+        database.get_coded_segments_for_project(project_id), participant_id
+    )
+    node_names = {node["id"]: node["name"] for node in nodes}
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Report"
+    ws.append(["Node", "Participant", "Coded Segment", "Document"])
+
+    header_font = Font(bold=True)
+    for cell in ws[1]:
+        cell.font = header_font
+
+    for seg in sorted(
+        coded_segments,
+        key=lambda segment: (
+            node_names.get(segment["node_id"], ""),
+            segment.get("participant_name") or "",
+            segment.get("document_title") or "",
+        ),
+    ):
+        ws.append(
+            [
+                node_names.get(seg["node_id"], seg["node_name"]),
+                seg["participant_name"] or "N/A",
+                seg["content_preview"],
+                seg["document_title"],
+            ]
+        )
+
+    ws.column_dimensions["A"].width = 30
+    ws.column_dimensions["B"].width = 25
+    ws.column_dimensions["C"].width = 80
+    ws.column_dimensions["D"].width = 40
+
+    try:
+        wb.save(file_path)
+        _show_export_saved(
+            parent_widget, "Excel report successfully saved to:", file_path
+        )
+    except PermissionError:
+        export_service.show_permission_error(parent_widget, file_path)
+    except Exception as e:
+        export_service.show_unexpected_error(parent_widget, "Export Error", e)
+
+
+def export_to_excel(project_id, parent_widget=None, participant_id=None):
     """Exports coded segments to an Excel file with one sheet per node."""
 
     file_path, _ = QFileDialog.getSaveFileName(
-        parent_widget, "Save Excel Report", "", "Excel Files (*.xlsx)"
+        parent_widget,
+        "Save Excel Report",
+        _default_export_filename(
+            f"NodeFlow_{_get_project_name(project_id)}_project_multi_sheet_{_participant_file_suffix(project_id, participant_id)}",
+            "xlsx",
+        ),
+        "Excel Files (*.xlsx)",
     )
     if not file_path:
         return
 
     # Fetch data for the ENTIRE project
     nodes = database.get_nodes_for_project(project_id)
-    coded_segments = database.get_coded_segments_for_project(project_id)
+    coded_segments = _filter_segments_for_participant(
+        database.get_coded_segments_for_project(project_id), participant_id
+    )
 
     # --- Data Structuring for Traversal ---
     nodes_by_id = {n["id"]: n for n in nodes}
@@ -359,7 +471,9 @@ def get_all_descendant_ids(start_node_id, nodes_map, all_nodes):
 
 
 # --- NEW: Selective node family export to Excel ---
-def export_node_family_to_excel(project_id, start_node_id, parent_widget=None):
+def export_node_family_to_excel(
+    project_id, start_node_id, parent_widget=None, participant_id=None
+):
     """Exports a specific node and its children to an .xlsx file."""
     if not start_node_id:
         return
@@ -375,7 +489,10 @@ def export_node_family_to_excel(project_id, start_node_id, parent_widget=None):
     file_path, _ = QFileDialog.getSaveFileName(
         parent_widget,
         f"Save Excel Report for '{start_node['name']}'",
-        "",
+        _default_export_filename(
+            f"NodeFlow_{_get_project_name(project_id)}_{start_node['name']}_single_sheet_{_participant_file_suffix(project_id, participant_id)}",
+            "xlsx",
+        ),
         "Excel Files (*.xlsx)",
     )
     if not file_path:
@@ -384,6 +501,7 @@ def export_node_family_to_excel(project_id, start_node_id, parent_widget=None):
     ids_to_include = [start_node_id] + get_all_descendant_ids(
         start_node_id, nodes_map, all_nodes
     )
+    coded_segments = _filter_segments_for_participant(coded_segments, participant_id)
 
     wb = openpyxl.Workbook()
     if "Sheet" in wb.sheetnames:
@@ -454,7 +572,7 @@ def export_node_family_to_excel(project_id, start_node_id, parent_widget=None):
 
 
 def export_node_family_to_excel_multi_sheet(
-    project_id, start_node_id, parent_widget=None
+    project_id, start_node_id, parent_widget=None, participant_id=None
 ):
     """Exports a specific node and its children to an .xlsx file with multiple sheets."""
     if not start_node_id:
@@ -472,11 +590,16 @@ def export_node_family_to_excel_multi_sheet(
     file_path, _ = QFileDialog.getSaveFileName(
         parent_widget,
         f"Save Excel Report for '{start_node['name']}'",
-        "",
+        _default_export_filename(
+            f"NodeFlow_{_get_project_name(project_id)}_{start_node['name']}_multi_sheet_{_participant_file_suffix(project_id, participant_id)}",
+            "xlsx",
+        ),
         "Excel Files (*.xlsx)",
     )
     if not file_path:
         return
+
+    coded_segments = _filter_segments_for_participant(coded_segments, participant_id)
 
     # --- Data Structuring for Traversal ---
     nodes_by_parent = {n_id: [] for n_id in nodes_map}
@@ -572,7 +695,13 @@ def export_overall_participants_to_excel(project_id, parent_widget=None):
     specific cell formatting, and an option to open the file from the success dialog.
     """
     file_path, _ = QFileDialog.getSaveFileName(
-        parent_widget, "Save Overall Participants Report", "", "Excel Files (*.xlsx)"
+        parent_widget,
+        "Save Overall Participants Report",
+        _default_export_filename(
+            f"NodeFlow_{_get_project_name(project_id)}_overall_participants",
+            "xlsx",
+        ),
+        "Excel Files (*.xlsx)",
     )
     if not file_path:
         return

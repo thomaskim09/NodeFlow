@@ -2,7 +2,9 @@ from repositories.segment_repository import segment_repository
 
 
 def add_coded_segment(document_id, node_id, participant_id, start, end, text_preview):
-    segment_repository.add(document_id, node_id, participant_id, start, end, text_preview)
+    return segment_repository.add(
+        document_id, node_id, participant_id, start, end, text_preview
+    )
 
 
 def get_coded_segments_for_nodes(project_id, node_ids, document_id=None):
