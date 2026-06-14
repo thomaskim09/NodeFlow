@@ -1,3 +1,5 @@
+# ruff: noqa: F401
+
 # Core
 from .db_core import get_db_connection, create_tables  # noqa: F401
 
@@ -26,6 +28,7 @@ from .documents_db import (
     get_document_word_count,
     delete_document,
     update_document_text_only,
+    update_document_text_and_segments,
     get_project_word_count,
     check_document_exists,
 )  # noqa: F401

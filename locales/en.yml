@@ -107,6 +107,9 @@ workspace:
   application_theme: 'Application Theme:'
   language: 'Language:'
   undo_depth: 'Undo history depth'
+  autosave_enabled: 'Autosave document text'
+  autosave_delay: 'Autosave delay (ms)'
+  find_match_color: 'Find match color'
   save: 'Save'
   cancel: 'Cancel'
   settings_saved: 'Settings Saved'
@@ -141,7 +144,9 @@ content_view:
   replace_confirm_title: 'Confirm Replace'
   replace_confirm_message: "Replace '{search}' with '{replacement}'?"
   replace_all_confirm_title: 'Confirm Replace All'
-  replace_all_confirm_message: "Replace all {count} matches of '{search}' with '{replacement}'?"
+  replace_all_confirm_message: "Replace all {count} matches of '{search}' with '{replacement}'?\n\nThis can shift many coded segments at once."
+  replace_all_risk_note: 'Use Replace All carefully when the matches appear inside coded passages or when the replacement changes text length.'
+  replace_all_best_for: "Best for repeated boilerplate, spelling fixes, or formatting changes you expect across the whole document.\n\nAfter large replacements, review coded highlights and coded segment previews before continuing."
 
 startup:
   nodeflow_title: 'NodeFlow'

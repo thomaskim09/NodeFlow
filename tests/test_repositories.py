@@ -25,3 +25,45 @@ def test_repository_crud_and_descendants():
     assert descendants == [child_id]
     assert len(segments) == 2
     assert database.get_document_word_count(document_id) == 3
+
+
+def test_update_document_text_and_segments_persists_ranges_and_deletes_empty_segments():
+    initialize_database()
+
+    database.add_project("Segment Save")
+    project_id = database.get_all_projects()[0]["id"]
+    participant_id = database.add_participant(project_id, "Alice")
+    document_id = database.add_document(
+        project_id, "Doc 1", "alpha beta gamma", participant_id
+    )
+    node_id = database.add_node(project_id, "Theme", None, "#FFFF00")
+    kept_id = database.add_coded_segment(
+        document_id, node_id, participant_id, 6, 10, "beta"
+    )
+    deleted_id = database.add_coded_segment(
+        document_id, node_id, participant_id, 11, 16, "gamma"
+    )
+
+    database.update_document_text_and_segments(
+        document_id,
+        "alpha delta",
+        [
+            {
+                "id": kept_id,
+                "segment_start": 6,
+                "segment_end": 11,
+                "content_preview": "delta",
+            }
+        ],
+        [deleted_id],
+    )
+
+    content, _ = database.get_document_content(document_id)
+    segments = database.get_coded_segments_for_document(document_id)
+
+    assert content == "alpha delta"
+    assert len(segments) == 1
+    assert segments[0]["id"] == kept_id
+    assert segments[0]["segment_start"] == 6
+    assert segments[0]["segment_end"] == 11
+    assert segments[0]["content_preview"] == "delta"

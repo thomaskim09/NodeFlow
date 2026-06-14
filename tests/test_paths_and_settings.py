@@ -16,13 +16,23 @@ def test_bundle_resource_path_points_into_resource_dir():
 
 def test_settings_round_trip():
     saved = settings_service.save(
-        {"theme": "Dark", "language": "Chinese", "undo_depth": 150}
+        {
+            "theme": "Dark",
+            "language": "Chinese",
+            "undo_depth": 150,
+            "autosave_enabled": False,
+            "autosave_delay_ms": 3000,
+            "find_match_color": "#FFD54F",
+        }
     )
     loaded = settings_service.load()
 
     assert saved["theme"] == "Dark"
     assert loaded["language"] == "Chinese"
     assert loaded["undo_depth"] == 150
+    assert loaded["autosave_enabled"] is False
+    assert loaded["autosave_delay_ms"] == 3000
+    assert loaded["find_match_color"] == "#FFD54F"
     assert get_settings_path().exists()
 
 
@@ -34,3 +44,6 @@ def test_settings_default_undo_depth_for_older_settings():
     loaded = settings_service.load()
 
     assert loaded["undo_depth"] == 100
+    assert loaded["autosave_enabled"] is True
+    assert loaded["autosave_delay_ms"] == 1500
+    assert loaded["find_match_color"] == "#FFF59D"

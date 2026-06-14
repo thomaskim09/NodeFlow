@@ -21,6 +21,14 @@ def update_document_text_only(document_id, new_content):
     document_repository.update_content(document_id, new_content)
 
 
+def update_document_text_and_segments(
+    document_id, new_content, segments, deleted_segment_ids
+):
+    document_repository.update_content_and_segments(
+        document_id, new_content, segments, deleted_segment_ids
+    )
+
+
 def get_document_word_count(document_id):
     return document_repository.get_word_count(document_id)
 

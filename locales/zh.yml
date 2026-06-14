@@ -107,6 +107,9 @@ workspace:
   application_theme: '应用主题:'
   language: '语言:'
   undo_depth: '撤销历史深度'
+  autosave_enabled: '自动保存文档文本'
+  autosave_delay: '自动保存延迟（毫秒）'
+  find_match_color: '查找匹配颜色'
   save: '保存'
   cancel: '取消'
   settings_saved: '设置已保存'
@@ -141,7 +144,9 @@ content_view:
   replace_confirm_title: '确认替换'
   replace_confirm_message: "将 '{search}' 替换为 '{replacement}' 吗？"
   replace_all_confirm_title: '确认全部替换'
-  replace_all_confirm_message: "将全部 {count} 个 '{search}' 替换为 '{replacement}' 吗？"
+  replace_all_confirm_message: "将全部 {count} 个 '{search}' 替换为 '{replacement}' 吗？\n\n这可能会一次性移动许多编码片段。"
+  replace_all_risk_note: '当匹配内容位于已编码段落中，或替换会改变文本长度时，请谨慎使用全部替换。'
+  replace_all_best_for: "更适合处理整份文档中重复的样板文本、拼写修正或格式统一。\n\n大规模替换后，请先检查编码高亮和编码片段预览，再继续工作。"
 
 startup:
   nodeflow_title: 'NodeFlow'

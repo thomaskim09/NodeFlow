@@ -57,6 +57,47 @@ class DocumentRepository:
                     (new_content, document_id),
                 )
 
+    def update_content_and_segments(
+        self,
+        document_id: int,
+        new_content: str,
+        segments: list[dict],
+        deleted_segment_ids: list[int],
+    ) -> None:
+        with get_connection() as conn:
+            with conn:
+                conn.execute(
+                    "UPDATE documents SET content = ? WHERE id = ?",
+                    (new_content, document_id),
+                )
+                if segments:
+                    conn.executemany(
+                        """
+                        UPDATE coded_segments
+                        SET segment_start = ?, segment_end = ?, content_preview = ?
+                        WHERE id = ? AND document_id = ?
+                        """,
+                        [
+                            (
+                                segment["segment_start"],
+                                segment["segment_end"],
+                                segment["content_preview"],
+                                segment["id"],
+                                document_id,
+                            )
+                            for segment in segments
+                        ],
+                    )
+                if deleted_segment_ids:
+                    placeholders = ",".join("?" for _ in deleted_segment_ids)
+                    conn.execute(
+                        f"""
+                        DELETE FROM coded_segments
+                        WHERE document_id = ? AND id IN ({placeholders})
+                        """,
+                        [document_id, *deleted_segment_ids],
+                    )
+
     def get_word_count(self, document_id: int | None) -> int:
         if not document_id:
             return 0

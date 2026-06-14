@@ -12,6 +12,8 @@ from PySide6.QtWidgets import (
     QLabel,
     QDialogButtonBox,
     QSpinBox,
+    QCheckBox,
+    QColorDialog,
 )
 from PySide6.QtCore import Qt, Signal, QSize
 from PySide6.QtGui import QAction, QColor, QIcon, QKeySequence, QShortcut
@@ -74,6 +76,32 @@ class SettingsDialog(QDialog):
             QLabel(get_translation("workspace.undo_depth", self.language)),
             self.undo_depth_spin,
         )
+        self.autosave_checkbox = QCheckBox(
+            get_translation("workspace.autosave_enabled", self.language)
+        )
+        self.autosave_checkbox.setChecked(
+            bool(self.settings.get("autosave_enabled", True))
+        )
+        form_layout.addRow("", self.autosave_checkbox)
+        self.autosave_delay_spin = QSpinBox()
+        self.autosave_delay_spin.setRange(500, 10000)
+        self.autosave_delay_spin.setValue(
+            int(self.settings.get("autosave_delay_ms", 1500))
+        )
+        self.autosave_delay_spin.setSingleStep(250)
+        form_layout.addRow(
+            QLabel(get_translation("workspace.autosave_delay", self.language)),
+            self.autosave_delay_spin,
+        )
+        self.find_match_color = self.settings.get("find_match_color", "#FFF59D")
+        self.find_match_color_button = QPushButton()
+        self.find_match_color_button.setFixedWidth(72)
+        self.find_match_color_button.clicked.connect(self.choose_find_match_color)
+        self._update_find_match_color_button()
+        form_layout.addRow(
+            QLabel(get_translation("workspace.find_match_color", self.language)),
+            self.find_match_color_button,
+        )
         layout.addLayout(form_layout)
         button_box = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Save
@@ -94,6 +122,9 @@ class SettingsDialog(QDialog):
         self.settings["theme"] = self.theme_combo.currentText()
         self.settings["language"] = self.language_combo.currentText()
         self.settings["undo_depth"] = self.undo_depth_spin.value()
+        self.settings["autosave_enabled"] = self.autosave_checkbox.isChecked()
+        self.settings["autosave_delay_ms"] = self.autosave_delay_spin.value()
+        self.settings["find_match_color"] = self.find_match_color
         save_settings(self.settings)
         app = QApplication.instance()
         if app:
@@ -103,6 +134,19 @@ class SettingsDialog(QDialog):
             self.settings["language"],
         )
         self.accept()
+
+    def choose_find_match_color(self):
+        color = QColorDialog.getColor(QColor(self.find_match_color), self)
+        if not color.isValid():
+            return
+        self.find_match_color = color.name().upper()
+        self._update_find_match_color_button()
+
+    def _update_find_match_color_button(self):
+        self.find_match_color_button.setText(self.find_match_color)
+        self.find_match_color_button.setStyleSheet(
+            f"background-color: {self.find_match_color}; color: #000000;"
+        )
 
 
 class WorkspaceView(QWidget):
@@ -242,6 +286,8 @@ class WorkspaceView(QWidget):
         self.center_pane.text_selection_changed.connect(
             self.handle_text_selection_changed
         )
+        self.center_pane.undo_requested.connect(self.undo_workspace_action)
+        self.center_pane.redo_requested.connect(self.redo_workspace_action)
         self.node_tree_manager.node_selected_for_coding.connect(self.code_selection)
         self.undo_shortcut = QShortcut(QKeySequence.StandardKey.Undo, self)
         self.undo_shortcut.activated.connect(self.handle_undo_shortcut)
@@ -272,33 +318,42 @@ class WorkspaceView(QWidget):
         self.history.record_applied(command)
 
     def handle_undo_shortcut(self):
-        if (
-            self.center_pane.text_edit.hasFocus()
-            and self.center_pane.is_dirty
-            and self.center_pane.text_edit.document().isUndoAvailable()
-        ):
+        if self._should_use_text_edit_undo():
             self.center_pane.text_edit.undo()
             return
         self.undo_workspace_action()
 
     def undo_workspace_action(self):
+        if self._should_use_text_edit_undo():
+            self.center_pane.text_edit.undo()
+            return
         self.history.undo()
 
     def redo_workspace_action(self):
-        if (
-            self.center_pane.text_edit.hasFocus()
-            and self.center_pane.is_dirty
-            and self.center_pane.text_edit.document().isRedoAvailable()
-        ):
+        if self._should_use_text_edit_redo():
             self.center_pane.text_edit.redo()
             return
         self.history.redo()
+
+    def _should_use_text_edit_undo(self):
+        return self.center_pane.text_edit.document().isUndoAvailable()
+
+    def _should_use_text_edit_redo(self):
+        return self.center_pane.text_edit.document().isRedoAvailable()
 
     def update_undo_redo_actions(self):
         undo_label = self.history.next_undo_label()
         redo_label = self.history.next_redo_label()
         self.undo_action.setEnabled(self.history.can_undo())
         self.redo_action.setEnabled(self.history.can_redo())
+        self.center_pane.undo_button.setEnabled(
+            self.center_pane.text_edit.document().isUndoAvailable()
+            or self.history.can_undo()
+        )
+        self.center_pane.redo_button.setEnabled(
+            self.center_pane.text_edit.document().isRedoAvailable()
+            or self.history.can_redo()
+        )
         self.undo_action.setToolTip(
             get_translation(
                 "toolbar.undo_named_tooltip" if undo_label else "toolbar.undo_tooltip",
@@ -361,6 +416,8 @@ class WorkspaceView(QWidget):
             self.center_pane.update_language(self.language)
         if hasattr(self.center_pane, "update_theme"):
             self.center_pane.update_theme(theme)
+        if hasattr(self.center_pane, "apply_autosave_settings"):
+            self.center_pane.apply_autosave_settings()
         self._apply_theme_icons(theme)
         if hasattr(self.bottom_pane, "update_language"):
             self.bottom_pane.update_language(self.language)
@@ -464,6 +521,8 @@ class WorkspaceView(QWidget):
         participant_id = self.center_pane.current_participant_id
         if not doc_id:
             return
+        if self.center_pane.is_dirty:
+            self.center_pane.save_document(show_success_prompt=False)
         segment_id = None
         segment_snapshot = None
 

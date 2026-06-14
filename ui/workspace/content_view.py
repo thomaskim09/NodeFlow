@@ -16,8 +16,9 @@ from PySide6.QtWidgets import (
     QInputDialog,
     QMenu,
     QToolTip,
+    QSizePolicy,
 )
-from PySide6.QtCore import Qt, Signal, QSize, QPoint
+from PySide6.QtCore import Qt, Signal, QSize, QPoint, QTimer
 from PySide6.QtGui import (
     QAction,
     QTextCursor,
@@ -38,6 +39,10 @@ from managers import excel_import_manager
 from qt_material_icons import MaterialIcon
 from utils.common import get_translation
 from services.import_service import import_service
+from services.segment_rebasing_service import (
+    rebase_segments_for_edit,
+    replace_all_and_rebase_segments,
+)
 from services.settings_service import settings_service
 from services.worker_service import TaskThread
 from repositories.workspace_snapshot_repository import workspace_snapshot_repository
@@ -68,6 +73,8 @@ class ContentView(QWidget):
     documents_changed = Signal()
     segments_changed = Signal()
     edit_mode_changed = Signal(bool)
+    undo_requested = Signal()
+    redo_requested = Signal()
 
     def __init__(self, project_id, language=None):
         super().__init__()
@@ -79,6 +86,9 @@ class ContentView(QWidget):
         self.editing_segment_id = None
         self.is_dirty = False
         self._coded_segments_cache = []
+        self._pending_deleted_segments = {}
+        self._loading_document = False
+        self._document_change_connected = False
         self._pending_highlight = None
         self._import_thread = None
         self._excel_import_before_ids = None
@@ -192,29 +202,45 @@ class ContentView(QWidget):
             get_translation("content_view.replace_placeholder", self.language)
         )
         self.replace_input.setMinimumWidth(180)
-        self.find_previous_button = QPushButton(
+        self.find_previous_button = QPushButton()
+        self.find_previous_icon = MaterialIcon("arrow_back")
+        self.find_previous_button.setIcon(self.find_previous_icon)
+        self.find_previous_button.setToolTip(
             get_translation("content_view.find_previous", self.language)
         )
-        self.find_previous_button.setFixedWidth(92)
-        self.find_next_button = QPushButton(
+        self.find_previous_button.setFixedSize(30, 30)
+        self.find_previous_button.setIconSize(QSize(16, 16))
+        self.find_next_button = QPushButton()
+        self.find_next_icon = MaterialIcon("arrow_forward")
+        self.find_next_button.setIcon(self.find_next_icon)
+        self.find_next_button.setToolTip(
             get_translation("content_view.find_next", self.language)
         )
-        self.find_next_button.setFixedWidth(92)
+        self.find_next_button.setFixedSize(30, 30)
+        self.find_next_button.setIconSize(QSize(16, 16))
         self.replace_button = QPushButton(
             get_translation("content_view.replace_one", self.language)
         )
-        self.replace_button.setFixedWidth(92)
+        self.replace_button.setFixedWidth(84)
         self.replace_all_button = QPushButton(
             get_translation("content_view.replace_all", self.language)
         )
-        self.replace_all_button.setFixedWidth(150)
+        self.replace_all_button.setFixedWidth(118)
         self.find_count_label = QLabel("")
-        self.find_count_label.setFixedWidth(130)
+        self.find_count_label.setMinimumWidth(100)
+        self.find_count_label.setMaximumWidth(120)
+        self.find_count_label.setSizePolicy(
+            QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Preferred
+        )
         self.find_count_label.setAlignment(
             Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
         )
         self.find_status_label = QLabel("")
-        self.find_status_label.setFixedWidth(150)
+        self.find_status_label.setMinimumWidth(120)
+        self.find_status_label.setMaximumWidth(150)
+        self.find_status_label.setSizePolicy(
+            QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Preferred
+        )
         self.find_status_label.setAlignment(
             Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
         )
@@ -232,8 +258,6 @@ class ContentView(QWidget):
         find_bar_layout.addWidget(self.find_next_button)
         find_bar_layout.addWidget(self.replace_button)
         find_bar_layout.addWidget(self.replace_all_button)
-        find_bar_layout.addStretch()
-        find_bar_layout.addSpacing(12)
         find_bar_layout.addWidget(self.find_count_label)
         find_bar_layout.addWidget(self.find_status_label)
         find_bar_layout.addWidget(self.find_close_button)
@@ -314,8 +338,8 @@ class ContentView(QWidget):
         main_layout.addWidget(info_bar)
 
         self.import_action.triggered.connect(self.open_import_dialog)
-        self.undo_button.clicked.connect(self.text_edit.undo)
-        self.redo_button.clicked.connect(self.text_edit.redo)
+        self.undo_button.clicked.connect(self.request_undo)
+        self.redo_button.clicked.connect(self.request_redo)
         self.find_button.clicked.connect(self.show_find_bar)
         self.save_button.clicked.connect(self.save_document)
         self.document_menu_button.clicked.connect(self.show_document_actions_menu)
@@ -344,6 +368,9 @@ class ContentView(QWidget):
         self.find_close_shortcut.activated.connect(self.hide_find_bar)
         self.text_edit.undoAvailable.connect(self.undo_button.setEnabled)
         self.text_edit.redoAvailable.connect(self.redo_button.setEnabled)
+        self.autosave_timer = QTimer(self)
+        self.autosave_timer.setSingleShot(True)
+        self.autosave_timer.timeout.connect(self.autosave_document)
         self.load_document_list()
         self.update_theme(load_settings().get("theme", "Light"))
 
@@ -364,6 +391,18 @@ class ContentView(QWidget):
         if self.applied_command_recorder:
             self.applied_command_recorder(command)
 
+    def request_undo(self):
+        if self.text_edit.document().isUndoAvailable():
+            self.text_edit.undo()
+        else:
+            self.undo_requested.emit()
+
+    def request_redo(self):
+        if self.text_edit.document().isRedoAvailable():
+            self.text_edit.redo()
+        else:
+            self.redo_requested.emit()
+
     def show_find_bar(self):
         self.find_bar.setVisible(True)
         selected_text = self.text_edit.textCursor().selectedText().replace("\u2029", "\n")
@@ -378,6 +417,7 @@ class ContentView(QWidget):
         self.find_bar.setVisible(False)
         self.clear_find_status()
         self.find_count_label.setText("")
+        self._render_highlights()
         self.text_edit.setFocus()
 
     def show_document_actions_menu(self):
@@ -390,6 +430,37 @@ class ContentView(QWidget):
     def clear_find_status(self):
         self.find_status_label.setText("")
 
+    def _autosave_settings(self):
+        settings = settings_service.load()
+        return (
+            bool(settings.get("autosave_enabled", True)),
+            int(settings.get("autosave_delay_ms", 1500)),
+        )
+
+    def _find_match_color(self):
+        return settings_service.load().get("find_match_color", "#FFF59D")
+
+    def _schedule_autosave(self):
+        autosave_enabled, delay_ms = self._autosave_settings()
+        if autosave_enabled and self.current_document_id:
+            self.autosave_timer.start(max(250, delay_ms))
+
+    def autosave_document(self):
+        if self.is_dirty and self.current_document_id:
+            self.save_document(
+                show_success_prompt=False,
+                record_history=False,
+                reload_after_save=False,
+            )
+
+    def apply_autosave_settings(self):
+        autosave_enabled, delay_ms = self._autosave_settings()
+        if not autosave_enabled:
+            self.autosave_timer.stop()
+        elif self.is_dirty and self.current_document_id:
+            self.autosave_timer.start(max(250, delay_ms))
+        self._render_highlights()
+
     def update_match_count(self):
         search_text = self.find_input.text()
         if not search_text:
@@ -399,6 +470,7 @@ class ContentView(QWidget):
         self.find_count_label.setText(
             get_translation("content_view.find_match_count", self.language, count=count)
         )
+        self._render_highlights()
         return count
 
     def _find_text(self, backward=False):
@@ -491,34 +563,87 @@ class ContentView(QWidget):
                 get_translation("content_view.find_not_found", self.language)
             )
             return
-        reply = QMessageBox.question(
-            self,
-            get_translation("content_view.replace_all_confirm_title", self.language),
+        confirm_box = QMessageBox(self)
+        confirm_box.setIcon(QMessageBox.Icon.Warning)
+        confirm_box.setWindowTitle(
+            get_translation("content_view.replace_all_confirm_title", self.language)
+        )
+        confirm_box.setText(
             get_translation(
                 "content_view.replace_all_confirm_message",
                 self.language,
                 count=count,
                 search=search_text,
                 replacement=replacement,
-            ),
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No,
+            )
         )
-        if reply != QMessageBox.StandardButton.Yes:
+        confirm_box.setInformativeText(
+            get_translation("content_view.replace_all_risk_note", self.language)
+        )
+        confirm_box.setDetailedText(
+            get_translation("content_view.replace_all_best_for", self.language)
+        )
+        confirm_box.setStandardButtons(
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        confirm_box.setDefaultButton(QMessageBox.StandardButton.No)
+        if confirm_box.exec() != QMessageBox.StandardButton.Yes:
             return
 
-        cursor = self.text_edit.textCursor()
-        cursor.beginEditBlock()
-        cursor.movePosition(QTextCursor.MoveOperation.Start)
-        self.text_edit.setTextCursor(cursor)
+        before_snapshot = self._get_live_document_snapshot()
+        if not before_snapshot:
+            return
+        self._replace_all_confirmed(search_text, replacement, before_snapshot)
 
-        replaced_count = 0
-        while self.text_edit.find(search_text):
-            replace_cursor = self.text_edit.textCursor()
-            replace_cursor.insertText(replacement)
-            replaced_count += 1
-        cursor.endEditBlock()
+    def _replace_all_confirmed(self, search_text, replacement, before_snapshot=None):
+        before_snapshot = before_snapshot or self._get_live_document_snapshot()
+        if not before_snapshot:
+            return 0
+        self.autosave_timer.stop()
+        old_text = self.text_edit.toPlainText()
+        new_text, new_segments, deleted_segment_ids, replaced_count = (
+            replace_all_and_rebase_segments(
+                old_text,
+                self._coded_segments_cache,
+                search_text,
+                replacement,
+            )
+        )
+        if replaced_count == 0:
+            return 0
 
+        self._loading_document = True
+        try:
+            self.text_edit.setPlainText(new_text)
+        finally:
+            self._loading_document = False
+        self._coded_segments_cache = new_segments
+        self._pending_deleted_segments = {
+            segment_id: {"id": segment_id} for segment_id in deleted_segment_ids
+        }
+        self.is_dirty = True
+        self.save_button.setEnabled(True)
+        self.save_document(
+            show_success_prompt=False,
+            record_history=False,
+            reload_after_save=True,
+        )
+        after_snapshot = workspace_snapshot_repository.get_document_snapshot(
+            before_snapshot["document"]["id"]
+        )
+        if after_snapshot:
+            self.record_applied_command(
+                WorkspaceCommand(
+                    "Replace All",
+                    lambda snapshot=after_snapshot: self._restore_document_snapshot(
+                        snapshot
+                    ),
+                    lambda snapshot=before_snapshot: self._restore_document_snapshot(
+                        snapshot
+                    ),
+                    self._after_document_snapshot_restore,
+                )
+            )
         self.apply_all_highlights()
         self.find_status_label.setText(
             get_translation(
@@ -526,6 +651,45 @@ class ContentView(QWidget):
             )
         )
         self.update_match_count()
+        return replaced_count
+
+    def _get_live_document_snapshot(self):
+        if not self.current_document_id:
+            return None
+        snapshot = workspace_snapshot_repository.get_document_snapshot(
+            self.current_document_id
+        )
+        if not snapshot:
+            return None
+        document = dict(snapshot["document"])
+        document["content"] = self.text_edit.toPlainText()
+        active_segments = {
+            segment["id"]: dict(segment) for segment in self._coded_segments_cache
+        }
+        deleted_ids = set(self._pending_deleted_segments)
+        segments = []
+        for segment in snapshot["segments"]:
+            segment_id = segment["id"]
+            if segment_id in deleted_ids or segment_id not in active_segments:
+                continue
+            active_segment = active_segments[segment_id]
+            restored_segment = dict(segment)
+            restored_segment["segment_start"] = active_segment["segment_start"]
+            restored_segment["segment_end"] = active_segment["segment_end"]
+            restored_segment["content_preview"] = active_segment["content_preview"]
+            segments.append(restored_segment)
+        return {"document": document, "segments": segments}
+
+    def _restore_document_snapshot(self, snapshot):
+        document_id = snapshot["document"]["id"]
+        database.delete_document(document_id)
+        workspace_snapshot_repository.restore_document_snapshot(snapshot)
+
+    def _after_document_snapshot_restore(self):
+        self.load_document_content()
+        self.segments_changed.emit()
+        self.is_dirty = False
+        self.save_button.setEnabled(False)
 
     def _select_and_scroll(self, start, end):
         cursor = self.text_edit.textCursor()
@@ -952,29 +1116,79 @@ class ContentView(QWidget):
             self.save_button.setEnabled(True)
             if self.find_bar.isVisible():
                 self.update_match_count()
+            self._schedule_autosave()
 
-    def save_document(self, show_success_prompt=True):
+    def on_document_contents_changed(self, position, chars_removed, chars_added):
+        if self._loading_document or not self.current_document_id:
+            return
+        current_text = self.text_edit.toPlainText()
+        segments_before = {
+            segment["id"]: dict(segment)
+            for segment in [
+                *self._coded_segments_cache,
+                *self._pending_deleted_segments.values(),
+            ]
+        }
+        rebased_segments, deleted_segment_ids = rebase_segments_for_edit(
+            list(segments_before.values()),
+            position,
+            chars_removed,
+            chars_added,
+            current_text,
+        )
+        self._coded_segments_cache = rebased_segments
+        for segment in rebased_segments:
+            self._pending_deleted_segments.pop(segment["id"], None)
+        for segment_id in deleted_segment_ids:
+            segment = segments_before.get(segment_id)
+            if segment:
+                tombstone_position = max(0, min(position, len(current_text)))
+                segment["segment_start"] = tombstone_position
+                segment["segment_end"] = tombstone_position
+                segment["content_preview"] = ""
+                self._pending_deleted_segments[segment_id] = segment
+        self._render_highlights()
+
+    def save_document(
+        self, show_success_prompt=True, record_history=True, reload_after_save=True
+    ):
         if not self.is_dirty or not self.current_document_id:
             return
         document_id = self.current_document_id
         old_content, _ = database.get_document_content(document_id)
         new_content = self.text_edit.toPlainText()
+        old_snapshot = workspace_snapshot_repository.get_document_snapshot(document_id)
+        new_segments = [dict(segment) for segment in self._coded_segments_cache]
+        deleted_segment_ids = sorted(self._pending_deleted_segments)
 
         def do():
-            database.update_document_text_only(document_id, new_content)
+            database.update_document_text_and_segments(
+                document_id, new_content, new_segments, deleted_segment_ids
+            )
 
         def undo():
-            database.update_document_text_only(document_id, old_content)
+            if old_snapshot:
+                database.delete_document(document_id)
+                workspace_snapshot_repository.restore_document_snapshot(old_snapshot)
+            else:
+                database.update_document_text_only(document_id, old_content)
 
         def after_refresh():
-            self.load_document_content()
+            if reload_after_save:
+                self.load_document_content()
+            else:
+                self._pending_deleted_segments = {}
             self.segments_changed.emit()
             self.is_dirty = False
             self.save_button.setEnabled(False)
 
-        self.execute_workspace_command(
-            WorkspaceCommand("Save Document Text", do, undo, after_refresh)
-        )
+        if record_history:
+            self.execute_workspace_command(
+                WorkspaceCommand("Save Document Text", do, undo, after_refresh)
+            )
+        else:
+            do()
+            after_refresh()
         if show_success_prompt:
             QMessageBox.information(
                 self, "Success", "Document text saved successfully."
@@ -994,6 +1208,7 @@ class ContentView(QWidget):
             )
 
     def handle_document_switch(self, new_index):
+        self.autosave_timer.stop()
         if self.editing_segment_id is not None:
             self.cancel_segment_edit()
         if self.is_dirty and self.current_document_id is not None:
@@ -1023,12 +1238,23 @@ class ContentView(QWidget):
     def load_document_content(self):
         QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
         try:
+            self.autosave_timer.stop()
+            self._loading_document = True
             try:
                 self.text_edit.textChanged.disconnect(self.on_text_changed)
             except RuntimeError:
                 pass
+            if self._document_change_connected:
+                try:
+                    self.text_edit.document().contentsChange.disconnect(
+                        self.on_document_contents_changed
+                    )
+                except RuntimeError:
+                    pass
+                self._document_change_connected = False
             self.text_edit.setDocument(QTextDocument(self))
             self.is_dirty = False
+            self._pending_deleted_segments = {}
             self.save_button.setEnabled(False)
             selected_display_text = self.doc_selector.currentText()
             if not selected_display_text:
@@ -1064,9 +1290,14 @@ class ContentView(QWidget):
                 self._pending_highlight = None
 
             self.text_edit.textChanged.connect(self.on_text_changed)
+            self.text_edit.document().contentsChange.connect(
+                self.on_document_contents_changed
+            )
+            self._document_change_connected = True
             self.clear_find_status()
             self.update_match_count()
         finally:
+            self._loading_document = False
             QApplication.restoreOverrideCursor()
 
     def _finish_excel_import(self, filename, result):
@@ -1149,9 +1380,10 @@ class ContentView(QWidget):
                 self.text_edit.setExtraSelections([])
                 self.segment_count_label.setText("Coded Segments: 0")
                 return
-            self._coded_segments_cache = database.get_coded_segments_for_document(
-                self.current_document_id
-            )
+            if not self.is_dirty:
+                self._coded_segments_cache = database.get_coded_segments_for_document(
+                    self.current_document_id
+                )
             self.segment_count_label.setText(
                 f"Coded Segments: {len(self._coded_segments_cache)}"
             )
@@ -1189,6 +1421,7 @@ class ContentView(QWidget):
             )
             for segment in self._coded_segments_cache
         ]
+        selections.extend(self._create_find_match_selections())
         if edit_range is not None:
             selections.append(
                 self._create_selection(
@@ -1196,6 +1429,31 @@ class ContentView(QWidget):
                 )
             )
         self.text_edit.setExtraSelections(selections)
+
+    def _create_find_match_selections(self):
+        if not self.find_bar.isVisible():
+            return []
+        search_text = self.find_input.text()
+        if not search_text:
+            return []
+
+        selections = []
+        content = self.text_edit.toPlainText()
+        start = 0
+        while True:
+            position = content.find(search_text, start)
+            if position == -1:
+                break
+            selections.append(
+                self._create_selection(
+                    position,
+                    position + len(search_text),
+                    self._find_match_color(),
+                    foreground_hex="#000000",
+                )
+            )
+            start = position + len(search_text)
+        return selections
 
     def on_cursor_position_changed(self):
         pos = self.text_edit.textCursor().position()
@@ -1281,9 +1539,15 @@ class ContentView(QWidget):
             get_translation("content_view.replace_placeholder", self.language)
         )
         self.find_previous_button.setText(
+            ""
+        )
+        self.find_previous_button.setToolTip(
             get_translation("content_view.find_previous", self.language)
         )
         self.find_next_button.setText(
+            ""
+        )
+        self.find_next_button.setToolTip(
             get_translation("content_view.find_next", self.language)
         )
         self.replace_button.setText(
@@ -1314,6 +1578,8 @@ class ContentView(QWidget):
             (self.undo_icon, self.undo_button),
             (self.redo_icon, self.redo_button),
             (self.find_icon, self.find_button),
+            (self.find_previous_icon, self.find_previous_button),
+            (self.find_next_icon, self.find_next_button),
             (self.save_icon, self.save_button),
             (self.export_annotated_icon, self.export_annotated_button),
             (self.delete_icon, self.delete_button),

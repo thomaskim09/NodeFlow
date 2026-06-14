@@ -6,7 +6,14 @@ from typing import Any
 
 from utils.app_paths import get_settings_path
 
-DEFAULT_SETTINGS = {"theme": "Default", "language": "English", "undo_depth": 100}
+DEFAULT_SETTINGS = {
+    "theme": "Default",
+    "language": "English",
+    "undo_depth": 100,
+    "autosave_enabled": True,
+    "autosave_delay_ms": 1500,
+    "find_match_color": "#FFF59D",
+}
 
 
 class SettingsService:
