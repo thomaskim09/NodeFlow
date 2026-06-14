@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from repositories.base import get_connection
+from repositories.cache_invalidation import invalidate_analysis_cache
 
 
 class SegmentRepository:
@@ -27,11 +28,15 @@ class SegmentRepository:
     ) -> int:
         with get_connection() as conn:
             with conn:
+                content = self._get_document_content(conn, document_id)
+                self._validate_range(start, end, len(content))
                 cursor = conn.execute(
                     "INSERT INTO coded_segments (document_id, node_id, participant_id, segment_start, segment_end, content_preview) VALUES (?, ?, ?, ?, ?, ?)",
                     (document_id, node_id, participant_id, start, end, text_preview),
                 )
-                return cursor.lastrowid
+                segment_id = cursor.lastrowid
+        invalidate_analysis_cache()
+        return segment_id
 
     def get_for_nodes(
         self, project_id: int, node_ids: list[int], document_id: int | None = None
@@ -132,14 +137,31 @@ class SegmentRepository:
     def delete(self, segment_id: int) -> None:
         with get_connection() as conn:
             with conn:
-                conn.execute("DELETE FROM coded_segments WHERE id = ?", (segment_id,))
+                cursor = conn.execute(
+                    "DELETE FROM coded_segments WHERE id = ?", (segment_id,)
+                )
+                if cursor.rowcount == 0:
+                    raise ValueError(f"Segment {segment_id} does not exist.")
+        invalidate_analysis_cache()
 
     def update(
         self, segment_id: int, new_start: int, new_end: int, new_content_preview: str
     ) -> None:
         with get_connection() as conn:
             with conn:
-                conn.execute(
+                row = conn.execute(
+                    """
+                    SELECT s.document_id, d.content
+                    FROM coded_segments s
+                    JOIN documents d ON s.document_id = d.id
+                    WHERE s.id = ?
+                    """,
+                    (segment_id,),
+                ).fetchone()
+                if not row:
+                    raise ValueError(f"Segment {segment_id} does not exist.")
+                self._validate_range(new_start, new_end, len(row["content"]))
+                cursor = conn.execute(
                     """
                     UPDATE coded_segments
                     SET segment_start = ?, segment_end = ?, content_preview = ?
@@ -147,6 +169,26 @@ class SegmentRepository:
                     """,
                     (new_start, new_end, new_content_preview, segment_id),
                 )
+                if cursor.rowcount == 0:
+                    raise ValueError(f"Segment {segment_id} does not exist.")
+        invalidate_analysis_cache()
+
+    @staticmethod
+    def _get_document_content(conn, document_id: int) -> str:
+        row = conn.execute(
+            "SELECT content FROM documents WHERE id = ?",
+            (document_id,),
+        ).fetchone()
+        if not row:
+            raise ValueError(f"Document {document_id} does not exist.")
+        return row["content"]
+
+    @staticmethod
+    def _validate_range(start: int, end: int, content_length: int) -> None:
+        if not 0 <= int(start) < int(end) <= content_length:
+            raise ValueError(
+                f"Invalid segment range {start}:{end} for content length {content_length}."
+            )
 
     def get_node_statistics(
         self, project_id: int, document_id: int | None = None

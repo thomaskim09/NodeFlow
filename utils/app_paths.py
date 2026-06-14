@@ -54,6 +54,18 @@ def get_logs_dir() -> Path:
     return path
 
 
+def get_database_backups_dir() -> Path:
+    path = get_user_data_dir() / "backups"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def get_imports_dir() -> Path:
+    path = get_user_data_dir() / "imports"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
 def get_temp_exports_dir() -> Path:
     path = get_user_data_dir() / "exports"
     path.mkdir(parents=True, exist_ok=True)

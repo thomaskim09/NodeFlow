@@ -1,8 +1,10 @@
 from repositories.document_repository import document_repository
 
 
-def add_document(project_id, title, text, participant_id=None):
-    return document_repository.add(project_id, title, text, participant_id)
+def add_document(project_id, title, text, participant_id=None, source_metadata=None):
+    return document_repository.add(
+        project_id, title, text, participant_id, source_metadata
+    )
 
 
 def get_documents_for_project(project_id):

@@ -42,7 +42,7 @@ class CrosstabWidget(QWidget):
 
         segments_by_doc = defaultdict(list)
         for seg in segments:
-            segments_by_doc[seg["document_title"]].append(seg)
+            segments_by_doc[seg["document_id"]].append(seg)
 
         for doc_segs in segments_by_doc.values():
             for seg1, seg2 in itertools.combinations(doc_segs, 2):

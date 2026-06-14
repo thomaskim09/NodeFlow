@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from repositories.base import get_connection
+from repositories.cache_invalidation import invalidate_analysis_cache
 
 
 class NodeRepository:
@@ -22,7 +23,9 @@ class NodeRepository:
                     "INSERT INTO nodes (project_id, name, parent_id, color, position) VALUES (?, ?, ?, ?, ?)",
                     (project_id, name, parent_id, color, position),
                 )
-                return cursor.lastrowid
+                node_id = cursor.lastrowid
+        invalidate_analysis_cache()
+        return node_id
 
     def list_for_project(self, project_id: int) -> list[dict]:
         with get_connection() as conn:
@@ -36,11 +39,13 @@ class NodeRepository:
         with get_connection() as conn:
             with conn:
                 conn.execute("UPDATE nodes SET name = ? WHERE id = ?", (new_name, node_id))
+        invalidate_analysis_cache()
 
     def update_color(self, node_id: int, new_color: str) -> None:
         with get_connection() as conn:
             with conn:
                 conn.execute("UPDATE nodes SET color = ? WHERE id = ?", (new_color, node_id))
+        invalidate_analysis_cache()
 
     def delete_with_children(self, node_id: int) -> None:
         with get_connection() as conn:
@@ -66,11 +71,13 @@ class NodeRepository:
                     f"DELETE FROM nodes WHERE id IN ({placeholders})",
                     nodes_to_delete,
                 )
+        invalidate_analysis_cache()
 
     def update_order(self, node_positions: list[tuple[int, int]]) -> None:
         with get_connection() as conn:
             with conn:
                 conn.executemany("UPDATE nodes SET position = ? WHERE id = ?", node_positions)
+        invalidate_analysis_cache()
 
     def update_parent(self, node_id: int, new_parent_id: int | None) -> None:
         with get_connection() as conn:
@@ -89,6 +96,7 @@ class NodeRepository:
                     "UPDATE nodes SET parent_id = ?, position = ? WHERE id = ?",
                     (new_parent_id, row[0], node_id),
                 )
+        invalidate_analysis_cache()
 
     def get_descendants(self, node_id: int) -> list[int]:
         with get_connection() as conn:

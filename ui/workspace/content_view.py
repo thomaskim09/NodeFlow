@@ -627,6 +627,7 @@ class ContentView(QWidget):
             show_success_prompt=False,
             record_history=False,
             reload_after_save=True,
+            allow_segment_deletion=True,
         )
         after_snapshot = workspace_snapshot_repository.get_document_snapshot(
             before_snapshot["document"]["id"]
@@ -729,7 +730,8 @@ class ContentView(QWidget):
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             )
             if reply == QMessageBox.StandardButton.Yes:
-                self.save_document(show_success_prompt=False)
+                if not self.save_document(show_success_prompt=False):
+                    return
             else:
                 return
         self.editing_segment_id = segment_id
@@ -896,7 +898,7 @@ class ContentView(QWidget):
 
     def _process_text_document(self, file_path):
         try:
-            title, content = import_service.read_text_document(file_path)
+            title, content, source_metadata = import_service.read_text_document(file_path)
             if database.check_document_exists(self.project_id, title, content):
                 reply = QMessageBox.question(
                     self,
@@ -922,17 +924,21 @@ class ContentView(QWidget):
                     )
                     return
                 self._import_and_add_document_with_new_participant(
-                    name.strip(), title, content
+                    name.strip(), title, content, source_metadata
                 )
                 return
             if len(participants) == 1:
-                self._import_and_add_document(participants[0]["id"], title, content)
+                self._import_and_add_document(
+                    participants[0]["id"], title, content, source_metadata
+                )
             else:
                 dialog = AssignParticipantDialog(participants, self)
                 if dialog.exec() == QDialog.DialogCode.Accepted:
                     participant_id = dialog.get_selected_participant_id()
                     if participant_id:
-                        self._import_and_add_document(participant_id, title, content)
+                        self._import_and_add_document(
+                            participant_id, title, content, source_metadata
+                        )
         except Exception as e:
             QMessageBox.critical(
                 self,
@@ -999,7 +1005,9 @@ class ContentView(QWidget):
         self.doc_selector.setCurrentIndex(new_index)
         self.handle_document_switch(new_index)
 
-    def _import_and_add_document(self, participant_id, title, content):
+    def _import_and_add_document(
+        self, participant_id, title, content, source_metadata=None
+    ):
         new_doc_id = None
         snapshot = None
 
@@ -1009,7 +1017,7 @@ class ContentView(QWidget):
                 workspace_snapshot_repository.restore_document_snapshot(snapshot)
             else:
                 new_doc_id = database.add_document(
-                    self.project_id, title, content, participant_id
+                    self.project_id, title, content, participant_id, source_metadata
                 )
                 snapshot = workspace_snapshot_repository.get_document_snapshot(
                     new_doc_id
@@ -1031,7 +1039,9 @@ class ContentView(QWidget):
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to import file: {e}")
 
-    def _import_and_add_document_with_new_participant(self, participant_name, title, content):
+    def _import_and_add_document_with_new_participant(
+        self, participant_name, title, content, source_metadata=None
+    ):
         participant_id = None
         document_id = None
         participant_snapshot = None
@@ -1049,7 +1059,7 @@ class ContentView(QWidget):
                     self.project_id, participant_name
                 )
                 document_id = database.add_document(
-                    self.project_id, title, content, participant_id
+                    self.project_id, title, content, participant_id, source_metadata
                 )
                 participant_snapshot = (
                     workspace_snapshot_repository.get_participant_snapshot(
@@ -1145,21 +1155,29 @@ class ContentView(QWidget):
                 tombstone_position = max(0, min(position, len(current_text)))
                 segment["segment_start"] = tombstone_position
                 segment["segment_end"] = tombstone_position
-                segment["content_preview"] = ""
                 self._pending_deleted_segments[segment_id] = segment
         self._render_highlights()
 
     def save_document(
-        self, show_success_prompt=True, record_history=True, reload_after_save=True
+        self,
+        show_success_prompt=True,
+        record_history=True,
+        reload_after_save=True,
+        allow_segment_deletion=False,
     ):
         if not self.is_dirty or not self.current_document_id:
-            return
+            return False
         document_id = self.current_document_id
         old_content, _ = database.get_document_content(document_id)
         new_content = self.text_edit.toPlainText()
         old_snapshot = workspace_snapshot_repository.get_document_snapshot(document_id)
         new_segments = [dict(segment) for segment in self._coded_segments_cache]
         deleted_segment_ids = sorted(self._pending_deleted_segments)
+        if deleted_segment_ids and not allow_segment_deletion:
+            if not record_history:
+                return False
+            if not self._confirm_pending_segment_deletions(deleted_segment_ids):
+                return False
 
         def do():
             database.update_document_text_and_segments(
@@ -1193,6 +1211,29 @@ class ContentView(QWidget):
             QMessageBox.information(
                 self, "Success", "Document text saved successfully."
             )
+        return True
+
+    def _confirm_pending_segment_deletions(self, deleted_segment_ids):
+        previews = []
+        for segment_id in deleted_segment_ids[:5]:
+            segment = self._pending_deleted_segments.get(segment_id, {})
+            preview = segment.get("content_preview") or f"Segment #{segment_id}"
+            previews.append(preview[:80])
+        if len(deleted_segment_ids) > 5:
+            previews.append(f"...and {len(deleted_segment_ids) - 5} more")
+        details = "\n".join(previews)
+        reply = QMessageBox.warning(
+            self,
+            "Confirm Coded Segment Deletion",
+            (
+                f"Saving this edit will delete {len(deleted_segment_ids)} coded "
+                f"segment(s) whose selected text was removed.\n\n{details}\n\n"
+                "Do you want to delete these coded segments and save?"
+            ),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        return reply == QMessageBox.StandardButton.Yes
 
     def export_annotated(self):
         if self.current_document_id:
@@ -1223,7 +1264,8 @@ class ContentView(QWidget):
             msg_box.setDefaultButton(QMessageBox.StandardButton.Save)
             reply = msg_box.exec()
             if reply == QMessageBox.StandardButton.Save:
-                self.save_document(show_success_prompt=False)
+                if not self.save_document(show_success_prompt=False):
+                    return
             elif reply == QMessageBox.StandardButton.Cancel:
                 id_to_display_text = {v: k for k, v in self.documents_map.items()}
                 old_display_text = id_to_display_text.get(self.current_document_id)

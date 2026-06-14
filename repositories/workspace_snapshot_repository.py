@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from repositories.base import get_connection
+from repositories.cache_invalidation import invalidate_analysis_cache
+from repositories.document_repository import DOCUMENT_METADATA_FIELDS
 
 
 class WorkspaceSnapshotRepository:
@@ -33,6 +35,7 @@ class WorkspaceSnapshotRepository:
                         segment["created_at"],
                     ),
                 )
+        invalidate_analysis_cache()
 
     def get_document_snapshot(self, document_id: int) -> dict | None:
         with get_connection() as conn:
@@ -58,8 +61,10 @@ class WorkspaceSnapshotRepository:
                 conn.execute(
                     """
                     INSERT INTO documents
-                        (id, project_id, participant_id, title, content, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?)
+                        (id, project_id, participant_id, title, content, created_at,
+                         source_filename, source_copy_path, source_sha256,
+                         source_kind, source_row, imported_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         document["id"],
@@ -68,6 +73,7 @@ class WorkspaceSnapshotRepository:
                         document["title"],
                         document["content"],
                         document["created_at"],
+                        *[document.get(field) for field in DOCUMENT_METADATA_FIELDS],
                     ),
                 )
                 for segment in snapshot["segments"]:
@@ -89,6 +95,7 @@ class WorkspaceSnapshotRepository:
                             segment["created_at"],
                         ),
                     )
+        invalidate_analysis_cache()
 
     def get_node_subtree_snapshot(self, node_id: int) -> dict:
         with get_connection() as conn:
@@ -164,6 +171,7 @@ class WorkspaceSnapshotRepository:
                             segment["created_at"],
                         ),
                     )
+        invalidate_analysis_cache()
 
     def get_node_layout(self, project_id: int) -> list[dict]:
         with get_connection() as conn:
@@ -188,6 +196,7 @@ class WorkspaceSnapshotRepository:
                         for node in layout
                     ],
                 )
+        invalidate_analysis_cache()
 
     def get_participant_snapshot(self, participant_id: int) -> dict | None:
         with get_connection() as conn:
@@ -247,6 +256,7 @@ class WorkspaceSnapshotRepository:
                         """,
                         [participant["id"], *snapshot["segment_ids"]],
                     )
+        invalidate_analysis_cache()
 
     def get_project_entity_ids(self, project_id: int) -> dict[str, set[int]]:
         with get_connection() as conn:

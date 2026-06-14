@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from repositories.base import get_connection
+from repositories.cache_invalidation import invalidate_analysis_cache
 
 
 class ParticipantRepository:
@@ -11,7 +12,9 @@ class ParticipantRepository:
                     "INSERT INTO participants (project_id, name, details) VALUES (?, ?, ?)",
                     (project_id, name, details),
                 )
-                return cursor.lastrowid
+                participant_id = cursor.lastrowid
+        invalidate_analysis_cache()
+        return participant_id
 
     def list_for_project(self, project_id: int) -> list[dict]:
         with get_connection() as conn:
@@ -38,11 +41,13 @@ class ParticipantRepository:
                     "UPDATE participants SET name = ?, details = ? WHERE id = ?",
                     (name, details, participant_id),
                 )
+        invalidate_analysis_cache()
 
     def delete(self, participant_id: int) -> None:
         with get_connection() as conn:
             with conn:
                 conn.execute("DELETE FROM participants WHERE id = ?", (participant_id,))
+        invalidate_analysis_cache()
 
 
 participant_repository = ParticipantRepository()

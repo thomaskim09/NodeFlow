@@ -522,7 +522,8 @@ class WorkspaceView(QWidget):
         if not doc_id:
             return
         if self.center_pane.is_dirty:
-            self.center_pane.save_document(show_success_prompt=False)
+            if not self.center_pane.save_document(show_success_prompt=False):
+                return
         segment_id = None
         segment_snapshot = None
 

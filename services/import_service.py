@@ -1,22 +1,58 @@
 from __future__ import annotations
 
+import hashlib
+import shutil
+from datetime import datetime
 from pathlib import Path
 
 import docx
 import openpyxl
 
 import database
+from utils.app_paths import get_imports_dir
 
 
 class ImportService:
-    def read_text_document(self, file_path: str) -> tuple[str, str]:
+    def read_text_document(self, file_path: str) -> tuple[str, str, dict]:
         path = Path(file_path)
         if path.suffix.lower() == ".docx":
             document = docx.Document(path)
             content = "\n\n".join(paragraph.text for paragraph in document.paragraphs)
         else:
             content = path.read_text(encoding="utf-8")
-        return path.name, content
+        metadata = self.copy_source_metadata(path, path.suffix.lower().lstrip("."))
+        return path.name, content, metadata
+
+    def copy_source_metadata(
+        self, source_path: Path | str, source_kind: str, source_row: int | None = None
+    ) -> dict:
+        source_path = Path(source_path)
+        copied_path, digest = self._copy_import_source(source_path)
+        return {
+            "source_filename": source_path.name,
+            "source_copy_path": str(copied_path),
+            "source_sha256": digest,
+            "source_kind": source_kind,
+            "source_row": source_row,
+            "imported_at": datetime.now().isoformat(timespec="seconds"),
+        }
+
+    @staticmethod
+    def _copy_import_source(source_path: Path) -> tuple[Path, str]:
+        digest = hashlib.sha256()
+        with source_path.open("rb") as source:
+            for chunk in iter(lambda: source.read(1024 * 1024), b""):
+                digest.update(chunk)
+        source_hash = digest.hexdigest()
+        suffix = source_path.suffix
+        safe_stem = "".join(
+            char if char.isalnum() or char in ("-", "_") else "_"
+            for char in source_path.stem
+        ).strip("_") or "import"
+        target = get_imports_dir() / f"{safe_stem}_{source_hash[:12]}{suffix}"
+        if not target.exists():
+            shutil.copy2(source_path, target)
+        return target, source_hash
 
     def import_excel_data(
         self,
@@ -29,6 +65,7 @@ class ImportService:
             sheet = workbook.active
         except Exception as exc:
             return 0, [f"Failed to open or read the Excel file: {exc}"]
+        workbook_metadata = self.copy_source_metadata(file_path, "xlsx")
 
         headers = [cell.value for cell in sheet[1]]
         try:
@@ -94,7 +131,11 @@ class ImportService:
                             continue
 
             try:
-                database.add_document(project_id, title, content, participant_id)
+                source_metadata = dict(workbook_metadata)
+                source_metadata["source_row"] = row_idx
+                database.add_document(
+                    project_id, title, content, participant_id, source_metadata
+                )
                 existing_titles.add(title)
                 docs_imported += 1
             except Exception as exc:

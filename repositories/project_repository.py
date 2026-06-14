@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-import sqlite3
-
 from repositories.base import get_connection
+from repositories.cache_invalidation import invalidate_analysis_cache
 
 
 class ProjectRepository:
@@ -13,6 +12,7 @@ class ProjectRepository:
                     "INSERT INTO projects (name, description) VALUES (?, ?)",
                     (name, description),
                 )
+        invalidate_analysis_cache()
 
     def list_all(self) -> list[dict]:
         with get_connection() as conn:
@@ -26,11 +26,13 @@ class ProjectRepository:
                     "UPDATE projects SET name = ? WHERE id = ?",
                     (new_name, project_id),
                 )
+        invalidate_analysis_cache()
 
     def delete(self, project_id: int) -> None:
         with get_connection() as conn:
             with conn:
                 conn.execute("DELETE FROM projects WHERE id = ?", (project_id,))
+        invalidate_analysis_cache()
 
 
 project_repository = ProjectRepository()

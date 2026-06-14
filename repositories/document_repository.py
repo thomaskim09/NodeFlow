@@ -1,6 +1,16 @@
 from __future__ import annotations
 
 from repositories.base import get_connection
+from repositories.cache_invalidation import invalidate_analysis_cache
+
+DOCUMENT_METADATA_FIELDS = (
+    "source_filename",
+    "source_copy_path",
+    "source_sha256",
+    "source_kind",
+    "source_row",
+    "imported_at",
+)
 
 
 class DocumentRepository:
@@ -10,15 +20,31 @@ class DocumentRepository:
         title: str,
         text: str,
         participant_id: int | None = None,
+        source_metadata: dict | None = None,
     ) -> int:
+        metadata = source_metadata or {}
         with get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "INSERT INTO documents (project_id, title, content, participant_id) VALUES (?, ?, ?, ?)",
-                (project_id, title, text, participant_id),
+                """
+                INSERT INTO documents
+                    (project_id, title, content, participant_id,
+                     source_filename, source_copy_path, source_sha256,
+                     source_kind, source_row, imported_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    project_id,
+                    title,
+                    text,
+                    participant_id,
+                    *[metadata.get(field) for field in DOCUMENT_METADATA_FIELDS],
+                ),
             )
             conn.commit()
-            return cursor.lastrowid
+            document_id = cursor.lastrowid
+        invalidate_analysis_cache()
+        return document_id
 
     def list_for_project(self, project_id: int) -> list[dict]:
         with get_connection() as conn:
@@ -47,15 +73,21 @@ class DocumentRepository:
     def delete(self, document_id: int) -> None:
         with get_connection() as conn:
             with conn:
-                conn.execute("DELETE FROM documents WHERE id = ?", (document_id,))
+                cursor = conn.execute("DELETE FROM documents WHERE id = ?", (document_id,))
+                if cursor.rowcount == 0:
+                    raise ValueError(f"Document {document_id} does not exist.")
+        invalidate_analysis_cache()
 
     def update_content(self, document_id: int, new_content: str) -> None:
         with get_connection() as conn:
             with conn:
-                conn.execute(
+                cursor = conn.execute(
                     "UPDATE documents SET content = ? WHERE id = ?",
                     (new_content, document_id),
                 )
+                if cursor.rowcount == 0:
+                    raise ValueError(f"Document {document_id} does not exist.")
+        invalidate_analysis_cache()
 
     def update_content_and_segments(
         self,
@@ -64,39 +96,60 @@ class DocumentRepository:
         segments: list[dict],
         deleted_segment_ids: list[int],
     ) -> None:
+        self._validate_segments_for_content(segments, new_content)
         with get_connection() as conn:
             with conn:
-                conn.execute(
+                cursor = conn.execute(
                     "UPDATE documents SET content = ? WHERE id = ?",
                     (new_content, document_id),
                 )
+                if cursor.rowcount == 0:
+                    raise ValueError(f"Document {document_id} does not exist.")
                 if segments:
-                    conn.executemany(
+                    for segment in segments:
+                        cursor = conn.execute(
                         """
                         UPDATE coded_segments
                         SET segment_start = ?, segment_end = ?, content_preview = ?
                         WHERE id = ? AND document_id = ?
                         """,
-                        [
                             (
                                 segment["segment_start"],
                                 segment["segment_end"],
                                 segment["content_preview"],
                                 segment["id"],
                                 document_id,
+                            ),
+                        )
+                        if cursor.rowcount == 0:
+                            raise ValueError(
+                                f"Segment {segment['id']} does not exist for document {document_id}."
                             )
-                            for segment in segments
-                        ],
-                    )
                 if deleted_segment_ids:
-                    placeholders = ",".join("?" for _ in deleted_segment_ids)
-                    conn.execute(
-                        f"""
-                        DELETE FROM coded_segments
-                        WHERE document_id = ? AND id IN ({placeholders})
-                        """,
-                        [document_id, *deleted_segment_ids],
-                    )
+                    for segment_id in deleted_segment_ids:
+                        cursor = conn.execute(
+                            """
+                            DELETE FROM coded_segments
+                            WHERE document_id = ? AND id = ?
+                            """,
+                            (document_id, segment_id),
+                        )
+                        if cursor.rowcount == 0:
+                            raise ValueError(
+                                f"Segment {segment_id} does not exist for document {document_id}."
+                            )
+        invalidate_analysis_cache()
+
+    @staticmethod
+    def _validate_segments_for_content(segments: list[dict], content: str) -> None:
+        content_length = len(content)
+        for segment in segments:
+            start = int(segment["segment_start"])
+            end = int(segment["segment_end"])
+            if not 0 <= start < end <= content_length:
+                raise ValueError(
+                    f"Invalid segment range {start}:{end} for content length {content_length}."
+                )
 
     def get_word_count(self, document_id: int | None) -> int:
         if not document_id:
