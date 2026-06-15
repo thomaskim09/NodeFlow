@@ -19,7 +19,7 @@ from PySide6.QtGui import QKeyEvent, QColor, QIcon
 import database
 from qt_material_icons import MaterialIcon
 from utils.common import get_translation
-from managers.theme_manager import load_settings, get_system_theme
+from managers.theme_manager import load_settings, get_effective_theme_mode
 from repositories.workspace_snapshot_repository import workspace_snapshot_repository
 from services.workspace_history_service import WorkspaceCommand
 from ui.combo_box import FitPopupComboBox
@@ -86,9 +86,7 @@ class SegmentActionCell(QWidget):
         self.set_selected(False)
 
     def set_selected(self, is_selected: bool):
-        settings = load_settings()
-        theme = settings.get("theme", "Default")
-        is_dark = get_system_theme() == "Dark" if theme == "Default" else theme == "Dark"
+        is_dark = get_effective_theme_mode() == "Dark"
         selected_fg = "#f0f0f0" if is_dark else "#000000"
         normal_fg = "#d8d8d8" if is_dark else "#222222"
         current_fg = selected_fg if is_selected else normal_fg

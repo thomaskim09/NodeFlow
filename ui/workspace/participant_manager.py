@@ -15,7 +15,7 @@ from PySide6.QtCore import Signal, Qt
 from PySide6.QtGui import QKeyEvent, QColor, QIcon
 from qt_material_icons import MaterialIcon
 from utils.common import get_translation
-from managers.theme_manager import load_settings, get_system_theme
+from managers.theme_manager import load_settings, get_effective_theme_mode
 
 import database
 from repositories.workspace_snapshot_repository import workspace_snapshot_repository
@@ -100,9 +100,7 @@ class ParticipantItemWidget(QWidget):
         self.menu_button.setVisible(True)
 
     def set_selected_style(self, is_selected: bool):
-        settings = load_settings()
-        theme = settings.get("theme", "Default")
-        is_dark = get_system_theme() == "Dark" if theme == "Default" else theme == "Dark"
+        is_dark = get_effective_theme_mode() == "Dark"
         selected_fg = "#f0f0f0" if is_dark else "#000000"
         normal_fg = "#f0f0f0" if is_dark else "#333333"
         stats_fg = "#b8b8b8" if is_dark else "#888888"

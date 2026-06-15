@@ -33,6 +33,19 @@ def get_system_theme():
     return "Light"  # Default to Light if detection is ambiguous or fails
 
 
+def get_effective_theme_mode(theme_setting=None):
+    """
+    Returns the effective application theme mode used by the current stylesheet.
+
+    The app currently applies the dark stylesheet only when the saved setting is
+    explicitly "Dark". Any other value, including the legacy/default "Default",
+    resolves to the light stylesheet.
+    """
+    if theme_setting is None:
+        theme_setting = load_settings().get("theme", "Default")
+    return "Dark" if theme_setting == "Dark" else "Light"
+
+
 def get_dark_theme_stylesheet():
     """Returns the QSS for the dark theme."""
     return """

@@ -28,9 +28,8 @@ from managers.export_manager import (
 )
 import database
 from qt_material_icons import MaterialIcon
-from utils.common import get_translation
-from managers.theme_manager import load_settings, get_system_theme
-from urllib.parse import quote
+from utils.common import get_translation, get_resource_path
+from managers.theme_manager import load_settings, get_effective_theme_mode
 from repositories.workspace_snapshot_repository import workspace_snapshot_repository
 from services.workspace_history_service import WorkspaceCommand
 from ui.combo_box import FitPopupComboBox
@@ -88,18 +87,8 @@ PRESET_COLORS = [
     "#66FFCC",
 ]
 
-def _branch_icon_data_uri(stroke_color: str, direction: str) -> str:
-    if direction == "right":
-        path = "M5 4 L11 8 L5 12"
-    else:
-        path = "M4 5 L8 11 L12 5"
-    svg = (
-        "<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16'>"
-        f"<path d='{path}' fill='none' stroke='{stroke_color}' stroke-width='2' "
-        "stroke-linecap='round' stroke-linejoin='round'/>"
-        "</svg>"
-    )
-    return f"data:image/svg+xml;utf8,{quote(svg)}"
+def _resource_url(filename: str) -> str:
+    return get_resource_path(filename).replace("\\", "/")
 
 
 class NodeItemWidget(QWidget):
@@ -159,9 +148,7 @@ class NodeItemWidget(QWidget):
         self.menu_button.setVisible(True)
 
     def set_selected_style(self, is_selected: bool):
-        settings = load_settings()
-        theme = settings.get("theme", "Default")
-        is_dark = get_system_theme() == "Dark" if theme == "Default" else theme == "Dark"
+        is_dark = get_effective_theme_mode() == "Dark"
         selected_fg = "#f0f0f0" if is_dark else "#000000"
         normal_fg = "#f0f0f0" if is_dark else "#333333"
         stats_fg = "#b8b8b8" if is_dark else "#888888"
@@ -221,30 +208,30 @@ class NodeItemWidget(QWidget):
         menu.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         menu.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, False)
         menu.setWindowOpacity(1.0)
-        export_action = menu.addAction(
-            get_translation("node_tree.export_tooltip", self.language)
-        )
-        filter_action = menu.addAction(
-            get_translation("node_tree.filter_tooltip", self.language)
-        )
         add_child_action = menu.addAction(
             get_translation("node_tree.add_child_tooltip", self.language)
         )
         rename_action = menu.addAction(
             get_translation("node_tree.rename_tooltip", self.language)
         )
+        filter_action = menu.addAction(
+            get_translation("node_tree.filter_tooltip", self.language)
+        )
+        export_action = menu.addAction(
+            get_translation("node_tree.export_tooltip", self.language)
+        )
         delete_action = menu.addAction(
             get_translation("node_tree.delete_tooltip", self.language)
         )
         action = menu.exec(self.menu_button.mapToGlobal(self.menu_button.rect().bottomLeft()))
-        if action == export_action:
-            self.on_export()
-        elif action == filter_action:
-            self.on_filter()
-        elif action == add_child_action:
+        if action == add_child_action:
             self.on_add_child()
         elif action == rename_action:
             self.on_rename()
+        elif action == filter_action:
+            self.on_filter()
+        elif action == export_action:
+            self.on_export()
         elif action == delete_action:
             self.on_delete()
 
@@ -414,6 +401,8 @@ class NodeTreeManager(QWidget):
         self.original_tree_widget_dropEvent = self.tree_widget.dropEvent
         self.tree_widget.dropEvent = self.dropEvent
         self.tree_widget.keyPressEvent = self.keyPressEvent
+        self._branch_right_icon = ""
+        self._branch_down_icon = ""
         self.update_theme(load_settings().get("theme", "Light"))
         self.load_nodes()
 
@@ -636,10 +625,7 @@ class NodeTreeManager(QWidget):
 
     def set_selection_mode(self, enabled: bool):
         self._is_selection_mode = enabled
-        if enabled:
-            self.tree_widget.setStyleSheet("QTreeWidget { border: 2px solid #0078d7; }")
-        else:
-            self.tree_widget.setStyleSheet("")
+        self._apply_tree_widget_style()
 
     def on_item_clicked(self, item: QTreeWidgetItem, column: int):
         if self._is_selection_mode and item:
@@ -1080,27 +1066,43 @@ class NodeTreeManager(QWidget):
             it += 1
 
     def update_theme(self, theme):
-        is_dark = theme == "Dark"
+        is_dark = get_effective_theme_mode(theme) == "Dark"
         fg = QColor("#f0f0f0" if is_dark else "#000000")
         disabled_fg = QColor("#a8a8a8" if is_dark else "#5e5e5e")
-        branch_color = "#d8d8d8" if is_dark else "#4a4a4a"
-        right_icon = _branch_icon_data_uri(branch_color, "right")
-        down_icon = _branch_icon_data_uri(branch_color, "down")
+        branch_suffix = "dark" if is_dark else "light"
+        self._branch_right_icon = _resource_url(f"tree-chevron-right-{branch_suffix}.svg")
+        self._branch_down_icon = _resource_url(f"tree-chevron-down-{branch_suffix}.svg")
         self.add_root_icon.set_color(fg, QIcon.Mode.Normal)
         self.add_root_icon.set_color(disabled_fg, QIcon.Mode.Disabled)
         self.clear_filter_icon.set_color(fg, QIcon.Mode.Normal)
         self.clear_filter_icon.set_color(disabled_fg, QIcon.Mode.Disabled)
         self.add_root_button.setIcon(self.add_root_icon)
         self.clear_filter_button.setIcon(self.clear_filter_icon)
+        self._apply_tree_widget_style()
+
+    def _apply_tree_widget_style(self):
+        border = "2px solid #0078d7" if self._is_selection_mode else "none"
         self.tree_widget.setStyleSheet(
             f"""
+            QTreeWidget {{
+                border: {border};
+            }}
+            QTreeView::branch {{
+                background: transparent;
+                border-image: none;
+                image: none;
+                width: 14px;
+                height: 14px;
+            }}
             QTreeView::branch:has-children:closed,
+            QTreeView::branch:closed:has-children:!has-siblings,
             QTreeView::branch:closed:has-children:has-siblings {{
-                image: url("{right_icon}");
+                image: url("{self._branch_right_icon}");
             }}
             QTreeView::branch:open:has-children,
+            QTreeView::branch:open:has-children:!has-siblings,
             QTreeView::branch:open:has-children:has-siblings {{
-                image: url("{down_icon}");
+                image: url("{self._branch_down_icon}");
             }}
             """
         )

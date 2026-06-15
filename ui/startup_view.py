@@ -19,7 +19,7 @@ from PySide6.QtWidgets import QApplication
 import database
 from utils.common import get_resource_path, get_translation
 from ui.workspace.workspace_main_window import WorkspaceMainWindow
-from managers.theme_manager import load_settings, get_system_theme
+from managers.theme_manager import load_settings, get_effective_theme_mode
 
 
 class ProjectListWidget(QListWidget):
@@ -86,9 +86,7 @@ class ProjectItemWidget(QWidget):
         self.menu_button.setVisible(visible)
 
     def set_selected_style(self, is_selected: bool):
-        settings = load_settings()
-        theme = settings.get("theme", "Default")
-        is_dark = get_system_theme() == "Dark" if theme == "Default" else theme == "Dark"
+        is_dark = get_effective_theme_mode() == "Dark"
         selected_fg = "#f0f0f0" if is_dark else "#000000"
         normal_fg = "#f0f0f0" if is_dark else "#333333"
         if is_selected:
