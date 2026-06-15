@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, Signal, QTimer
 from PySide6.QtGui import QDropEvent, QKeyEvent, QColor, QIcon
 from managers.export_manager import (
+    export_classification_workbook,
     export_project_to_excel_single_sheet,
     export_node_family_to_word,
     export_node_family_to_excel,
@@ -278,6 +279,10 @@ class ExcelExportDialog(QDialog):
         info_label.setWordWrap(True)
 
         self.mode_combo = FitPopupComboBox()
+        self.mode_combo.addItem(
+            get_translation("node_tree.export_excel_classification", self.language),
+            "classification",
+        )
         self.mode_combo.addItem(
             get_translation("node_tree.export_excel_single", self.language), "single"
         )
@@ -863,6 +868,8 @@ class NodeTreeManager(QWidget):
         Displays a dialog box with all available Excel export options.
         This can be called from the node tree context menu or the main menu.
         """
+        if isinstance(node_id, bool):
+            node_id = None
         if node_id is None:
             node_id = self.get_selected_node_id()
         participants = database.get_participants_for_project(self.project_id)
@@ -871,7 +878,15 @@ class NodeTreeManager(QWidget):
             return
         selected_mode = dialog.selected_mode()
         participant_id = dialog.selected_participant_id()
-        if selected_mode == "single":
+        if selected_mode == "classification":
+            export_classification_workbook(
+                self.project_id,
+                self,
+                participant_id=participant_id,
+                start_node_id=node_id,
+                language=self.language,
+            )
+        elif selected_mode == "single":
             if node_id is None:
                 export_project_to_excel_single_sheet(
                     self.project_id, self, participant_id=participant_id

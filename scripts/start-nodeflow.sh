@@ -52,6 +52,15 @@ if [ "$FORCE_INSTALL" -eq 1 ] || [ ! -f "$STAMP_FILE" ]; then
     touch "$STAMP_FILE"
 fi
 
+LOG_PATH="$(
+    cd "$ROOT_DIR"
+    "$VENV_PYTHON" - <<'PY'
+from services.logging_service import get_log_path
+print(get_log_path())
+PY
+)"
+
+echo "NodeFlow log: $LOG_PATH"
 echo "Starting NodeFlow"
 cd "$ROOT_DIR"
-exec "$VENV_PYTHON" main.py
+exec env PYTHONUNBUFFERED=1 "$VENV_PYTHON" -u main.py

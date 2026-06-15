@@ -84,6 +84,7 @@ node_tree:
   export_excel_info: 'Choose the sheet layout and optionally limit the export to one participant.'
   export_excel_sheet_field: 'Sheet'
   export_excel_participant_field: 'Participant'
+  export_excel_classification: 'Classification Workbook'
   export_excel_single: 'Single Sheet'
   export_excel_multi: 'Multiple Sheets'
   export_excel_participants_all: 'All Participants'
@@ -184,6 +185,14 @@ export:
   export_word: 'Export as Word (.docx)'
   export_excel: 'Export as Excel (.xlsx)'
   excel: 'Export to Excel...'
+  classification_quotes_sheet: 'Classification Quotes'
+  respondent_matrix_sheet: 'Respondent Matrix'
+  findings_column: 'Findings'
+  node_column: 'Node'
+  subnode_column: 'Sub-node'
+  respondent_column: 'Respondent'
+  original_quote_column: 'Original quote'
+  document_column: 'Document'
 
 participant:
   header: 'Participants'

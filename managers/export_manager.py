@@ -1,17 +1,24 @@
 # managers/export_manager.py
 
+import json
+import logging
+import re
+from collections import Counter, defaultdict
+from pathlib import Path
+
+import database
+import networkx as nx
+import openpyxl
 from PySide6.QtWidgets import QFileDialog, QMessageBox
 from docx import Document
-from openpyxl.styles import Font, Alignment
-from collections import defaultdict
-import json
-import re
-import database
-import openpyxl
-import networkx as nx
 from docx.shared import RGBColor
+from openpyxl.styles import Alignment, Font
+
 from services.export_service import export_service
 from services.platform_service import platform_service
+from utils.common import get_translation
+
+LOGGER = logging.getLogger(__name__)
 
 
 def _get_project_name(project_id: int) -> str:
@@ -63,6 +70,127 @@ def _show_export_saved(parent_widget, message, file_path):
     msg_box.exec()
     if msg_box.clickedButton() == open_button:
         platform_service.open_path(file_path)
+
+
+def _sanitize_sheet_name(name: str) -> str:
+    return re.sub(r"[\\/*?:\[\]]", "", name)[:31]
+
+
+def _set_header_row(ws, headers):
+    ws.append(headers)
+    for cell in ws[1]:
+        cell.font = Font(bold=True)
+        cell.alignment = Alignment(horizontal="left", vertical="top", wrap_text=True)
+
+
+def _set_column_widths(ws, widths: dict[str, int]):
+    for column_letter, width in widths.items():
+        ws.column_dimensions[column_letter].width = width
+
+
+def _build_scoped_node_paths(nodes, start_node_id=None):
+    nodes_by_id = {node["id"]: node for node in nodes}
+    if start_node_id is not None and start_node_id not in nodes_by_id:
+        return [], {}
+
+    nodes_by_parent = {node_id: [] for node_id in nodes_by_id}
+    nodes_by_parent[None] = []
+    for node in nodes:
+        nodes_by_parent.setdefault(node["parent_id"], []).append(node)
+    for children in nodes_by_parent.values():
+        children.sort(key=lambda item: item["position"])
+
+    ordered_nodes = []
+    path_by_id = {}
+
+    def visit(node, current_path):
+        ordered_nodes.append(node)
+        path_by_id[node["id"]] = current_path
+        for child in nodes_by_parent.get(node["id"], []):
+            visit(child, current_path + [child["name"]])
+
+    if start_node_id is None:
+        for root in nodes_by_parent.get(None, []):
+            visit(root, [root["name"]])
+    else:
+        start_node = nodes_by_id[start_node_id]
+        visit(start_node, [start_node["name"]])
+
+    return ordered_nodes, path_by_id
+
+
+def _build_classification_columns(path_parts):
+    findings = path_parts[0] if len(path_parts) >= 1 else ""
+    node = path_parts[1] if len(path_parts) >= 2 else ""
+    sub_node = " > ".join(path_parts[2:]) if len(path_parts) >= 3 else ""
+    return findings, node, sub_node
+
+
+def _participant_display_name(segment):
+    return segment.get("participant_name") or "N/A"
+
+
+def _log_export_start(export_kind: str, project_id, participant_id=None, node_id=None):
+    LOGGER.info(
+        "Starting %s export (project_id=%s, participant_id=%s, node_id=%s)",
+        export_kind,
+        project_id,
+        participant_id,
+        node_id,
+    )
+
+
+def _save_workbook_with_feedback(
+    wb, file_path, parent_widget, success_message, error_title="Export Error"
+):
+    LOGGER.debug("Saving workbook to %s", file_path)
+    try:
+        wb.save(file_path)
+        LOGGER.info("Workbook saved successfully: %s", file_path)
+        _show_export_saved(parent_widget, success_message, file_path)
+    except PermissionError:
+        LOGGER.warning("Workbook save permission denied: %s", file_path)
+        export_service.show_permission_error(parent_widget, file_path)
+    except Exception as e:
+        LOGGER.exception("Workbook save failed for %s", file_path)
+        export_service.show_unexpected_error(parent_widget, error_title, e)
+
+
+def _get_save_file_path(
+    parent_widget,
+    title: str,
+    default_filename: str,
+    file_filter: str,
+) -> str:
+    LOGGER.debug(
+        "Opening save dialog title=%r default_filename=%r filter=%r",
+        title,
+        default_filename,
+        file_filter,
+    )
+    dialog = QFileDialog(parent_widget, title)
+    dialog.setAcceptMode(QFileDialog.AcceptMode.AcceptSave)
+    dialog.setFileMode(QFileDialog.FileMode.AnyFile)
+    dialog.setNameFilter(file_filter)
+    dialog.setOption(QFileDialog.Option.DontConfirmOverwrite, False)
+    dialog.setOption(QFileDialog.Option.DontUseNativeDialog, False)
+    dialog.setDefaultSuffix(Path(default_filename).suffix.lstrip("."))
+
+    default_path = Path.home() / default_filename if default_filename else Path.home()
+    dialog.setDirectory(str(default_path.parent))
+    dialog.selectFile(default_path.name)
+
+    if dialog.exec() != QFileDialog.DialogCode.Accepted:
+        LOGGER.info("Save dialog canceled for title=%r", title)
+        return ""
+
+    selected_files = dialog.selectedFiles()
+    selected_path = selected_files[0] if selected_files else ""
+    if selected_path:
+        LOGGER.info("Save dialog selected path: %s", selected_path)
+    else:
+        LOGGER.warning("Save dialog accepted without a selected path for title=%r", title)
+    return selected_path
 
 
 def export_to_word(project_id, parent_widget=None):
@@ -184,7 +312,8 @@ def export_project_to_excel_single_sheet(
     project_id, parent_widget=None, participant_id=None
 ):
     """Exports project coded segments to a single Excel worksheet."""
-    file_path, _ = QFileDialog.getSaveFileName(
+    _log_export_start("excel-single-sheet", project_id, participant_id=participant_id)
+    file_path = _get_save_file_path(
         parent_widget,
         "Save Excel Report",
         _default_export_filename(
@@ -199,6 +328,11 @@ def export_project_to_excel_single_sheet(
     nodes = database.get_nodes_for_project(project_id)
     coded_segments = _filter_segments_for_participant(
         database.get_coded_segments_for_project(project_id), participant_id
+    )
+    LOGGER.debug(
+        "Building single-sheet workbook with %s nodes and %s coded segments",
+        len(nodes),
+        len(coded_segments),
     )
     node_names = {node["id"]: node["name"] for node in nodes}
 
@@ -244,10 +378,167 @@ def export_project_to_excel_single_sheet(
         export_service.show_unexpected_error(parent_widget, "Export Error", e)
 
 
+def export_classification_workbook(
+    project_id,
+    parent_widget=None,
+    participant_id=None,
+    start_node_id=None,
+    language="English",
+):
+    """Exports quotes plus a respondent-by-code matrix in one workbook."""
+    _log_export_start(
+        "excel-classification",
+        project_id,
+        participant_id=participant_id,
+        node_id=start_node_id,
+    )
+    nodes = database.get_nodes_for_project(project_id)
+    ordered_nodes, path_by_id = _build_scoped_node_paths(nodes, start_node_id)
+    if not ordered_nodes:
+        LOGGER.warning(
+            "Classification export aborted: no nodes found in scope for node_id=%s",
+            start_node_id,
+        )
+        return
+
+    if start_node_id is None:
+        filename_stem = (
+            f"NodeFlow_{_get_project_name(project_id)}_classification_workbook_"
+            f"{_participant_file_suffix(project_id, participant_id)}"
+        )
+    else:
+        filename_stem = (
+            f"NodeFlow_{_get_project_name(project_id)}_{ordered_nodes[0]['name']}_"
+            f"classification_workbook_{_participant_file_suffix(project_id, participant_id)}"
+        )
+
+    file_path = _get_save_file_path(
+        parent_widget,
+        "Save Excel Report",
+        _default_export_filename(filename_stem, "xlsx"),
+        "Excel Files (*.xlsx)",
+    )
+    if not file_path:
+        return
+
+    node_ids_in_scope = [node["id"] for node in ordered_nodes]
+    node_order = {node_id: index for index, node_id in enumerate(node_ids_in_scope)}
+    node_path_labels = {
+        node_id: " > ".join(path_by_id[node_id]) for node_id in node_ids_in_scope
+    }
+
+    segments = _filter_segments_for_participant(
+        database.get_coded_segments_for_project(project_id), participant_id
+    )
+    scoped_segments = [
+        segment for segment in segments if segment["node_id"] in node_order
+    ]
+    LOGGER.debug(
+        "Building classification workbook with %s scoped nodes and %s scoped segments",
+        len(node_ids_in_scope),
+        len(scoped_segments),
+    )
+    scoped_segments.sort(
+        key=lambda segment: (
+            node_order[segment["node_id"]],
+            _participant_display_name(segment),
+            segment.get("document_title") or "",
+            segment.get("segment_start") or 0,
+            segment.get("segment_end") or 0,
+            segment.get("id") or 0,
+        )
+    )
+
+    wb = openpyxl.Workbook()
+    quotes_ws = wb.active
+    quotes_ws.title = _sanitize_sheet_name(
+        get_translation("export.classification_quotes_sheet", language)
+    )
+    _set_header_row(
+        quotes_ws,
+        [
+            get_translation("export.findings_column", language),
+            get_translation("export.node_column", language),
+            get_translation("export.subnode_column", language),
+            get_translation("export.respondent_column", language),
+            get_translation("export.original_quote_column", language),
+            get_translation("export.document_column", language),
+        ],
+    )
+    quotes_ws.freeze_panes = "A2"
+
+    for segment in scoped_segments:
+        findings, node, sub_node = _build_classification_columns(
+            path_by_id[segment["node_id"]]
+        )
+        quotes_ws.append(
+            [
+                findings,
+                node,
+                sub_node,
+                _participant_display_name(segment),
+                segment["content_preview"],
+                segment["document_title"],
+            ]
+        )
+
+    for row in quotes_ws.iter_rows(min_row=2):
+        for cell in row:
+            cell.alignment = Alignment(
+                horizontal="left", vertical="top", wrap_text=True
+            )
+    _set_column_widths(
+        quotes_ws,
+        {"A": 24, "B": 24, "C": 36, "D": 20, "E": 80, "F": 32},
+    )
+
+    matrix_ws = wb.create_sheet(
+        title=_sanitize_sheet_name(
+            get_translation("export.respondent_matrix_sheet", language)
+        )
+    )
+    _set_header_row(
+        matrix_ws,
+        [get_translation("export.respondent_column", language)]
+        + [node_path_labels[node_id] for node_id in node_ids_in_scope],
+    )
+    matrix_ws.freeze_panes = "B2"
+
+    counts = Counter()
+    participant_names = set()
+    for segment in scoped_segments:
+        participant_name = _participant_display_name(segment)
+        participant_names.add(participant_name)
+        counts[(participant_name, segment["node_id"])] += 1
+
+    for participant_name in sorted(participant_names, key=str.casefold):
+        matrix_ws.append(
+            [participant_name]
+            + [counts[(participant_name, node_id)] for node_id in node_ids_in_scope]
+        )
+
+    _set_column_widths(matrix_ws, {"A": 20})
+    for row in matrix_ws.iter_rows(min_row=2, min_col=2):
+        for cell in row:
+            cell.alignment = Alignment(horizontal="center", vertical="top")
+    for index, node_id in enumerate(node_ids_in_scope, start=2):
+        matrix_ws.column_dimensions[
+            openpyxl.utils.cell.get_column_letter(index)
+        ].width = max(18, min(36, len(node_path_labels[node_id]) + 4))
+
+    _save_workbook_with_feedback(
+        wb,
+        file_path,
+        parent_widget,
+        "Excel report successfully saved to:",
+    )
+
+
 def export_to_excel(project_id, parent_widget=None, participant_id=None):
     """Exports coded segments to an Excel file with one sheet per node."""
+    _log_export_start("excel-multi-sheet", project_id, participant_id=participant_id)
 
-    file_path, _ = QFileDialog.getSaveFileName(
+    file_path = _get_save_file_path(
         parent_widget,
         "Save Excel Report",
         _default_export_filename(
@@ -263,6 +554,11 @@ def export_to_excel(project_id, parent_widget=None, participant_id=None):
     nodes = database.get_nodes_for_project(project_id)
     coded_segments = _filter_segments_for_participant(
         database.get_coded_segments_for_project(project_id), participant_id
+    )
+    LOGGER.debug(
+        "Building multi-sheet workbook with %s nodes and %s coded segments",
+        len(nodes),
+        len(coded_segments),
     )
 
     # --- Data Structuring for Traversal ---
@@ -475,6 +771,12 @@ def export_node_family_to_excel(
     project_id, start_node_id, parent_widget=None, participant_id=None
 ):
     """Exports a specific node and its children to an .xlsx file."""
+    _log_export_start(
+        "excel-node-family-single-sheet",
+        project_id,
+        participant_id=participant_id,
+        node_id=start_node_id,
+    )
     if not start_node_id:
         return
 
@@ -484,9 +786,10 @@ def export_node_family_to_excel(
 
     start_node = nodes_map.get(start_node_id)
     if not start_node:
+        LOGGER.warning("Node-family single-sheet export aborted: node %s not found", start_node_id)
         return
 
-    file_path, _ = QFileDialog.getSaveFileName(
+    file_path = _get_save_file_path(
         parent_widget,
         f"Save Excel Report for '{start_node['name']}'",
         _default_export_filename(
@@ -502,6 +805,11 @@ def export_node_family_to_excel(
         start_node_id, nodes_map, all_nodes
     )
     coded_segments = _filter_segments_for_participant(coded_segments, participant_id)
+    LOGGER.debug(
+        "Building node-family single-sheet workbook with %s nodes in scope and %s candidate segments",
+        len(ids_to_include),
+        len(coded_segments),
+    )
 
     wb = openpyxl.Workbook()
     if "Sheet" in wb.sheetnames:
@@ -575,6 +883,12 @@ def export_node_family_to_excel_multi_sheet(
     project_id, start_node_id, parent_widget=None, participant_id=None
 ):
     """Exports a specific node and its children to an .xlsx file with multiple sheets."""
+    _log_export_start(
+        "excel-node-family-multi-sheet",
+        project_id,
+        participant_id=participant_id,
+        node_id=start_node_id,
+    )
     if not start_node_id:
         return
 
@@ -585,9 +899,10 @@ def export_node_family_to_excel_multi_sheet(
 
     start_node = nodes_map.get(start_node_id)
     if not start_node:
+        LOGGER.warning("Node-family multi-sheet export aborted: node %s not found", start_node_id)
         return
 
-    file_path, _ = QFileDialog.getSaveFileName(
+    file_path = _get_save_file_path(
         parent_widget,
         f"Save Excel Report for '{start_node['name']}'",
         _default_export_filename(
@@ -600,6 +915,11 @@ def export_node_family_to_excel_multi_sheet(
         return
 
     coded_segments = _filter_segments_for_participant(coded_segments, participant_id)
+    LOGGER.debug(
+        "Building node-family multi-sheet workbook with %s total nodes and %s candidate segments",
+        len(all_nodes),
+        len(coded_segments),
+    )
 
     # --- Data Structuring for Traversal ---
     nodes_by_parent = {n_id: [] for n_id in nodes_map}
@@ -694,7 +1014,8 @@ def export_overall_participants_to_excel(project_id, parent_widget=None):
     Features include dynamic node level columns, a tree-view layout for nodes,
     specific cell formatting, and an option to open the file from the success dialog.
     """
-    file_path, _ = QFileDialog.getSaveFileName(
+    _log_export_start("excel-overall-participants", project_id)
+    file_path = _get_save_file_path(
         parent_widget,
         "Save Overall Participants Report",
         _default_export_filename(
@@ -711,6 +1032,12 @@ def export_overall_participants_to_excel(project_id, parent_widget=None):
         nodes = database.get_nodes_for_project(project_id)
         participants = database.get_participants_for_project(project_id)
         all_segments = database.get_coded_segments_for_project(project_id)
+        LOGGER.debug(
+            "Building overall-participants workbook with %s nodes, %s participants, %s segments",
+            len(nodes),
+            len(participants),
+            len(all_segments),
+        )
 
         if not nodes:
             QMessageBox.information(
@@ -896,14 +1223,8 @@ def export_co_occurrence_to_gexf(project_id, parent_widget=None):
             else:
                 os.system(f'xdg-open "{file_path}"')
     except Exception as e:
-        import traceback
-
-        traceback.print_exc()
-        QMessageBox.critical(
-            parent_widget,
-            "Export Error",
-            f"An unexpected error occurred while saving the file:\n{e}",
-        )
+        LOGGER.exception("GEXF export failed")
+        export_service.show_unexpected_error(parent_widget, "Export Error", e)
 
 
 def export_annotated_document(
@@ -986,7 +1307,5 @@ def export_annotated_document(
             file_path,
         )
     except Exception as e:
-        import traceback
-
-        traceback.print_exc()
+        LOGGER.exception("Annotated document export failed")
         export_service.show_unexpected_error(parent_widget, "Export Error", e)

@@ -84,6 +84,7 @@ node_tree:
   export_excel_info: '选择工作表布局，并可按单个参与者限制导出内容。'
   export_excel_sheet_field: '工作表'
   export_excel_participant_field: '参与者'
+  export_excel_classification: '分类工作簿'
   export_excel_single: '单工作表'
   export_excel_multi: '多工作表'
   export_excel_participants_all: '所有参与者'
@@ -184,6 +185,14 @@ export:
   export_word: '导出为Word (.docx)'
   export_excel: '导出为Excel (.xlsx)'
   excel: '导出到 Excel...'
+  classification_quotes_sheet: '分类引文'
+  respondent_matrix_sheet: '受访者矩阵'
+  findings_column: 'Findings'
+  node_column: 'Node'
+  subnode_column: 'Sub-node'
+  respondent_column: 'Respondent'
+  original_quote_column: 'Original quote'
+  document_column: 'Document'
 
 participant:
   header: '参与者'

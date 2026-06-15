@@ -1,4 +1,5 @@
 import sys
+import logging
 from PySide6.QtWidgets import QApplication, QMainWindow, QSplashScreen
 from PySide6.QtCore import QSize, Qt
 from PySide6.QtGui import QIcon, QPixmap, QColor
@@ -10,7 +11,9 @@ from managers.theme_manager import apply_theme
 import database
 from utils.common import get_resource_path
 from services.logging_service import configure_logging
+from utils.app_paths import get_database_path, get_user_data_dir
 
+LOGGER = logging.getLogger(__name__)
 
 class MainWindow(QMainWindow):
     """
@@ -44,8 +47,12 @@ class MainWindow(QMainWindow):
         self.center_window()
 
 
-if __name__ == "__main__":
-    configure_logging()
+def main() -> int:
+    log_path = configure_logging()
+    LOGGER.info("Starting NodeFlow")
+    LOGGER.info("User data directory: %s", get_user_data_dir())
+    LOGGER.info("Database path: %s", get_database_path())
+    LOGGER.info("Log path: %s", log_path)
     app = QApplication(sys.argv)
     splash_path = get_resource_path("splashscreen.png")
     pixmap = QPixmap(splash_path) if os.path.exists(splash_path) else QPixmap()
@@ -63,6 +70,7 @@ if __name__ == "__main__":
         Qt.AlignmentFlag.AlignBottom | Qt.AlignmentFlag.AlignHCenter,
         QColor("#f0f0f0"),
     )
+    LOGGER.debug("Applying theme")
     apply_theme(app)
     app.processEvents()
 
@@ -71,6 +79,7 @@ if __name__ == "__main__":
         Qt.AlignmentFlag.AlignBottom | Qt.AlignmentFlag.AlignHCenter,
         QColor("#f0f0f0"),
     )
+    LOGGER.debug("Initializing database")
     database.create_tables()
     app.processEvents()
 
@@ -79,8 +88,14 @@ if __name__ == "__main__":
         Qt.AlignmentFlag.AlignBottom | Qt.AlignmentFlag.AlignHCenter,
         QColor("#f0f0f0"),
     )
+    LOGGER.debug("Creating main window")
     window = MainWindow()
     window.show()
     app.processEvents()
     splash.finish(window)
-    sys.exit(app.exec())
+    LOGGER.info("NodeFlow startup complete")
+    return app.exec()
+
+
+if __name__ == "__main__":
+    sys.exit(main())
