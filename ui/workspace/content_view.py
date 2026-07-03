@@ -314,21 +314,34 @@ class ContentView(QWidget):
         # Edit Mode Bar
         self.edit_bar = QFrame()
         self.edit_bar.setObjectName("editBar")
-        edit_bar_layout = QHBoxLayout(self.edit_bar)
+        edit_bar_layout = QVBoxLayout(self.edit_bar)
         edit_bar_layout.setContentsMargins(5, 2, 5, 2)
+        edit_bar_layout.setSpacing(4)
+        edit_actions_layout = QHBoxLayout()
         self.edit_label = QLabel(
             get_translation("edit_bar.editing_segment", self.language)
         )
+        self.remark_label = QLabel(
+            get_translation("edit_bar.remark_label", self.language)
+        )
+        self.segment_remark_input = QTextEdit()
+        self.segment_remark_input.setPlaceholderText(
+            get_translation("edit_bar.remark_placeholder", self.language)
+        )
+        self.segment_remark_input.setFixedHeight(54)
         self.save_edit_button = QPushButton(
             get_translation("edit_bar.save_changes", self.language)
         )
         self.cancel_edit_button = QPushButton(
             get_translation("edit_bar.cancel", self.language)
         )
-        edit_bar_layout.addWidget(self.edit_label)
-        edit_bar_layout.addStretch()
-        edit_bar_layout.addWidget(self.save_edit_button)
-        edit_bar_layout.addWidget(self.cancel_edit_button)
+        edit_actions_layout.addWidget(self.edit_label)
+        edit_actions_layout.addStretch()
+        edit_actions_layout.addWidget(self.save_edit_button)
+        edit_actions_layout.addWidget(self.cancel_edit_button)
+        edit_bar_layout.addLayout(edit_actions_layout)
+        edit_bar_layout.addWidget(self.remark_label)
+        edit_bar_layout.addWidget(self.segment_remark_input)
         self.edit_bar.setVisible(False)
 
         main_layout.addLayout(top_bar_layout)
@@ -735,6 +748,8 @@ class ContentView(QWidget):
             else:
                 return
         self.editing_segment_id = segment_id
+        segment = self._get_cached_segment(segment_id)
+        self.segment_remark_input.setPlainText((segment or {}).get("remark", ""))
         self.go_to_segment(document_id, start, end, mode="edit")
         self.edit_mode_changed.emit(True)
 
@@ -760,6 +775,7 @@ class ContentView(QWidget):
         new_start = cursor.selectionStart()
         new_end = cursor.selectionEnd()
         new_text = cursor.selectedText()
+        new_remark = self.segment_remark_input.toPlainText()
 
         segment_id = self.editing_segment_id
         old_segment = workspace_snapshot_repository.get_segment(segment_id)
@@ -767,14 +783,17 @@ class ContentView(QWidget):
             return
 
         def do():
-            database.update_coded_segment(segment_id, new_start, new_end, new_text)
+            database.update_coded_segment_with_remark(
+                segment_id, new_start, new_end, new_text, new_remark
+            )
 
         def undo():
-            database.update_coded_segment(
+            database.update_coded_segment_with_remark(
                 segment_id,
                 old_segment["segment_start"],
                 old_segment["segment_end"],
                 old_segment["content_preview"],
+                old_segment.get("remark", ""),
             )
 
         self.execute_workspace_command(
@@ -806,6 +825,7 @@ class ContentView(QWidget):
     def end_segment_edit_mode(self):
         self.editing_segment_id = None
         self.edit_bar.setVisible(False)
+        self.segment_remark_input.clear()
         self.save_edit_button.setStyleSheet("")  # Clear special border
         self.apply_all_highlights()
         self.edit_mode_changed.emit(False)
@@ -1282,6 +1302,15 @@ class ContentView(QWidget):
         try:
             self.autosave_timer.stop()
             self._loading_document = True
+            selected_display_text = self.doc_selector.currentText()
+            next_document_id = (
+                self.documents_map.get(selected_display_text)
+                if selected_display_text
+                else None
+            )
+            editor_state = None
+            if self.current_document_id and self.current_document_id == next_document_id:
+                editor_state = self._capture_editor_state()
             try:
                 self.text_edit.textChanged.disconnect(self.on_text_changed)
             except RuntimeError:
@@ -1298,7 +1327,6 @@ class ContentView(QWidget):
             self.is_dirty = False
             self._pending_deleted_segments = {}
             self.save_button.setEnabled(False)
-            selected_display_text = self.doc_selector.currentText()
             if not selected_display_text:
                 self.current_document_id = None
                 self.current_participant_id = None
@@ -1330,6 +1358,10 @@ class ContentView(QWidget):
                 elif mode == "view":
                     self._select_and_scroll(start, end)
                 self._pending_highlight = None
+            elif editor_state:
+                QTimer.singleShot(
+                    0, lambda state=editor_state: self._restore_editor_state(state)
+                )
 
             self.text_edit.textChanged.connect(self.on_text_changed)
             self.text_edit.document().contentsChange.connect(
@@ -1341,6 +1373,35 @@ class ContentView(QWidget):
         finally:
             self._loading_document = False
             QApplication.restoreOverrideCursor()
+
+    def _capture_editor_state(self):
+        cursor = self.text_edit.textCursor()
+        return {
+            "position": cursor.position(),
+            "anchor": cursor.anchor(),
+            "scroll": self.text_edit.verticalScrollBar().value(),
+            "had_focus": self.text_edit.hasFocus(),
+        }
+
+    def _restore_editor_state(self, state):
+        if not self.current_document_id:
+            return
+        document_length = self.text_edit.document().characterCount() - 1
+        position = max(0, min(state["position"], document_length))
+        anchor = max(0, min(state["anchor"], document_length))
+        cursor = self.text_edit.textCursor()
+        cursor.setPosition(anchor)
+        cursor.setPosition(position, QTextCursor.MoveMode.KeepAnchor)
+        self.text_edit.setTextCursor(cursor)
+        self.text_edit.verticalScrollBar().setValue(state["scroll"])
+        if state["had_focus"]:
+            self.text_edit.setFocus()
+
+    def _get_cached_segment(self, segment_id):
+        return next(
+            (segment for segment in self._coded_segments_cache if segment["id"] == segment_id),
+            None,
+        )
 
     def _finish_excel_import(self, filename, result):
         QApplication.restoreOverrideCursor()
@@ -1602,6 +1663,10 @@ class ContentView(QWidget):
             get_translation("content_view.find_close", self.language)
         )
         self.edit_label.setText(get_translation("edit_bar.editing_segment", self.language))
+        self.remark_label.setText(get_translation("edit_bar.remark_label", self.language))
+        self.segment_remark_input.setPlaceholderText(
+            get_translation("edit_bar.remark_placeholder", self.language)
+        )
         self.save_edit_button.setText(get_translation("edit_bar.save_changes", self.language))
         self.cancel_edit_button.setText(get_translation("edit_bar.cancel", self.language))
         self.update_counts(

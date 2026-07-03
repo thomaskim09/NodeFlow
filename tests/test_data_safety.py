@@ -58,7 +58,11 @@ def test_existing_database_migration_preserves_data_and_creates_backup():
     with get_connection() as conn:
         assert conn.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION
         columns = {row["name"] for row in conn.execute("PRAGMA table_info(documents)")}
+        segment_columns = {
+            row["name"] for row in conn.execute("PRAGMA table_info(coded_segments)")
+        }
     assert "source_sha256" in columns
+    assert "remark" in segment_columns
 
 
 def test_initialize_database_is_idempotent_for_latest_schema():

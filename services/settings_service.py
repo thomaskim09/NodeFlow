@@ -13,6 +13,8 @@ DEFAULT_SETTINGS = {
     "autosave_enabled": True,
     "autosave_delay_ms": 1500,
     "find_match_color": "#FFF59D",
+    "desktop_shortcut_prompt_state": "pending",
+    "desktop_shortcut_prompt_count": 0,
 }
 
 

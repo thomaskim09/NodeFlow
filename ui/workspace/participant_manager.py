@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (
     QAbstractItemView,
     QMenu,
 )
-from PySide6.QtCore import Signal, Qt
+from PySide6.QtCore import Signal, Qt, QTimer
 from PySide6.QtGui import QKeyEvent, QColor, QIcon
 from qt_material_icons import MaterialIcon
 from utils.common import get_translation
@@ -243,7 +243,7 @@ class ParticipantManager(QWidget):
         else:
             self.participant_selected.emit(0)
 
-    def load_participants(self):
+    def load_participants(self, participant_id_to_select=None):
         # Safely disconnect to prevent warnings
         self.list_widget.blockSignals(True)
         self.list_widget.setCurrentItem(None)
@@ -266,6 +266,8 @@ class ParticipantManager(QWidget):
             all_segments_in_scope = database.get_coded_segments_for_project(
                 self.project_id
             )
+
+        item_to_reselect = None
 
         if not participants:
             item = QListWidgetItem(
@@ -312,8 +314,18 @@ class ParticipantManager(QWidget):
                 list_item.setSizeHint(item_widget.sizeHint())
                 self.list_widget.addItem(list_item)
                 self.list_widget.setItemWidget(list_item, item_widget)
+                if p["id"] == participant_id_to_select:
+                    item_to_reselect = list_item
 
         self.list_widget.blockSignals(False)
+        if participant_id_to_select is not None:
+            self.list_widget.setCurrentItem(item_to_reselect)
+            QTimer.singleShot(
+                0,
+                lambda participant_id=participant_id_to_select: self._scroll_participant_into_view(
+                    participant_id
+                ),
+            )
 
     def add_participant(self):
         name, ok = QInputDialog.getText(
@@ -346,7 +358,10 @@ class ParticipantManager(QWidget):
                     "Add Participant",
                     do,
                     undo,
-                    lambda: (self.load_participants(), self.participant_updated.emit()),
+                    lambda: (
+                        self.load_participants(participant_id_to_select=participant_id),
+                        self.participant_updated.emit(),
+                    ),
                 )
             )
 
@@ -371,7 +386,10 @@ class ParticipantManager(QWidget):
                     "Rename Participant",
                     do,
                     undo,
-                    lambda: (self.load_participants(), self.participant_updated.emit()),
+                    lambda: (
+                        self.load_participants(participant_id_to_select=participant_id),
+                        self.participant_updated.emit(),
+                    ),
                 )
             )
 
@@ -449,6 +467,26 @@ class ParticipantManager(QWidget):
             )
 
         self.list_widget.blockSignals(False)
+
+    def get_selected_participant_id(self):
+        current_item = self.list_widget.currentItem()
+        if not current_item:
+            return None
+        widget = self.list_widget.itemWidget(current_item)
+        if widget:
+            return widget.participant_id
+        return None
+
+    def _scroll_participant_into_view(self, participant_id):
+        for index in range(self.list_widget.count()):
+            item = self.list_widget.item(index)
+            widget = self.list_widget.itemWidget(item)
+            if widget and widget.participant_id == participant_id:
+                self.list_widget.scrollToItem(
+                    item,
+                    QAbstractItemView.ScrollHint.PositionAtCenter,
+                )
+                break
 
     def update_language(self, new_language):
         was_current_scope = self.scope_combo.currentText() == get_translation(

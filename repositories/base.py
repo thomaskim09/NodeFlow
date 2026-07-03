@@ -7,7 +7,7 @@ from typing import Iterator
 
 from utils.app_paths import get_database_backups_dir, get_database_path
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 DOCUMENT_METADATA_COLUMNS = {
     "source_filename": "TEXT",
     "source_copy_path": "TEXT",
@@ -15,6 +15,9 @@ DOCUMENT_METADATA_COLUMNS = {
     "source_kind": "TEXT",
     "source_row": "INTEGER",
     "imported_at": "TIMESTAMP",
+}
+CODED_SEGMENT_COLUMNS = {
+    "remark": "TEXT NOT NULL DEFAULT ''",
 }
 
 
@@ -144,6 +147,7 @@ def _ensure_schema(cursor: sqlite3.Cursor) -> None:
             segment_start INTEGER NOT NULL,
             segment_end INTEGER NOT NULL,
             content_preview TEXT NOT NULL,
+            remark TEXT NOT NULL DEFAULT '',
             created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (document_id) REFERENCES documents (id) ON DELETE CASCADE,
             FOREIGN KEY (node_id) REFERENCES nodes (id) ON DELETE CASCADE,
@@ -160,6 +164,8 @@ def _ensure_schema(cursor: sqlite3.Cursor) -> None:
 def _migrate_schema(cursor: sqlite3.Cursor, current_version: int) -> None:
     if current_version < 3:
         _add_missing_columns(cursor, "documents", DOCUMENT_METADATA_COLUMNS)
+    if current_version < 4:
+        _add_missing_columns(cursor, "coded_segments", CODED_SEGMENT_COLUMNS)
 
 
 def _add_missing_columns(

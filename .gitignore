@@ -17,3 +17,6 @@ __pycache__/
 # PyInstaller build files
 dist/
 build/
+*.spec
+resource/icon.ico
+resource/icon.icns

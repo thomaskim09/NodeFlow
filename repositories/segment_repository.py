@@ -31,7 +31,7 @@ class SegmentRepository:
                 content = self._get_document_content(conn, document_id)
                 self._validate_range(start, end, len(content))
                 cursor = conn.execute(
-                    "INSERT INTO coded_segments (document_id, node_id, participant_id, segment_start, segment_end, content_preview) VALUES (?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO coded_segments (document_id, node_id, participant_id, segment_start, segment_end, content_preview, remark) VALUES (?, ?, ?, ?, ?, ?, '')",
                     (document_id, node_id, participant_id, start, end, text_preview),
                 )
                 segment_id = cursor.lastrowid
@@ -74,6 +74,7 @@ class SegmentRepository:
                 """
                 SELECT
                     s.id, s.document_id, s.segment_start, s.segment_end, s.content_preview,
+                    s.remark,
                     substr(d.content, s.segment_start + 1, s.segment_end - s.segment_start) AS live_preview,
                     n.id AS node_id, n.name AS node_name, n.color AS node_color,
                     d.participant_id, p.name AS participant_name, d.title AS document_title
@@ -145,13 +146,18 @@ class SegmentRepository:
         invalidate_analysis_cache()
 
     def update(
-        self, segment_id: int, new_start: int, new_end: int, new_content_preview: str
+        self,
+        segment_id: int,
+        new_start: int,
+        new_end: int,
+        new_content_preview: str,
+        new_remark: str | None = None,
     ) -> None:
         with get_connection() as conn:
             with conn:
                 row = conn.execute(
                     """
-                    SELECT s.document_id, d.content
+                    SELECT s.document_id, s.remark, d.content
                     FROM coded_segments s
                     JOIN documents d ON s.document_id = d.id
                     WHERE s.id = ?
@@ -161,13 +167,25 @@ class SegmentRepository:
                 if not row:
                     raise ValueError(f"Segment {segment_id} does not exist.")
                 self._validate_range(new_start, new_end, len(row["content"]))
+                remark = row["remark"] if new_remark is None else new_remark
                 cursor = conn.execute(
                     """
                     UPDATE coded_segments
-                    SET segment_start = ?, segment_end = ?, content_preview = ?
+                    SET segment_start = ?, segment_end = ?, content_preview = ?, remark = ?
                     WHERE id = ?
                     """,
-                    (new_start, new_end, new_content_preview, segment_id),
+                    (new_start, new_end, new_content_preview, remark, segment_id),
+                )
+                if cursor.rowcount == 0:
+                    raise ValueError(f"Segment {segment_id} does not exist.")
+        invalidate_analysis_cache()
+
+    def update_remark(self, segment_id: int, remark: str) -> None:
+        with get_connection() as conn:
+            with conn:
+                cursor = conn.execute(
+                    "UPDATE coded_segments SET remark = ? WHERE id = ?",
+                    (remark, segment_id),
                 )
                 if cursor.rowcount == 0:
                     raise ValueError(f"Segment {segment_id} does not exist.")

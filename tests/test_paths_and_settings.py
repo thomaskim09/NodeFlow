@@ -33,6 +33,8 @@ def test_settings_round_trip():
     assert loaded["autosave_enabled"] is False
     assert loaded["autosave_delay_ms"] == 3000
     assert loaded["find_match_color"] == "#FFD54F"
+    assert loaded["desktop_shortcut_prompt_state"] == "pending"
+    assert loaded["desktop_shortcut_prompt_count"] == 0
     assert get_settings_path().exists()
 
 
@@ -47,3 +49,5 @@ def test_settings_default_undo_depth_for_older_settings():
     assert loaded["autosave_enabled"] is True
     assert loaded["autosave_delay_ms"] == 1500
     assert loaded["find_match_color"] == "#FFF59D"
+    assert loaded["desktop_shortcut_prompt_state"] == "pending"
+    assert loaded["desktop_shortcut_prompt_count"] == 0

@@ -21,8 +21,8 @@ class WorkspaceSnapshotRepository:
                     """
                     INSERT INTO coded_segments
                         (id, document_id, node_id, participant_id, segment_start,
-                         segment_end, content_preview, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                         segment_end, content_preview, remark, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         segment["id"],
@@ -32,6 +32,7 @@ class WorkspaceSnapshotRepository:
                         segment["segment_start"],
                         segment["segment_end"],
                         segment["content_preview"],
+                        segment.get("remark", ""),
                         segment["created_at"],
                     ),
                 )
@@ -81,8 +82,8 @@ class WorkspaceSnapshotRepository:
                         """
                         INSERT INTO coded_segments
                             (id, document_id, node_id, participant_id, segment_start,
-                             segment_end, content_preview, created_at)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                             segment_end, content_preview, remark, created_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """,
                         (
                             segment["id"],
@@ -92,6 +93,7 @@ class WorkspaceSnapshotRepository:
                             segment["segment_start"],
                             segment["segment_end"],
                             segment["content_preview"],
+                            segment.get("remark", ""),
                             segment["created_at"],
                         ),
                     )
@@ -157,8 +159,8 @@ class WorkspaceSnapshotRepository:
                         """
                         INSERT INTO coded_segments
                             (id, document_id, node_id, participant_id, segment_start,
-                             segment_end, content_preview, created_at)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                             segment_end, content_preview, remark, created_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """,
                         (
                             segment["id"],
@@ -168,6 +170,7 @@ class WorkspaceSnapshotRepository:
                             segment["segment_start"],
                             segment["segment_end"],
                             segment["content_preview"],
+                            segment.get("remark", ""),
                             segment["created_at"],
                         ),
                     )

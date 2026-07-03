@@ -1,4 +1,5 @@
 import logging
+import json
 from pathlib import Path
 
 import openpyxl
@@ -28,10 +29,12 @@ def _build_export_fixture():
     findings_b_id = database.add_node(project_id, "Findings B", None, "#555555")
 
     database.add_coded_segment(doc1_id, findings_a_id, r1_id, 0, 5, "alpha")
-    database.add_coded_segment(doc1_id, node_a1_id, r1_id, 6, 10, "beta")
-    database.add_coded_segment(doc2_id, sub_a1a_id, r2_id, 0, 5, "gamma")
+    beta_id = database.add_coded_segment(doc1_id, node_a1_id, r1_id, 6, 10, "beta")
+    gamma_id = database.add_coded_segment(doc2_id, sub_a1a_id, r2_id, 0, 5, "gamma")
     database.add_coded_segment(doc2_id, leaf_a1a1_id, r2_id, 6, 11, "delta")
     database.add_coded_segment(doc3_id, findings_b_id, r1_id, 0, 7, "epsilon")
+    database.update_coded_segment_remark(beta_id, "Beta remark")
+    database.update_coded_segment_remark(gamma_id, "Gamma remark")
 
     return {
         "project_id": project_id,
@@ -68,13 +71,14 @@ def test_classification_workbook_exports_quotes_and_matrix(tmp_path, monkeypatch
         "Respondent",
         "Original quote",
         "Document",
+        "Remark",
     ]
     assert list(quotes_ws.iter_rows(min_row=2, values_only=True)) == [
-        ("Findings A", None, None, "R1", "alpha", "Doc 1"),
-        ("Findings A", "Node A1", None, "R1", "beta", "Doc 1"),
-        ("Findings A", "Node A1", "Sub A1a", "R2", "gamma", "Doc 2"),
-        ("Findings A", "Node A1", "Sub A1a > Leaf A1a1", "R2", "delta", "Doc 2"),
-        ("Findings B", None, None, "R1", "epsilon", "Doc 3"),
+        ("Findings A", None, None, "R1", "alpha", "Doc 1", None),
+        ("Findings A", "Node A1", None, "R1", "beta", "Doc 1", "Beta remark"),
+        ("Findings A", "Node A1", "Sub A1a", "R2", "gamma", "Doc 2", "Gamma remark"),
+        ("Findings A", "Node A1", "Sub A1a > Leaf A1a1", "R2", "delta", "Doc 2", None),
+        ("Findings B", None, None, "R1", "epsilon", "Doc 3", None),
     ]
 
     assert [cell.value for cell in matrix_ws[1]] == [
@@ -116,8 +120,8 @@ def test_classification_workbook_respects_subtree_and_participant_filter(
     matrix_ws = workbook["Respondent Matrix"]
 
     assert list(quotes_ws.iter_rows(min_row=2, values_only=True)) == [
-        ("Findings A", "Node A1", "Sub A1a", "R2", "gamma", "Doc 2"),
-        ("Findings A", "Node A1", "Sub A1a > Leaf A1a1", "R2", "delta", "Doc 2"),
+        ("Findings A", "Node A1", "Sub A1a", "R2", "gamma", "Doc 2", "Gamma remark"),
+        ("Findings A", "Node A1", "Sub A1a > Leaf A1a1", "R2", "delta", "Doc 2", None),
     ]
     assert [cell.value for cell in matrix_ws[1]] == [
         "Respondent",
@@ -130,6 +134,43 @@ def test_classification_workbook_respects_subtree_and_participant_filter(
         ("R2", 0, 0, 1, 1),
     ]
     assert "Findings B" not in [cell.value for cell in matrix_ws[1]]
+
+
+def test_json_and_single_sheet_exports_include_remark(tmp_path, monkeypatch):
+    fixture = _build_export_fixture()
+    json_path = tmp_path / "segments.json"
+    xlsx_path = tmp_path / "segments.xlsx"
+    save_paths = iter([str(xlsx_path)])
+
+    monkeypatch.setattr(
+        export_manager,
+        "_get_save_file_path",
+        lambda *args, **kwargs: next(save_paths),
+    )
+    monkeypatch.setattr(
+        export_manager.QFileDialog,
+        "getSaveFileName",
+        lambda *args, **kwargs: (str(json_path), "JSON Files (*.json)"),
+    )
+    monkeypatch.setattr(export_manager, "_show_export_saved", lambda *args: None)
+
+    export_manager.export_to_json(fixture["project_id"])
+    export_manager.export_project_to_excel_single_sheet(fixture["project_id"])
+
+    exported = json.loads(json_path.read_text(encoding="utf-8"))
+    beta_segment = exported[0]["children"][0]["segments"][0]
+    assert beta_segment["remark"] == "Beta remark"
+
+    workbook = openpyxl.load_workbook(xlsx_path)
+    ws = workbook["Report"]
+    assert [cell.value for cell in ws[1]] == [
+        "Node",
+        "Participant",
+        "Coded Segment",
+        "Document",
+        "Remark",
+    ]
+    assert any(row[-1] == "Beta remark" for row in ws.iter_rows(min_row=2, values_only=True))
 
 
 def test_get_save_file_path_logs_selected_path(caplog, monkeypatch):

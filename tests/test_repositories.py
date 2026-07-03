@@ -67,3 +67,24 @@ def test_update_document_text_and_segments_persists_ranges_and_deletes_empty_seg
     assert segments[0]["segment_start"] == 6
     assert segments[0]["segment_end"] == 11
     assert segments[0]["content_preview"] == "delta"
+
+
+def test_segment_remark_updates_and_survives_range_update():
+    initialize_database()
+    database.add_project("Segment Remark")
+    project_id = database.get_all_projects()[0]["id"]
+    participant_id = database.add_participant(project_id, "Alice")
+    document_id = database.add_document(
+        project_id, "Doc 1", "alpha beta gamma", participant_id
+    )
+    node_id = database.add_node(project_id, "Theme", None, "#FFFF00")
+    segment_id = database.add_coded_segment(
+        document_id, node_id, participant_id, 6, 10, "beta"
+    )
+
+    database.update_coded_segment_remark(segment_id, "Needs review")
+    database.update_coded_segment(segment_id, 6, 16, "beta gamma")
+
+    segment = database.get_coded_segments_for_document(document_id)[0]
+    assert segment["remark"] == "Needs review"
+    assert segment["content_preview"] == "beta gamma"

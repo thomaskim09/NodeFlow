@@ -95,6 +95,9 @@ def test_participant_snapshot_restores_unassigned_references():
 
 def test_segment_snapshot_restores_deleted_segment():
     fixture = _create_project_fixture()
+    database.update_coded_segment_remark(
+        fixture["root_segment_id"], "Restore this remark"
+    )
     snapshot = workspace_snapshot_repository.get_segment(fixture["root_segment_id"])
 
     database.delete_coded_segment(fixture["root_segment_id"])
@@ -108,3 +111,7 @@ def test_segment_snapshot_restores_deleted_segment():
         fixture["root_segment_id"],
         fixture["child_segment_id"],
     }
+    restored_segment = next(
+        segment for segment in restored if segment["id"] == fixture["root_segment_id"]
+    )
+    assert restored_segment["remark"] == "Restore this remark"

@@ -11,12 +11,13 @@ from PySide6.QtWidgets import (
     QProgressDialog,
     QMenu,
 )
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QFont, QPixmap, QKeyEvent, QColor
 from qt_material_icons import MaterialIcon
 from PySide6.QtWidgets import QApplication
 
 import database
+from services.desktop_shortcut_service import desktop_shortcut_service
 from utils.common import get_resource_path, get_translation
 from ui.workspace.workspace_main_window import WorkspaceMainWindow
 from managers.theme_manager import load_settings, get_effective_theme_mode
@@ -186,6 +187,7 @@ class StartupView(QWidget):
         button_layout.addWidget(self.new_button)
         main_layout.addLayout(button_layout)
         self.load_projects()
+        QTimer.singleShot(0, self.maybe_prompt_desktop_shortcut)
 
     def on_selection_changed(self, current_item, previous_item):
         if previous_item:
@@ -268,6 +270,65 @@ class StartupView(QWidget):
             loading.close()
             self.window().hide()
             self.workspace_window.show()
+
+    def maybe_prompt_desktop_shortcut(self):
+        settings = load_settings()
+        if not desktop_shortcut_service.should_prompt(settings):
+            return
+
+        dialog = QMessageBox(self)
+        dialog.setIcon(QMessageBox.Icon.Question)
+        dialog.setWindowTitle(
+            get_translation("startup.desktop_shortcut_title", self.language)
+        )
+        dialog.setText(
+            get_translation("startup.desktop_shortcut_message", self.language)
+        )
+        create_button = dialog.addButton(
+            get_translation("startup.desktop_shortcut_create", self.language),
+            QMessageBox.ButtonRole.AcceptRole,
+        )
+        later_button = dialog.addButton(
+            get_translation("startup.desktop_shortcut_later", self.language),
+            QMessageBox.ButtonRole.RejectRole,
+        )
+        never_button = dialog.addButton(
+            get_translation("startup.desktop_shortcut_never", self.language),
+            QMessageBox.ButtonRole.DestructiveRole,
+        )
+        dialog.exec()
+
+        clicked = dialog.clickedButton()
+        if clicked == create_button:
+            self.create_desktop_shortcut()
+        elif clicked == later_button:
+            desktop_shortcut_service.mark_deferred()
+        elif clicked == never_button:
+            desktop_shortcut_service.mark_never()
+
+    def create_desktop_shortcut(self):
+        try:
+            shortcut_path = desktop_shortcut_service.create_shortcut()
+            desktop_shortcut_service.mark_created()
+            QMessageBox.information(
+                self,
+                get_translation("startup.desktop_shortcut_created_title", self.language),
+                get_translation(
+                    "startup.desktop_shortcut_created_message",
+                    self.language,
+                    path=str(shortcut_path),
+                ),
+            )
+        except Exception as error:
+            QMessageBox.warning(
+                self,
+                get_translation("startup.desktop_shortcut_error_title", self.language),
+                get_translation(
+                    "startup.desktop_shortcut_error_message",
+                    self.language,
+                    error=str(error),
+                ),
+            )
 
     def rename_project(self, project_id, current_name):
         new_name, ok = QInputDialog.getText(
