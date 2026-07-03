@@ -171,6 +171,15 @@ startup:
   create_new_project_prompt: 'Enter new project name:'
   create_new_project_to_begin: 'Create a new project to begin.'
   select_a_project_to_open_or_create_a_new_one: 'Select a project to open or create a new one.'
+  desktop_shortcut_title: 'Create Desktop Shortcut'
+  desktop_shortcut_message: 'Would you like a NodeFlow shortcut on your desktop?'
+  desktop_shortcut_create: 'Create Shortcut'
+  desktop_shortcut_later: 'Ask Later'
+  desktop_shortcut_never: 'No Thanks'
+  desktop_shortcut_created_title: 'Shortcut Created'
+  desktop_shortcut_created_message: 'NodeFlow shortcut created at:\n{path}'
+  desktop_shortcut_error_title: 'Could Not Create Shortcut'
+  desktop_shortcut_error_message: 'NodeFlow could not create the desktop shortcut.\n\n{error}'
 
 export:
   export_successful: 'Export Successful'

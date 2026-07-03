@@ -171,6 +171,15 @@ startup:
   create_new_project_prompt: '输入新项目名称：'
   create_new_project_to_begin: '创建新项目以开始。'
   select_a_project_to_open_or_create_a_new_one: '选择一个项目打开或创建新项目。'
+  desktop_shortcut_title: '创建桌面快捷方式'
+  desktop_shortcut_message: '您想在桌面创建 NodeFlow 快捷方式吗？'
+  desktop_shortcut_create: '创建快捷方式'
+  desktop_shortcut_later: '稍后再问'
+  desktop_shortcut_never: '不用了'
+  desktop_shortcut_created_title: '快捷方式已创建'
+  desktop_shortcut_created_message: 'NodeFlow 快捷方式已创建到：\n{path}'
+  desktop_shortcut_error_title: '无法创建快捷方式'
+  desktop_shortcut_error_message: 'NodeFlow 无法创建桌面快捷方式。\n\n{error}'
 
 export:
   export_successful: '导出成功'
