@@ -193,6 +193,7 @@ export:
   respondent_column: 'Respondent'
   original_quote_column: 'Original quote'
   document_column: 'Document'
+  remark_column: 'Remark'
 
 participant:
   header: 'Participants'
@@ -217,6 +218,8 @@ participant:
 
 edit_bar:
   editing_segment: '<b>Editing Segment:</b> Adjust selection and click save.'
+  remark_label: 'Remark'
+  remark_placeholder: 'Add a remark for this coded segment...'
   save_changes: 'Save Changes'
   cancel: 'Cancel'
 
@@ -243,9 +246,14 @@ coded_segments:
   col_node: 'Node'
   col_participant: 'Participant'
   col_document: 'Document'
+  col_remark: 'Remark'
   search_all: 'All'
   search_placeholder: 'Search coded segments...'
   edit_segment_tooltip: "Edit this coded segment's boundaries"
+  edit_remark_tooltip: 'Edit this coded segment remark'
+  edit_remark_dialog_title: 'Edit Segment Remark'
+  edit_remark_label: 'Remark'
+  edit_remark_placeholder: 'Add a remark for this coded segment...'
   delete_segment_tooltip: 'Delete this coded segment (Delete)'
   more_actions_tooltip: 'More segment actions'
   confirm_delete_title: 'Confirm Delete'

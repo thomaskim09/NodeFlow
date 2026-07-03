@@ -35,6 +35,18 @@ def update_coded_segment(segment_id, new_start, new_end, new_content_preview):
     segment_repository.update(segment_id, new_start, new_end, new_content_preview)
 
 
+def update_coded_segment_with_remark(
+    segment_id, new_start, new_end, new_content_preview, new_remark
+):
+    segment_repository.update(
+        segment_id, new_start, new_end, new_content_preview, new_remark
+    )
+
+
+def update_coded_segment_remark(segment_id, remark):
+    segment_repository.update_remark(segment_id, remark)
+
+
 def get_node_statistics(project_id, document_id=None):
     return segment_repository.get_node_statistics(project_id, document_id)
 

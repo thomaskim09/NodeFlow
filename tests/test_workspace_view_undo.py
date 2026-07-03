@@ -196,3 +196,47 @@ def test_refresh_all_views_keeps_document_cursor_and_scroll(qtbot):
     assert widget.center_pane.text_edit.textCursor().position() == expected_position
     assert widget.center_pane.text_edit.verticalScrollBar().value() == expected_scroll
     assert widget.center_pane.text_edit.hasFocus()
+
+
+def test_document_segment_edit_preloads_and_saves_remark(qtbot):
+    initialize_database()
+    database.add_project("Segment Remark UI")
+    project = database.get_all_projects()[0]
+    participant_id = database.add_participant(project["id"], "Alice")
+    document_id = database.add_document(project["id"], "Doc 1", "alpha beta", participant_id)
+    node_id = database.add_node(project["id"], "Theme", None, "#FFFF00")
+    segment_id = database.add_coded_segment(document_id, node_id, participant_id, 0, 5, "alpha")
+    database.update_coded_segment_remark(segment_id, "Original remark")
+
+    widget = WorkspaceView(project["id"], project["name"], lambda: None)
+    qtbot.addWidget(widget)
+    widget.show()
+
+    widget.center_pane.start_segment_edit_mode(segment_id, document_id, 0, 5)
+    assert widget.center_pane.segment_remark_input.toPlainText() == "Original remark"
+
+    widget.center_pane.segment_remark_input.setPlainText("Updated remark")
+    widget.center_pane.save_segment_edit()
+
+    segment = database.get_coded_segments_for_document(document_id)[0]
+    assert segment["remark"] == "Updated remark"
+
+
+def test_coded_segments_search_matches_remark(qtbot):
+    initialize_database()
+    database.add_project("Remark Search")
+    project = database.get_all_projects()[0]
+    participant_id = database.add_participant(project["id"], "Alice")
+    document_id = database.add_document(project["id"], "Doc 1", "alpha beta", participant_id)
+    node_id = database.add_node(project["id"], "Theme", None, "#FFFF00")
+    segment_id = database.add_coded_segment(document_id, node_id, participant_id, 0, 5, "alpha")
+    database.update_coded_segment_remark(segment_id, "follow up later")
+
+    widget = WorkspaceView(project["id"], project["name"], lambda: None)
+    qtbot.addWidget(widget)
+    widget.show()
+
+    widget.bottom_pane.search_scope_combo.setCurrentText("Remark")
+    widget.bottom_pane.search_input.setText("follow up")
+
+    assert widget.bottom_pane.tree_widget.topLevelItemCount() == 1

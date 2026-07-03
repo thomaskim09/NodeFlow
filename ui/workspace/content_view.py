@@ -314,21 +314,34 @@ class ContentView(QWidget):
         # Edit Mode Bar
         self.edit_bar = QFrame()
         self.edit_bar.setObjectName("editBar")
-        edit_bar_layout = QHBoxLayout(self.edit_bar)
+        edit_bar_layout = QVBoxLayout(self.edit_bar)
         edit_bar_layout.setContentsMargins(5, 2, 5, 2)
+        edit_bar_layout.setSpacing(4)
+        edit_actions_layout = QHBoxLayout()
         self.edit_label = QLabel(
             get_translation("edit_bar.editing_segment", self.language)
         )
+        self.remark_label = QLabel(
+            get_translation("edit_bar.remark_label", self.language)
+        )
+        self.segment_remark_input = QTextEdit()
+        self.segment_remark_input.setPlaceholderText(
+            get_translation("edit_bar.remark_placeholder", self.language)
+        )
+        self.segment_remark_input.setFixedHeight(54)
         self.save_edit_button = QPushButton(
             get_translation("edit_bar.save_changes", self.language)
         )
         self.cancel_edit_button = QPushButton(
             get_translation("edit_bar.cancel", self.language)
         )
-        edit_bar_layout.addWidget(self.edit_label)
-        edit_bar_layout.addStretch()
-        edit_bar_layout.addWidget(self.save_edit_button)
-        edit_bar_layout.addWidget(self.cancel_edit_button)
+        edit_actions_layout.addWidget(self.edit_label)
+        edit_actions_layout.addStretch()
+        edit_actions_layout.addWidget(self.save_edit_button)
+        edit_actions_layout.addWidget(self.cancel_edit_button)
+        edit_bar_layout.addLayout(edit_actions_layout)
+        edit_bar_layout.addWidget(self.remark_label)
+        edit_bar_layout.addWidget(self.segment_remark_input)
         self.edit_bar.setVisible(False)
 
         main_layout.addLayout(top_bar_layout)
@@ -735,6 +748,8 @@ class ContentView(QWidget):
             else:
                 return
         self.editing_segment_id = segment_id
+        segment = self._get_cached_segment(segment_id)
+        self.segment_remark_input.setPlainText((segment or {}).get("remark", ""))
         self.go_to_segment(document_id, start, end, mode="edit")
         self.edit_mode_changed.emit(True)
 
@@ -760,6 +775,7 @@ class ContentView(QWidget):
         new_start = cursor.selectionStart()
         new_end = cursor.selectionEnd()
         new_text = cursor.selectedText()
+        new_remark = self.segment_remark_input.toPlainText()
 
         segment_id = self.editing_segment_id
         old_segment = workspace_snapshot_repository.get_segment(segment_id)
@@ -767,14 +783,17 @@ class ContentView(QWidget):
             return
 
         def do():
-            database.update_coded_segment(segment_id, new_start, new_end, new_text)
+            database.update_coded_segment_with_remark(
+                segment_id, new_start, new_end, new_text, new_remark
+            )
 
         def undo():
-            database.update_coded_segment(
+            database.update_coded_segment_with_remark(
                 segment_id,
                 old_segment["segment_start"],
                 old_segment["segment_end"],
                 old_segment["content_preview"],
+                old_segment.get("remark", ""),
             )
 
         self.execute_workspace_command(
@@ -806,6 +825,7 @@ class ContentView(QWidget):
     def end_segment_edit_mode(self):
         self.editing_segment_id = None
         self.edit_bar.setVisible(False)
+        self.segment_remark_input.clear()
         self.save_edit_button.setStyleSheet("")  # Clear special border
         self.apply_all_highlights()
         self.edit_mode_changed.emit(False)
@@ -1377,6 +1397,12 @@ class ContentView(QWidget):
         if state["had_focus"]:
             self.text_edit.setFocus()
 
+    def _get_cached_segment(self, segment_id):
+        return next(
+            (segment for segment in self._coded_segments_cache if segment["id"] == segment_id),
+            None,
+        )
+
     def _finish_excel_import(self, filename, result):
         QApplication.restoreOverrideCursor()
         docs_imported, errors = result
@@ -1637,6 +1663,10 @@ class ContentView(QWidget):
             get_translation("content_view.find_close", self.language)
         )
         self.edit_label.setText(get_translation("edit_bar.editing_segment", self.language))
+        self.remark_label.setText(get_translation("edit_bar.remark_label", self.language))
+        self.segment_remark_input.setPlaceholderText(
+            get_translation("edit_bar.remark_placeholder", self.language)
+        )
         self.save_edit_button.setText(get_translation("edit_bar.save_changes", self.language))
         self.cancel_edit_button.setText(get_translation("edit_bar.cancel", self.language))
         self.update_counts(

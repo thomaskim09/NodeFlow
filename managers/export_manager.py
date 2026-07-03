@@ -273,6 +273,7 @@ def export_to_json(project_id, parent_widget=None):
                 "participant": seg["participant_name"] or "N/A",
                 "text": seg["content_preview"],
                 "document": seg["document_title"],
+                "remark": seg.get("remark", ""),
             }
         )
 
@@ -339,7 +340,7 @@ def export_project_to_excel_single_sheet(
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "Report"
-    ws.append(["Node", "Participant", "Coded Segment", "Document"])
+    ws.append(["Node", "Participant", "Coded Segment", "Document", "Remark"])
 
     header_font = Font(bold=True)
     for cell in ws[1]:
@@ -359,6 +360,7 @@ def export_project_to_excel_single_sheet(
                 seg["participant_name"] or "N/A",
                 seg["content_preview"],
                 seg["document_title"],
+                seg.get("remark", ""),
             ]
         )
 
@@ -366,6 +368,7 @@ def export_project_to_excel_single_sheet(
     ws.column_dimensions["B"].width = 25
     ws.column_dimensions["C"].width = 80
     ws.column_dimensions["D"].width = 40
+    ws.column_dimensions["E"].width = 50
 
     try:
         wb.save(file_path)
@@ -463,6 +466,7 @@ def export_classification_workbook(
             get_translation("export.respondent_column", language),
             get_translation("export.original_quote_column", language),
             get_translation("export.document_column", language),
+            get_translation("export.remark_column", language),
         ],
     )
     quotes_ws.freeze_panes = "A2"
@@ -479,6 +483,7 @@ def export_classification_workbook(
                 _participant_display_name(segment),
                 segment["content_preview"],
                 segment["document_title"],
+                segment.get("remark", ""),
             ]
         )
 
@@ -489,7 +494,7 @@ def export_classification_workbook(
             )
     _set_column_widths(
         quotes_ws,
-        {"A": 24, "B": 24, "C": 36, "D": 20, "E": 80, "F": 32},
+        {"A": 24, "B": 24, "C": 36, "D": 20, "E": 80, "F": 32, "G": 50},
     )
 
     matrix_ws = wb.create_sheet(
@@ -605,7 +610,7 @@ def export_to_excel(project_id, parent_widget=None, participant_id=None):
 
             # Create worksheet
             ws = wb.create_sheet(title=sheet_name)
-            headers = ["Participant", "Coded Segment", "Document"]
+            headers = ["Participant", "Coded Segment", "Document", "Remark"]
             ws.append(headers)
 
             # --- NEW: Bold headers ---
@@ -622,12 +627,20 @@ def export_to_excel(project_id, parent_widget=None, participant_id=None):
             ]
             for seg in segments_for_sheet:
                 participant = seg["participant_name"] or "N/A"
-                ws.append([participant, seg["content_preview"], seg["document_title"]])
+                ws.append(
+                    [
+                        participant,
+                        seg["content_preview"],
+                        seg["document_title"],
+                        seg.get("remark", ""),
+                    ]
+                )
 
             # Adjust column widths
             ws.column_dimensions["A"].width = 25
             ws.column_dimensions["B"].width = 80
             ws.column_dimensions["C"].width = 40
+            ws.column_dimensions["D"].width = 50
 
             # Recurse for children
             create_sheets_recursively(node_id, prefix=current_prefix)
@@ -821,7 +834,7 @@ def export_node_family_to_excel(
     # Create one sheet for the whole family
     sheet_name = sanitize_sheet_name(start_node["name"])
     ws = wb.create_sheet(title=sheet_name)
-    headers = ["Node", "Participant", "Coded Segment", "Document"]
+    headers = ["Node", "Participant", "Coded Segment", "Document", "Remark"]
     ws.append(headers)
 
     header_font = Font(bold=True)
@@ -837,6 +850,7 @@ def export_node_family_to_excel(
                 seg["participant_name"] or "N/A",
                 seg["content_preview"],
                 seg["document_title"],
+                seg.get("remark", ""),
             ]
         )
 
@@ -844,6 +858,7 @@ def export_node_family_to_excel(
     ws.column_dimensions["B"].width = 25
     ws.column_dimensions["C"].width = 80
     ws.column_dimensions["D"].width = 40
+    ws.column_dimensions["E"].width = 50
 
     # --- Save the workbook with error handling ---
     try:
@@ -944,7 +959,7 @@ def export_node_family_to_excel_multi_sheet(
         sheet_name = sanitize_sheet_name(f"{prefix} {node['name']}")
 
         ws = wb.create_sheet(title=sheet_name)
-        headers = ["Participant", "Coded Segment", "Document"]
+        headers = ["Participant", "Coded Segment", "Document", "Remark"]
         ws.append(headers)
 
         header_font = Font(bold=True)
@@ -960,11 +975,19 @@ def export_node_family_to_excel_multi_sheet(
         ]
         for seg in segments_for_sheet:
             participant = seg["participant_name"] or "N/A"
-            ws.append([participant, seg["content_preview"], seg["document_title"]])
+            ws.append(
+                [
+                    participant,
+                    seg["content_preview"],
+                    seg["document_title"],
+                    seg.get("remark", ""),
+                ]
+            )
 
         ws.column_dimensions["A"].width = 25
         ws.column_dimensions["B"].width = 80
         ws.column_dimensions["C"].width = 40
+        ws.column_dimensions["D"].width = 50
 
         # Recurse for children
         children = nodes_by_parent.get(node_id, [])
@@ -1288,10 +1311,15 @@ def export_annotated_document(
             else:
                 run.font.color.rgb = RGBColor(255, 255, 255)  # white
 
-            # Add remark as [<node>] (no field name prefix)
             info_run = p.add_run(f" [{seg['node_name']}] ")
             info_run.italic = True
             info_run.font.size = run.font.size
+            if seg.get("remark"):
+                remark_run = p.add_run(
+                    f" {get_translation('export.remark_column', 'English')}: {seg['remark']} "
+                )
+                remark_run.italic = True
+                remark_run.font.size = run.font.size
 
             last_pos = seg["segment_end"]
 

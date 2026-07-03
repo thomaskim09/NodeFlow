@@ -110,13 +110,14 @@ class DocumentRepository:
                         cursor = conn.execute(
                         """
                         UPDATE coded_segments
-                        SET segment_start = ?, segment_end = ?, content_preview = ?
+                        SET segment_start = ?, segment_end = ?, content_preview = ?, remark = ?
                         WHERE id = ? AND document_id = ?
                         """,
                             (
                                 segment["segment_start"],
                                 segment["segment_end"],
                                 segment["content_preview"],
+                                segment.get("remark", ""),
                                 segment["id"],
                                 document_id,
                             ),

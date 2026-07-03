@@ -193,6 +193,7 @@ export:
   respondent_column: 'Respondent'
   original_quote_column: 'Original quote'
   document_column: 'Document'
+  remark_column: '备注'
 
 participant:
   header: '参与者'
@@ -217,6 +218,8 @@ participant:
 
 edit_bar:
   editing_segment: '<b>正在编辑片段：</b>调整选择并点击保存。'
+  remark_label: '备注'
+  remark_placeholder: '为此编码片段添加备注...'
   save_changes: '保存更改'
   cancel: '取消'
 
@@ -243,9 +246,14 @@ coded_segments:
   col_node: '节点'
   col_participant: '参与者'
   col_document: '文档'
+  col_remark: '备注'
   search_all: '全部'
   search_placeholder: '搜索编码片段...'
   edit_segment_tooltip: '编辑此编码片段的边界'
+  edit_remark_tooltip: '编辑此编码片段的备注'
+  edit_remark_dialog_title: '编辑片段备注'
+  edit_remark_label: '备注'
+  edit_remark_placeholder: '为此编码片段添加备注...'
   delete_segment_tooltip: '删除此编码片段 (Delete)'
   more_actions_tooltip: '更多片段操作'
   confirm_delete_title: '确认删除'

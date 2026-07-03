@@ -13,6 +13,9 @@ from PySide6.QtWidgets import (
     QFrame,
     QMenu,
     QHeaderView,
+    QDialog,
+    QDialogButtonBox,
+    QTextEdit,
 )
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QKeyEvent, QColor, QIcon
@@ -111,6 +114,7 @@ class CodedSegmentsView(QWidget):
         self.undo_executor = None
         self.color_column = 0
         self.preview_column = 1
+        self.remark_column = 4
 
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(10, 10, 10, 10)
@@ -260,6 +264,9 @@ class CodedSegmentsView(QWidget):
         edit_action = menu.addAction(
             get_translation("coded_segments.edit_segment_tooltip", self.language)
         )
+        edit_remark_action = menu.addAction(
+            get_translation("coded_segments.edit_remark_tooltip", self.language)
+        )
         delete_action = menu.addAction(
             get_translation("coded_segments.delete_segment_tooltip", self.language)
         )
@@ -273,6 +280,8 @@ class CodedSegmentsView(QWidget):
         action = menu.exec(button.mapToGlobal(button.rect().bottomLeft()))
         if action == edit_action:
             self.request_segment_edit(segment_id)
+        elif action == edit_remark_action:
+            self.edit_segment_remark(segment_id)
         elif action == delete_action:
             self.confirm_delete_segment(segment_id, preview)
 
@@ -338,6 +347,38 @@ class CodedSegmentsView(QWidget):
                 segment_data["segment_end"],
             )
 
+    def edit_segment_remark(self, segment_id):
+        segment_data = next(
+            (s for s in self.all_segments if s["id"] == segment_id), None
+        )
+        if not segment_data:
+            return
+        dialog = SegmentRemarkDialog(
+            self.language, segment_data.get("remark", ""), self
+        )
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+
+        old_remark = segment_data.get("remark", "")
+        new_remark = dialog.remark_text()
+        if new_remark == old_remark:
+            return
+
+        def do():
+            database.update_coded_segment_remark(segment_id, new_remark)
+
+        def undo():
+            database.update_coded_segment_remark(segment_id, old_remark)
+
+        self.execute_workspace_command(
+            WorkspaceCommand(
+                "Edit Segment Remark",
+                do,
+                undo,
+                lambda sid=segment_id: (self.reload_view(), self.highlight_segment_by_id(sid)),
+            )
+        )
+
     def load_segments(self, document_id):
         self.search_input.clear()
         self.current_document_id = document_id
@@ -364,6 +405,7 @@ class CodedSegmentsView(QWidget):
                 get_translation("coded_segments.col_coded_text", self.language),
                 get_translation("coded_segments.col_node", self.language),
                 get_translation("coded_segments.col_participant", self.language),
+                get_translation("coded_segments.col_remark", self.language),
                 "",
             ]
             self.tree_widget.setHeaderLabels(headers)
@@ -375,6 +417,7 @@ class CodedSegmentsView(QWidget):
                     get_translation("coded_segments.col_coded_text", self.language),
                     get_translation("coded_segments.col_node", self.language),
                     get_translation("coded_segments.col_participant", self.language),
+                    get_translation("coded_segments.col_remark", self.language),
                 ]
             )
             if self.current_document_id:
@@ -388,6 +431,7 @@ class CodedSegmentsView(QWidget):
                 get_translation("coded_segments.col_node", self.language),
                 get_translation("coded_segments.col_participant", self.language),
                 get_translation("coded_segments.col_document", self.language),
+                get_translation("coded_segments.col_remark", self.language),
                 "",
             ]
             self.tree_widget.setHeaderLabels(headers)
@@ -400,6 +444,7 @@ class CodedSegmentsView(QWidget):
                     get_translation("coded_segments.col_node", self.language),
                     get_translation("coded_segments.col_participant", self.language),
                     get_translation("coded_segments.col_document", self.language),
+                    get_translation("coded_segments.col_remark", self.language),
                 ]
             )
             self.all_segments = database.get_coded_segments_for_project(self.project_id)
@@ -415,7 +460,7 @@ class CodedSegmentsView(QWidget):
 
     def _configure_columns(self, is_entire_project: bool):
         header = self.tree_widget.header()
-        action_column = 5 if is_entire_project else 4
+        action_column = 6 if is_entire_project else 5
 
         header.setSectionResizeMode(self.color_column, QHeaderView.ResizeMode.Fixed)
         header.resizeSection(self.color_column, 48)
@@ -431,6 +476,11 @@ class CodedSegmentsView(QWidget):
         if is_entire_project:
             header.setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
             header.resizeSection(4, 180)
+            self.remark_column = 5
+        else:
+            self.remark_column = 4
+
+        header.setSectionResizeMode(self.remark_column, QHeaderView.ResizeMode.Stretch)
 
         header.setSectionResizeMode(action_column, QHeaderView.ResizeMode.Fixed)
         header.resizeSection(action_column, 34)
@@ -462,6 +512,7 @@ class CodedSegmentsView(QWidget):
             ]
             if is_entire_project:
                 item_data.append(segment["document_title"])
+            item_data.append((segment.get("remark") or "").replace("\n", " ").strip())
             item_data.append("")
 
             item = QTreeWidgetItem(self.tree_widget, item_data)
@@ -509,6 +560,8 @@ class CodedSegmentsView(QWidget):
             "coded_segments.col_document", self.language
         ):
             scope = "Document"
+        elif scope_display == get_translation("coded_segments.col_remark", self.language):
+            scope = "Remark"
         else:
             scope = "All"
 
@@ -541,9 +594,10 @@ class CodedSegmentsView(QWidget):
             and "document_title" in seg
             and search_text in seg["document_title"].lower()
         )
+        remark_match = search_text in (seg.get("remark") or "").lower()
 
         if scope == "All":
-            return text_match or node_match or participant_match or doc_match
+            return text_match or node_match or participant_match or doc_match or remark_match
         elif scope == "Coded Text":
             return text_match
         elif scope == "Node":
@@ -552,6 +606,8 @@ class CodedSegmentsView(QWidget):
             return participant_match
         elif scope == "Document":
             return doc_match
+        elif scope == "Remark":
+            return remark_match
         return False
 
     def filter_by_node_family(self, node_ids: list):
@@ -640,3 +696,30 @@ class CodedSegmentsView(QWidget):
         fg = QColor("#e8e8e8" if is_dark else "#4a4a4a")
         self.search_icon.set_color(fg, QIcon.Mode.Normal)
         self.search_icon_label.setPixmap(self.search_icon.pixmap(16, color=fg))
+
+
+class SegmentRemarkDialog(QDialog):
+    def __init__(self, language, remark_text, parent=None):
+        super().__init__(parent)
+        self.language = language
+        self.setWindowTitle(
+            get_translation("coded_segments.edit_remark_dialog_title", self.language)
+        )
+        layout = QVBoxLayout(self)
+        label = QLabel(get_translation("coded_segments.edit_remark_label", self.language))
+        self.editor = QTextEdit()
+        self.editor.setPlaceholderText(
+            get_translation("coded_segments.edit_remark_placeholder", self.language)
+        )
+        self.editor.setPlainText(remark_text)
+        layout.addWidget(label)
+        layout.addWidget(self.editor)
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel
+        )
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+    def remark_text(self):
+        return self.editor.toPlainText()
