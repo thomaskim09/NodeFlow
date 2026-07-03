@@ -53,4 +53,5 @@ fi
 
 echo "Packaging NodeFlow for $TARGET"
 cd "$ROOT_DIR"
+"$VENV_DIR/bin/python" "$ROOT_DIR/scripts/build_app_icons.py" "$TARGET"
 exec "$VENV_DIR/bin/pyinstaller" "$SPEC_FILE" --clean
