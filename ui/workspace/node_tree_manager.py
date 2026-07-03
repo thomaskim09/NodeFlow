@@ -15,8 +15,9 @@ from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
     QFormLayout,
+    QSizePolicy,
 )
-from PySide6.QtCore import Qt, Signal, QTimer
+from PySide6.QtCore import Qt, Signal, QTimer, QEvent, QRect, QSize
 from PySide6.QtGui import QDropEvent, QKeyEvent, QColor, QIcon
 from managers.export_manager import (
     export_classification_workbook,
@@ -105,9 +106,9 @@ class NodeItemWidget(QWidget):
         self.node_id = node_id
         self.parent_manager = parent_manager
         self.language = language or getattr(parent_manager, "language", "English")
-        self.setMinimumHeight(32)
+        self._base_row_height = 28
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(0, 4, 8, 4)
+        layout.setContentsMargins(0, 2, 8, 2)
         layout.setSpacing(8)
         self.color_button = QPushButton()
         self.color_button.setObjectName("nodeColorButton")
@@ -118,13 +119,21 @@ class NodeItemWidget(QWidget):
         self.set_button_color(node_color)
         self.color_button.clicked.connect(self.on_color_change)
         self.name_label = QLabel(name_text)
-        self.name_label.setAlignment(Qt.AlignmentFlag.AlignVCenter)
+        self.name_label.setWordWrap(True)
+        self.name_label.setAlignment(
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop
+        )
+        self.name_label.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred
+        )
         self.stats_label = QLabel(stats_text)
         self.stats_label.setStyleSheet("color: #888;")
         self.stats_label.setAlignment(
-            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignTop
         )
-        self.stats_label.setMinimumWidth(170)
+        self.stats_label.setVisible(bool(stats_text))
+        if stats_text:
+            self.stats_label.setMinimumWidth(170)
         self.menu_button = QPushButton()
         self.menu_icon = MaterialIcon("more_vert")
         self.menu_button.setIcon(self.menu_icon)
@@ -133,11 +142,50 @@ class NodeItemWidget(QWidget):
             get_translation("node_tree.more_actions_tooltip", self.language)
         )
         self.menu_button.clicked.connect(self.show_actions_menu)
-        layout.addWidget(self.color_button)
-        layout.addWidget(self.name_label, 1)
-        layout.addWidget(self.stats_label)
-        layout.addWidget(self.menu_button)
+        layout.addWidget(self.color_button, 0, Qt.AlignmentFlag.AlignTop)
+        layout.addWidget(self.name_label, 1, Qt.AlignmentFlag.AlignTop)
+        layout.addWidget(self.stats_label, 0, Qt.AlignmentFlag.AlignTop)
+        layout.addWidget(self.menu_button, 0, Qt.AlignmentFlag.AlignTop)
         self.set_selected_style(False)
+
+    def update_wrap_width(self, available_width):
+        stats_width = (
+            max(self.stats_label.minimumWidth(), self.stats_label.sizeHint().width())
+            if self.stats_label.isVisible()
+            else 0
+        )
+        reserved_width = (
+            self.color_button.width()
+            + stats_width
+            + self.menu_button.width()
+            + self.layout().contentsMargins().left()
+            + self.layout().contentsMargins().right()
+            + (self.layout().spacing() * 3)
+        )
+        name_width = max(120, available_width - reserved_width)
+        text_rect = self.name_label.fontMetrics().boundingRect(
+            QRect(0, 0, name_width, 10_000),
+            int(Qt.TextFlag.TextWordWrap),
+            self.name_label.text(),
+        )
+        text_height = max(self.name_label.fontMetrics().height(), text_rect.height())
+        self.name_label.setFixedWidth(name_width)
+        self.name_label.setFixedHeight(text_height)
+        self.layout().activate()
+        self.updateGeometry()
+        content_height = max(
+            text_height,
+            self.color_button.height(),
+            self.menu_button.height(),
+            self.stats_label.sizeHint().height() if self.stats_label.isVisible() else 0,
+        )
+        margins = self.layout().contentsMargins()
+        row_height = max(
+            self._base_row_height,
+            content_height + margins.top() + margins.bottom(),
+        )
+        self.setFixedHeight(row_height)
+        return QSize(available_width, row_height)
 
     def set_button_color(self, color_hex):
         self.color_button.setStyleSheet(
@@ -393,6 +441,11 @@ class NodeTreeManager(QWidget):
         self.tree_widget.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.tree_widget.setAcceptDrops(True)
         self.tree_widget.highlighting_enabled = True
+        self.tree_widget.viewport().installEventFilter(self)
+        self._resize_rows_timer = QTimer(self)
+        self._resize_rows_timer.setSingleShot(True)
+        self._resize_rows_timer.setInterval(90)
+        self._resize_rows_timer.timeout.connect(self._update_node_item_sizes)
         main_layout.addWidget(self.tree_widget)
         self.tree_widget.currentItemChanged.connect(self.on_selection_changed)
         self.tree_widget.itemClicked.connect(self.on_item_clicked)
@@ -612,9 +665,15 @@ class NodeTreeManager(QWidget):
 
         add_items_recursively(self.tree_widget, None)
         self.tree_widget.expandAll()
+        self._update_node_item_sizes()
         if item_to_reselect:
             self.tree_widget.setCurrentItem(item_to_reselect)
         self.tree_widget.blockSignals(False)
+        if node_id_to_reselect is not None:
+            QTimer.singleShot(
+                0,
+                lambda node_id=node_id_to_reselect: self._scroll_node_into_view(node_id),
+            )
 
     def set_current_document_id(self, doc_id):
         self.current_document_id = doc_id
@@ -638,6 +697,49 @@ class NodeTreeManager(QWidget):
     def refresh_tree_and_emit_update(self, node_id_to_reselect=None):
         self.load_nodes(node_id_to_reselect=node_id_to_reselect)
         self.node_updated.emit()
+
+    def _scroll_node_into_view(self, node_id):
+        it = QTreeWidgetItemIterator(self.tree_widget)
+        while it.value():
+            item = it.value()
+            if item.data(0, 1) == node_id:
+                self.tree_widget.scrollToItem(
+                    item,
+                    QAbstractItemView.ScrollHint.PositionAtCenter,
+                )
+                break
+            it += 1
+
+    def _update_node_item_sizes(self):
+        it = QTreeWidgetItemIterator(self.tree_widget)
+        while it.value():
+            item = it.value()
+            widget = self.tree_widget.itemWidget(item, 0)
+            if isinstance(widget, NodeItemWidget):
+                item.setSizeHint(
+                    0, widget.update_wrap_width(self._available_node_item_width(item))
+                )
+            it += 1
+
+    def _available_node_item_width(self, item):
+        depth = 0
+        parent = item.parent()
+        while parent:
+            depth += 1
+            parent = parent.parent()
+        scrollbar_width = self.tree_widget.verticalScrollBar().sizeHint().width()
+        return max(
+            220,
+            self.tree_widget.viewport().width()
+            - (depth * self.tree_widget.indentation())
+            - scrollbar_width
+            - 24,
+        )
+
+    def eventFilter(self, watched, event):
+        if watched is self.tree_widget.viewport() and event.type() == QEvent.Type.Resize:
+            self._resize_rows_timer.start()
+        return super().eventFilter(watched, event)
 
     def clear_all_filters(self):
         self.tree_widget.clearSelection()

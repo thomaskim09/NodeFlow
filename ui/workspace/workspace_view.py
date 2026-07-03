@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QColorDialog,
 )
-from PySide6.QtCore import Qt, Signal, QSize
+from PySide6.QtCore import Qt, Signal, QSize, QTimer
 from PySide6.QtGui import QAction, QColor, QIcon, QKeySequence, QShortcut
 
 from ui.combo_box import FitPopupComboBox
@@ -163,7 +163,8 @@ class WorkspaceView(QWidget):
         self.history.add_changed_callback(self.update_undo_redo_actions)
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(0, 0, 0, 0)
-        main_splitter = QSplitter(Qt.Orientation.Horizontal)
+        self.main_splitter = QSplitter(Qt.Orientation.Horizontal)
+        self.main_splitter.setChildrenCollapsible(False)
         self.toolbar = QToolBar(get_translation("toolbar.projects", self.language))
         self.toolbar.setMovable(False)
         self.toolbar.setContentsMargins(0, 0, 0, 0)
@@ -203,9 +204,13 @@ class WorkspaceView(QWidget):
         self.toolbar.addAction(self.settings_action)
         main_layout.addWidget(self.toolbar)
         self.left_pane = QFrame()
+        self.left_pane.setMinimumWidth(280)
         self.left_pane_layout = QVBoxLayout(self.left_pane)
         self.center_pane = ContentView(self.project_id, self.language)
+        self.center_pane.setMinimumWidth(420)
+        self.center_pane.setMinimumHeight(260)
         self.bottom_pane = CodedSegmentsView(self.project_id, self.language)
+        self.bottom_pane.setMinimumHeight(180)
         self.participant_manager = ParticipantManager(self.project_id, self.language)
         self.node_tree_manager = NodeTreeManager(self.project_id, self.language)
         self.center_pane.set_undo_executor(self.execute_workspace_command)
@@ -239,14 +244,15 @@ class WorkspaceView(QWidget):
         self.left_pane_layout.addWidget(self.export_button)
         self.left_pane_layout.setStretchFactor(self.participant_manager, 2)
         self.left_pane_layout.setStretchFactor(self.node_tree_manager, 5)
-        right_splitter = QSplitter(Qt.Orientation.Vertical)
-        right_splitter.addWidget(self.center_pane)
-        right_splitter.addWidget(self.bottom_pane)
-        right_splitter.setSizes([400, 400])
-        main_splitter.addWidget(self.left_pane)
-        main_splitter.addWidget(right_splitter)
-        main_splitter.setSizes([350, 700])
-        main_layout.addWidget(main_splitter)
+        self.right_splitter = QSplitter(Qt.Orientation.Vertical)
+        self.right_splitter.setChildrenCollapsible(False)
+        self.right_splitter.addWidget(self.center_pane)
+        self.right_splitter.addWidget(self.bottom_pane)
+        self.right_splitter.setSizes([400, 400])
+        self.main_splitter.addWidget(self.left_pane)
+        self.main_splitter.addWidget(self.right_splitter)
+        self.main_splitter.setSizes([350, 700])
+        main_layout.addWidget(self.main_splitter)
 
         # --- SIGNAL CONNECTIONS ---
         self.center_pane.doc_selector.currentIndexChanged.connect(
@@ -462,11 +468,24 @@ class WorkspaceView(QWidget):
 
     def refresh_all_views(self):
         """A single, reliable method to refresh the entire workspace."""
-        self.participant_manager.load_participants()
-        self.center_pane.load_document_list(doc_id_to_select=self._last_added_doc_id)
+        previous_doc_id = self.center_pane.current_document_id
+        editor_state = (
+            self.center_pane._capture_editor_state() if previous_doc_id else None
+        )
+        doc_id_to_select = self._last_added_doc_id or self.center_pane.current_document_id
+        participant_id_to_select = self.participant_manager.get_selected_participant_id()
+        node_id_to_reselect = self.node_tree_manager.get_selected_node_id()
+        self.participant_manager.load_participants(
+            participant_id_to_select=participant_id_to_select
+        )
+        self.center_pane.load_document_list(doc_id_to_select=doc_id_to_select)
         new_doc_id = self.center_pane.current_document_id
         self.bottom_pane.load_segments(new_doc_id)
-        self.node_tree_manager.load_nodes()
+        self.node_tree_manager.load_nodes(node_id_to_reselect=node_id_to_reselect)
+        if editor_state and new_doc_id == previous_doc_id:
+            QTimer.singleShot(
+                0, lambda state=editor_state: self.center_pane._restore_editor_state(state)
+            )
         self._last_added_doc_id = None
 
     def export_as_word(self):

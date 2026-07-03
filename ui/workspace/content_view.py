@@ -1282,6 +1282,15 @@ class ContentView(QWidget):
         try:
             self.autosave_timer.stop()
             self._loading_document = True
+            selected_display_text = self.doc_selector.currentText()
+            next_document_id = (
+                self.documents_map.get(selected_display_text)
+                if selected_display_text
+                else None
+            )
+            editor_state = None
+            if self.current_document_id and self.current_document_id == next_document_id:
+                editor_state = self._capture_editor_state()
             try:
                 self.text_edit.textChanged.disconnect(self.on_text_changed)
             except RuntimeError:
@@ -1298,7 +1307,6 @@ class ContentView(QWidget):
             self.is_dirty = False
             self._pending_deleted_segments = {}
             self.save_button.setEnabled(False)
-            selected_display_text = self.doc_selector.currentText()
             if not selected_display_text:
                 self.current_document_id = None
                 self.current_participant_id = None
@@ -1330,6 +1338,10 @@ class ContentView(QWidget):
                 elif mode == "view":
                     self._select_and_scroll(start, end)
                 self._pending_highlight = None
+            elif editor_state:
+                QTimer.singleShot(
+                    0, lambda state=editor_state: self._restore_editor_state(state)
+                )
 
             self.text_edit.textChanged.connect(self.on_text_changed)
             self.text_edit.document().contentsChange.connect(
@@ -1341,6 +1353,29 @@ class ContentView(QWidget):
         finally:
             self._loading_document = False
             QApplication.restoreOverrideCursor()
+
+    def _capture_editor_state(self):
+        cursor = self.text_edit.textCursor()
+        return {
+            "position": cursor.position(),
+            "anchor": cursor.anchor(),
+            "scroll": self.text_edit.verticalScrollBar().value(),
+            "had_focus": self.text_edit.hasFocus(),
+        }
+
+    def _restore_editor_state(self, state):
+        if not self.current_document_id:
+            return
+        document_length = self.text_edit.document().characterCount() - 1
+        position = max(0, min(state["position"], document_length))
+        anchor = max(0, min(state["anchor"], document_length))
+        cursor = self.text_edit.textCursor()
+        cursor.setPosition(anchor)
+        cursor.setPosition(position, QTextCursor.MoveMode.KeepAnchor)
+        self.text_edit.setTextCursor(cursor)
+        self.text_edit.verticalScrollBar().setValue(state["scroll"])
+        if state["had_focus"]:
+            self.text_edit.setFocus()
 
     def _finish_excel_import(self, filename, result):
         QApplication.restoreOverrideCursor()
