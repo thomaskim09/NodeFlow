@@ -9,6 +9,8 @@ class WorkspaceMainWindow(QMainWindow):
         self.project_name = project_name
         self.startup_window = startup_window
         self.setWindowTitle(f"NodeFlow - {project_name}")
+        if self.startup_window and self.startup_window.window():
+            self.setWindowIcon(self.startup_window.window().windowIcon())
         self.setMinimumSize(1000, 700)
         self.resize(1200, 800)
         self.workspace_view = WorkspaceView(

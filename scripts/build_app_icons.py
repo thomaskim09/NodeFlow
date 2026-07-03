@@ -16,14 +16,20 @@ def icon_artifact_paths(root: Path) -> dict[str, Path]:
 
 
 def windows_icon_sizes() -> tuple[int, ...]:
-    return (256, 128, 64, 48, 32, 16)
+    return (256, 128, 96, 64, 48, 40, 32, 24, 16)
 
 
 def build_windows_icon(source: Path, destination: Path) -> None:
     from PIL import Image
 
     with Image.open(source) as image:
-        image.save(destination, format="ICO", sizes=[(size, size) for size in windows_icon_sizes()])
+        base_image = image.convert("RGBA")
+        base_image.save(
+            destination,
+            format="ICO",
+            bitmap_format="bmp",
+            sizes=[(size, size) for size in windows_icon_sizes()],
+        )
 
 
 def build_macos_icon(source: Path, destination: Path) -> None:

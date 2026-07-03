@@ -1,5 +1,6 @@
 import sys
 import logging
+import ctypes
 from PySide6.QtWidgets import QApplication, QMainWindow, QSplashScreen
 from PySide6.QtCore import QSize, Qt
 from PySide6.QtGui import QIcon, QPixmap, QColor
@@ -15,6 +16,28 @@ from utils.app_paths import get_database_path, get_user_data_dir
 
 LOGGER = logging.getLogger(__name__)
 
+WINDOWS_APP_ID = "thomaskim09.NodeFlow"
+
+
+def get_app_icon_path() -> str | None:
+    icon_name = "icon.ico" if sys.platform == "win32" else "icon.png"
+    icon_path = get_resource_path(icon_name)
+    if os.path.exists(icon_path):
+        return icon_path
+    fallback_path = get_resource_path("icon.png")
+    if os.path.exists(fallback_path):
+        return fallback_path
+    return None
+
+
+def configure_windows_app_id() -> None:
+    if sys.platform != "win32":
+        return
+    try:
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(WINDOWS_APP_ID)
+    except (AttributeError, OSError):
+        LOGGER.debug("Unable to set Windows AppUserModelID", exc_info=True)
+
 class MainWindow(QMainWindow):
     """
     The main window of the application. It acts as a controller to show the startup view only.
@@ -23,8 +46,9 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("NodeFlow")
-        if os.path.exists(get_resource_path("icon.png")):
-            self.setWindowIcon(QIcon(get_resource_path("icon.png")))
+        icon_path = get_app_icon_path()
+        if icon_path:
+            self.setWindowIcon(QIcon(icon_path))
         self.show_startup_view()
 
     def center_window(self):
@@ -53,7 +77,13 @@ def main() -> int:
     LOGGER.info("User data directory: %s", get_user_data_dir())
     LOGGER.info("Database path: %s", get_database_path())
     LOGGER.info("Log path: %s", log_path)
+    configure_windows_app_id()
     app = QApplication(sys.argv)
+    app.setApplicationName("NodeFlow")
+    app.setApplicationDisplayName("NodeFlow")
+    app_icon_path = get_app_icon_path()
+    if app_icon_path:
+        app.setWindowIcon(QIcon(app_icon_path))
     splash_path = get_resource_path("splashscreen.png")
     pixmap = QPixmap(splash_path) if os.path.exists(splash_path) else QPixmap()
     splash = QSplashScreen(pixmap)

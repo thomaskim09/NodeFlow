@@ -42,6 +42,7 @@ exe = EXE(
     [],
     exclude_binaries=True,
     name="NodeFlow",
+    icon=str(ROOT / "resource" / "icon.ico"),
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

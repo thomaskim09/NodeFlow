@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 
 from services.desktop_shortcut_service import (
@@ -66,3 +67,31 @@ def test_macos_target_path_prefers_app_bundle(monkeypatch):
     assert desktop_shortcut_service._macos_target_path() == Path(
         "/Applications/NodeFlow.app"
     )
+
+
+def test_windows_shortcut_icon_path_prefers_internal_bundle(monkeypatch, tmp_path):
+    target_path = tmp_path / "NodeFlow.exe"
+    target_path.write_text("")
+    icon_path = tmp_path / "_internal" / "resource" / "icon.ico"
+    icon_path.parent.mkdir(parents=True)
+    icon_path.write_text("")
+    monkeypatch.setattr("sys.executable", str(target_path))
+
+    assert desktop_shortcut_service._windows_shortcut_icon_path() == icon_path
+
+
+def test_windows_hidden_startupinfo_uses_hide_flags(monkeypatch):
+    class FakeStartupInfo:
+        def __init__(self):
+            self.dwFlags = 0
+            self.wShowWindow = 1
+
+    monkeypatch.setattr(subprocess, "STARTUPINFO", FakeStartupInfo, raising=False)
+    monkeypatch.setattr(subprocess, "STARTF_USESHOWWINDOW", 1, raising=False)
+    monkeypatch.setattr(subprocess, "SW_HIDE", 0, raising=False)
+
+    startupinfo = desktop_shortcut_service._windows_hidden_startupinfo()
+
+    assert startupinfo is not None
+    assert startupinfo.dwFlags & 1
+    assert startupinfo.wShowWindow == 0

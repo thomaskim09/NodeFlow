@@ -68,13 +68,17 @@ class DesktopShortcutService:
             }
         )
 
-    def create_shortcut(self) -> Path:
+    def create_shortcut(self, progress_callback=None) -> Path:
         shortcut_path = self.get_shortcut_path()
         shortcut_path.parent.mkdir(parents=True, exist_ok=True)
         if sys.platform == "win32":
-            self._create_windows_shortcut(shortcut_path)
+            self._create_windows_shortcut(shortcut_path, progress_callback=progress_callback)
         elif sys.platform == "darwin":
+            if progress_callback:
+                progress_callback(25)
             self._create_macos_shortcut(shortcut_path)
+            if progress_callback:
+                progress_callback(100)
         else:
             raise RuntimeError("Desktop shortcuts are not supported on this platform.")
         return shortcut_path
@@ -88,23 +92,42 @@ class DesktopShortcutService:
             }
         )
 
-    def _create_windows_shortcut(self, shortcut_path: Path) -> None:
+    def _create_windows_shortcut(self, shortcut_path: Path, progress_callback=None) -> None:
         target_path = self._windows_target_path()
         working_dir = target_path.parent
+        icon_path = self._windows_shortcut_icon_path()
+        if progress_callback:
+            progress_callback(20)
         command = [
             "powershell",
             "-NoProfile",
+            "-WindowStyle",
+            "Hidden",
             "-Command",
             (
                 "$WshShell = New-Object -ComObject WScript.Shell; "
                 f"$Shortcut = $WshShell.CreateShortcut('{str(shortcut_path)}'); "
                 f"$Shortcut.TargetPath = '{str(target_path)}'; "
                 f"$Shortcut.WorkingDirectory = '{str(working_dir)}'; "
-                f"$Shortcut.IconLocation = '{str(target_path)},0'; "
+                f"$Shortcut.IconLocation = '{str(icon_path)},0'; "
+                "$Shortcut.Description = 'NodeFlow'; "
                 "$Shortcut.Save()"
             ),
         ]
-        subprocess.run(command, check=True, capture_output=True, text=True)
+        run_kwargs = {
+            "check": True,
+            "capture_output": True,
+            "text": True,
+        }
+        creation_flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        if creation_flags:
+            run_kwargs["creationflags"] = creation_flags
+        startupinfo = self._windows_hidden_startupinfo()
+        if startupinfo is not None:
+            run_kwargs["startupinfo"] = startupinfo
+        subprocess.run(command, **run_kwargs)
+        if progress_callback:
+            progress_callback(100)
 
     def _create_macos_shortcut(self, shortcut_path: Path) -> None:
         target_path = self._macos_target_path()
@@ -117,8 +140,27 @@ class DesktopShortcutService:
     def _windows_target_path(self) -> Path:
         return Path(sys.executable).resolve()
 
+    def _windows_shortcut_icon_path(self) -> Path:
+        target_path = self._windows_target_path()
+        icon_path = target_path.parent / "_internal" / "resource" / "icon.ico"
+        if icon_path.exists():
+            return icon_path
+        bundled_icon_path = Path(getattr(sys, "_MEIPASS", target_path.parent)) / "resource" / "icon.ico"
+        if bundled_icon_path.exists():
+            return bundled_icon_path
+        return target_path
+
+    def _windows_hidden_startupinfo(self):
+        startupinfo_cls = getattr(subprocess, "STARTUPINFO", None)
+        if startupinfo_cls is None:
+            return None
+        startupinfo = startupinfo_cls()
+        startupinfo.dwFlags |= getattr(subprocess, "STARTF_USESHOWWINDOW", 0)
+        startupinfo.wShowWindow = getattr(subprocess, "SW_HIDE", 0)
+        return startupinfo
+
     def _macos_target_path(self) -> Path:
-        executable = Path(sys.executable).resolve()
+        executable = Path(sys.executable)
         if executable.parent.name == "MacOS" and executable.parent.parent.name == "Contents":
             return executable.parent.parent.parent
         return executable

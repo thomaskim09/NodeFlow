@@ -36,4 +36,4 @@ switch ($Target) {
 Write-Host "Packaging NodeFlow for $Target"
 Set-Location $RootDir
 & $VenvPython (Join-Path $RootDir "scripts\build_app_icons.py") $Target
-& $PyInstaller $SpecFile --clean
+& $PyInstaller $SpecFile --clean --noconfirm

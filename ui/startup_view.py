@@ -307,8 +307,28 @@ class StartupView(QWidget):
             desktop_shortcut_service.mark_never()
 
     def create_desktop_shortcut(self):
+        progress = QProgressDialog(
+            get_translation("startup.desktop_shortcut_create", self.language),
+            None,
+            0,
+            100,
+            self,
+        )
+        progress.setWindowTitle(
+            get_translation("startup.desktop_shortcut_title", self.language)
+        )
+        progress.setWindowModality(Qt.WindowModality.WindowModal)
+        progress.setCancelButton(None)
+        progress.setMinimumDuration(0)
+        progress.setValue(5)
+        progress.show()
+        QApplication.processEvents()
         try:
-            shortcut_path = desktop_shortcut_service.create_shortcut()
+            shortcut_path = desktop_shortcut_service.create_shortcut(
+                progress_callback=self._update_shortcut_progress(progress)
+            )
+            progress.setValue(100)
+            progress.close()
             desktop_shortcut_service.mark_created()
             QMessageBox.information(
                 self,
@@ -320,6 +340,7 @@ class StartupView(QWidget):
                 ),
             )
         except Exception as error:
+            progress.cancel()
             QMessageBox.warning(
                 self,
                 get_translation("startup.desktop_shortcut_error_title", self.language),
@@ -329,6 +350,13 @@ class StartupView(QWidget):
                     error=str(error),
                 ),
             )
+
+    def _update_shortcut_progress(self, progress_dialog: QProgressDialog):
+        def update(value: int):
+            progress_dialog.setValue(value)
+            QApplication.processEvents()
+
+        return update
 
     def rename_project(self, project_id, current_name):
         new_name, ok = QInputDialog.getText(
