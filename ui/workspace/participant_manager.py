@@ -146,7 +146,7 @@ class ParticipantManager(QWidget):
     participant_updated = Signal()
     participant_selected = Signal(int)
 
-    def __init__(self, project_id, language=None):
+    def __init__(self, project_id, language=None, defer_load=False):
         super().__init__()
         self.project_id = project_id
         self.language = language or "English"
@@ -210,7 +210,8 @@ class ParticipantManager(QWidget):
 
         self.scope_combo.currentTextChanged.connect(self.load_participants)
         self.update_theme(load_settings().get("theme", "Light"))
-        self.load_participants()
+        if not defer_load:
+            self.load_participants()
 
     def set_undo_executor(self, undo_executor):
         self.undo_executor = undo_executor
@@ -267,6 +268,14 @@ class ParticipantManager(QWidget):
                 self.project_id
             )
 
+        stats_by_participant = {}
+        for segment in all_segments_in_scope:
+            stats = stats_by_participant.setdefault(
+                segment["participant_id"], {"segments": 0, "words": 0}
+            )
+            stats["segments"] += 1
+            stats["words"] += len(segment["content_preview"].split())
+
         item_to_reselect = None
 
         if not participants:
@@ -279,17 +288,11 @@ class ParticipantManager(QWidget):
             for p in sorted(participants, key=lambda x: x["name"]):
                 participant_id = p["id"]
 
-                # Filter segments for the current participant
-                participant_segments = [
-                    seg
-                    for seg in all_segments_in_scope
-                    if seg["participant_id"] == participant_id
-                ]
-
-                segment_count = len(participant_segments)
-                word_count = sum(
-                    len(seg["content_preview"].split()) for seg in participant_segments
+                stats = stats_by_participant.get(
+                    participant_id, {"segments": 0, "words": 0}
                 )
+                segment_count = stats["segments"]
+                word_count = stats["words"]
 
                 stats_text = ""
                 if segment_count > 0 and total_words > 0:

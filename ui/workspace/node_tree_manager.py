@@ -485,7 +485,7 @@ class NodeTreeManager(QWidget):
     node_updated = Signal()
     node_selected_for_coding = Signal(int)
 
-    def __init__(self, project_id, language=None):
+    def __init__(self, project_id, language=None, defer_load=False):
         super().__init__()
         self.project_id = project_id
         self.language = language or "English"
@@ -569,7 +569,8 @@ class NodeTreeManager(QWidget):
         self._branch_right_icon = ""
         self._branch_down_icon = ""
         self.update_theme(load_settings().get("theme", "Light"))
-        self.load_nodes()
+        if not defer_load:
+            self.load_nodes()
 
     def set_undo_executor(self, undo_executor):
         self.undo_executor = undo_executor
@@ -1295,6 +1296,7 @@ class NodeTreeManager(QWidget):
             item = it.value()
             if item.data(0, 1) == node_id:
                 found_item = item
+                break
             it += 1
 
         if found_item:

@@ -20,3 +20,4 @@ build/
 *.spec
 resource/icon.ico
 resource/icon.icns
+data/

@@ -56,7 +56,9 @@ def get_user_data_dir() -> Path:
         path = Path(override)
         path.mkdir(parents=True, exist_ok=True)
         return path
-    if _portable_data_available():
+    if not getattr(sys, "frozen", False):
+        path = get_bundle_root() / "data"
+    elif _portable_data_available():
         path = get_portable_user_data_dir()
     else:
         path = get_appdata_user_data_dir()

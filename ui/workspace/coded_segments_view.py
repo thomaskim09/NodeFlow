@@ -17,7 +17,7 @@ from PySide6.QtWidgets import (
     QDialogButtonBox,
     QTextEdit,
 )
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, Signal, QSignalBlocker
 from PySide6.QtGui import QKeyEvent, QColor, QIcon
 import database
 from qt_material_icons import MaterialIcon
@@ -103,7 +103,7 @@ class CodedSegmentsView(QWidget):
     segment_activated = Signal(int, int, int)  # document_id, start, end
     segment_edit_requested = Signal(int, int, int, int)  # seg_id, doc_id, start, end
 
-    def __init__(self, project_id, language=None):
+    def __init__(self, project_id, language=None, defer_load=False):
         super().__init__()
         self.project_id = project_id
         self.language = language or "English"
@@ -186,7 +186,8 @@ class CodedSegmentsView(QWidget):
             get_translation("coded_segments.scope_current", self.language)
         )
         self.update_theme(load_settings().get("theme", "Light"))
-        self.reload_view()
+        if not defer_load:
+            self.reload_view()
 
     def set_undo_executor(self, undo_executor):
         self.undo_executor = undo_executor
@@ -228,7 +229,8 @@ class CodedSegmentsView(QWidget):
 
         # Clear node filter
         self._last_active_node_filter = None
-        self.search_input.clear()
+        with QSignalBlocker(self.search_input):
+            self.search_input.clear()
         self.filter_tree()
 
         self.tree_widget.blockSignals(True)
@@ -380,11 +382,14 @@ class CodedSegmentsView(QWidget):
         )
 
     def load_segments(self, document_id):
-        self.search_input.clear()
+        with QSignalBlocker(self.search_input):
+            self.search_input.clear()
         self.current_document_id = document_id
         self.reload_view()
 
     def reload_view(self):
+        _search_input_blocker = QSignalBlocker(self.search_input)
+        _search_scope_blocker = QSignalBlocker(self.search_scope_combo)
         self.tree_widget.blockSignals(True)
         self.tree_widget.setCurrentItem(None)
 
@@ -448,10 +453,6 @@ class CodedSegmentsView(QWidget):
                 ]
             )
             self.all_segments = database.get_coded_segments_for_project(self.project_id)
-
-        self.populate_tree(self.all_segments)
-        # Reconnect the signal after populating
-        self.tree_widget.blockSignals(False)
 
         if self._last_active_node_filter is not None:
             self.filter_by_node_family(self._last_active_node_filter)

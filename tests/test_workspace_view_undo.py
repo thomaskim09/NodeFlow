@@ -1,4 +1,6 @@
 import database
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QApplication
 from PySide6.QtGui import QTextCursor
 from repositories.base import initialize_database
 from ui.workspace.workspace_view import WorkspaceView
@@ -166,6 +168,115 @@ def test_workspace_splitters_keep_minimum_panel_sizes(qtbot):
     assert widget.center_pane.minimumWidth() == 420
     assert widget.center_pane.minimumHeight() == 260
     assert widget.bottom_pane.minimumHeight() == 180
+
+
+def test_coding_selection_rebuilds_each_view_once(qtbot, monkeypatch):
+    initialize_database()
+    database.add_project("Single Refresh")
+    project = database.get_all_projects()[0]
+    participant_id = database.add_participant(project["id"], "Alice")
+    database.add_document(project["id"], "Doc 1", "alpha beta", participant_id)
+    node_id = database.add_node(project["id"], "Theme", None, "#FFFF00")
+
+    widget = WorkspaceView(project["id"], project["name"], lambda: None)
+    qtbot.addWidget(widget)
+    cursor = widget.center_pane.text_edit.textCursor()
+    cursor.setPosition(0)
+    cursor.setPosition(5, QTextCursor.MoveMode.KeepAnchor)
+    widget.center_pane.text_edit.setTextCursor(cursor)
+
+    refreshes = {"segments": 0, "nodes": 0}
+    wait_cursor_seen = []
+    original_add_segment = database.add_coded_segment
+    original_populate = widget.bottom_pane.populate_tree
+    original_load_nodes = widget.node_tree_manager.load_nodes
+
+    def add_segment_with_cursor(*args, **kwargs):
+        wait_cursor_seen.append(QApplication.overrideCursor().shape())
+        return original_add_segment(*args, **kwargs)
+
+    def populate_once(segments):
+        refreshes["segments"] += 1
+        return original_populate(segments)
+
+    def load_nodes_once(*args, **kwargs):
+        refreshes["nodes"] += 1
+        return original_load_nodes(*args, **kwargs)
+
+    monkeypatch.setattr(database, "add_coded_segment", add_segment_with_cursor)
+    monkeypatch.setattr(widget.bottom_pane, "populate_tree", populate_once)
+    monkeypatch.setattr(widget.node_tree_manager, "load_nodes", load_nodes_once)
+
+    widget.code_selection(node_id)
+
+    assert refreshes == {"segments": 1, "nodes": 1}
+    assert wait_cursor_seen == [Qt.CursorShape.WaitCursor]
+    assert QApplication.overrideCursor() is None
+
+
+def test_project_open_and_document_switch_refresh_views_once(qtbot, monkeypatch):
+    initialize_database()
+    database.add_project("Single Switch Refresh")
+    project = database.get_all_projects()[0]
+    participant_id = database.add_participant(project["id"], "Alice")
+    database.add_document(project["id"], "Doc 1", "alpha", participant_id)
+    database.add_document(project["id"], "Doc 2", "beta", participant_id)
+
+    from ui.workspace.coded_segments_view import CodedSegmentsView
+    from ui.workspace.node_tree_manager import NodeTreeManager
+    from ui.workspace.participant_manager import ParticipantManager
+
+    opens = {"segments": 0, "nodes": 0, "participants": 0}
+    original_load_segments = CodedSegmentsView.load_segments
+    original_load_nodes_for_open = NodeTreeManager.load_nodes
+    original_load_participants = ParticipantManager.load_participants
+
+    def load_segments_once(self, *args, **kwargs):
+        opens["segments"] += 1
+        return original_load_segments(self, *args, **kwargs)
+
+    def load_participants_once(self, *args, **kwargs):
+        opens["participants"] += 1
+        return original_load_participants(self, *args, **kwargs)
+
+    def load_nodes_for_open_once(self, *args, **kwargs):
+        opens["nodes"] += 1
+        return original_load_nodes_for_open(self, *args, **kwargs)
+
+    monkeypatch.setattr(CodedSegmentsView, "load_segments", load_segments_once)
+    monkeypatch.setattr(NodeTreeManager, "load_nodes", load_nodes_for_open_once)
+    monkeypatch.setattr(ParticipantManager, "load_participants", load_participants_once)
+
+    widget = WorkspaceView(project["id"], project["name"], lambda: None)
+    qtbot.addWidget(widget)
+
+    assert opens == {"segments": 1, "nodes": 1, "participants": 1}
+
+    refreshes = {"segments": 0, "nodes": 0, "participants": 0}
+    original_populate = widget.bottom_pane.populate_tree
+    original_load_nodes = widget.node_tree_manager.load_nodes
+
+    def populate_once(segments):
+        refreshes["segments"] += 1
+        return original_populate(segments)
+
+    def load_nodes_once(*args, **kwargs):
+        refreshes["nodes"] += 1
+        return original_load_nodes(*args, **kwargs)
+
+    def count_participants(*args, **kwargs):
+        refreshes["participants"] += 1
+        return original_load_participants(widget.participant_manager, *args, **kwargs)
+
+    monkeypatch.setattr(widget.bottom_pane, "populate_tree", populate_once)
+    monkeypatch.setattr(widget.node_tree_manager, "load_nodes", load_nodes_once)
+    monkeypatch.setattr(widget.participant_manager, "load_participants", count_participants)
+    widget.bottom_pane.search_input.setText("alpha")
+    refreshes["segments"] = 0
+
+    widget.center_pane.doc_selector.setCurrentIndex(1)
+
+    assert refreshes == {"segments": 1, "nodes": 1, "participants": 1}
 
 
 def test_refresh_all_views_keeps_document_cursor_and_scroll(qtbot):

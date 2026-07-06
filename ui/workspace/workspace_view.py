@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QColorDialog,
 )
-from PySide6.QtCore import Qt, Signal, QSize, QTimer
+from PySide6.QtCore import Qt, Signal, QSize, QTimer, QSignalBlocker
 from PySide6.QtGui import QAction, QColor, QIcon, QKeySequence, QShortcut
 
 from ui.combo_box import FitPopupComboBox
@@ -209,10 +209,16 @@ class WorkspaceView(QWidget):
         self.center_pane = ContentView(self.project_id, self.language)
         self.center_pane.setMinimumWidth(420)
         self.center_pane.setMinimumHeight(260)
-        self.bottom_pane = CodedSegmentsView(self.project_id, self.language)
+        self.bottom_pane = CodedSegmentsView(
+            self.project_id, self.language, defer_load=True
+        )
         self.bottom_pane.setMinimumHeight(180)
-        self.participant_manager = ParticipantManager(self.project_id, self.language)
-        self.node_tree_manager = NodeTreeManager(self.project_id, self.language)
+        self.participant_manager = ParticipantManager(
+            self.project_id, self.language, defer_load=True
+        )
+        self.node_tree_manager = NodeTreeManager(
+            self.project_id, self.language, defer_load=True
+        )
         self.center_pane.set_undo_executor(self.execute_workspace_command)
         self.center_pane.set_applied_command_recorder(self.record_applied_command)
         self.bottom_pane.set_undo_executor(self.execute_workspace_command)
@@ -312,9 +318,6 @@ class WorkspaceView(QWidget):
         self.center_pane.load_document_content()
         self._apply_theme_icons(load_settings().get("theme", "Light"))
         self.on_document_changed()
-        # Ensure coded segments view is refreshed on first open
-        if hasattr(self.center_pane, "current_document_id"):
-            self.bottom_pane.load_segments(self.center_pane.current_document_id)
         self.update_undo_redo_actions()
 
     def execute_workspace_command(self, command: WorkspaceCommand):
@@ -505,7 +508,6 @@ class WorkspaceView(QWidget):
             self.node_tree_manager.tree_widget.clearSelection()
             self.node_tree_manager.set_current_document_id(doc_id)
             self.participant_manager.set_current_document_id(doc_id)
-            self.participant_manager.load_participants()
 
             participant_id = database.get_participant_for_document(doc_id)
             if participant_id:
@@ -550,11 +552,11 @@ class WorkspaceView(QWidget):
             self.bottom_pane.reload_view()
             self.center_pane.apply_all_highlights()
             self.node_tree_manager.set_current_document_id(doc_id)
-            self.node_tree_manager.load_nodes()
             self.participant_manager.load_participants()
             new_cursor = text_edit.textCursor()
             new_cursor.setPosition(selection_end_pos)
-            text_edit.setTextCursor(new_cursor)
+            with QSignalBlocker(text_edit):
+                text_edit.setTextCursor(new_cursor)
             scrollbar.setValue(original_scroll_value)
             text_edit.setFocus()
 
@@ -572,9 +574,13 @@ class WorkspaceView(QWidget):
             if segment_id:
                 database.delete_coded_segment(segment_id)
 
-        self.execute_workspace_command(
-            WorkspaceCommand("Code Selection", do, undo, refresh_after_coding)
-        )
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        try:
+            self.execute_workspace_command(
+                WorkspaceCommand("Code Selection", do, undo, refresh_after_coding)
+            )
+        finally:
+            QApplication.restoreOverrideCursor()
 
     def handle_text_selection_changed(self, enabled):
         # Only allow selection mode if not in edit segment mode
