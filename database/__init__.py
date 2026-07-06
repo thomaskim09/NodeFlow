@@ -43,6 +43,7 @@ from .nodes_db import (
     update_node_order,
     update_node_parent,
     get_node_descendants,
+    merge_nodes,
 )  # noqa: F401
 
 # Coded Segments

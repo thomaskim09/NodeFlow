@@ -32,3 +32,7 @@ def update_node_parent(node_id, new_parent_id):
 
 def get_node_descendants(node_id):
     return node_repository.get_descendants(node_id)
+
+
+def merge_nodes(source_node_id, target_node_id):
+    node_repository.merge(source_node_id, target_node_id)

@@ -1,7 +1,8 @@
 import database
 from repositories.base import initialize_database
 from ui.workspace import node_tree_manager as node_tree_manager_module
-from ui.workspace.node_tree_manager import NodeTreeManager
+from ui.workspace.node_tree_manager import MergeNodeDialog, NodeTreeManager
+from services.workspace_history_service import WorkspaceHistory
 
 
 def test_show_excel_export_options_treats_qaction_bool_as_project_export(
@@ -107,3 +108,175 @@ def test_long_node_names_wrap_instead_of_truncating(qtbot):
     assert widget.name_label.wordWrap()
     assert widget.name_label.height() > widget.name_label.fontMetrics().height()
     assert item.sizeHint(0).height() >= widget.height()
+
+
+def test_selected_row_geometry_stays_aligned_below_wrapped_node(qtbot):
+    initialize_database()
+    database.add_project("Selection Alignment")
+    project_id = database.get_all_projects()[0]["id"]
+    parent_id = database.add_node(
+        project_id,
+        "Analytics and Reporting",
+        None,
+        "#111111",
+    )
+    target_id = database.add_node(project_id, "Excel Exports", parent_id, "#222222")
+    database.add_node(project_id, "Short Node", None, "#333333")
+
+    manager = NodeTreeManager(project_id, "English")
+    manager.resize(320, 500)
+    qtbot.addWidget(manager)
+    manager.show()
+    manager.load_nodes(node_id_to_reselect=target_id)
+    qtbot.wait(50)
+
+    item = None
+    it = node_tree_manager_module.QTreeWidgetItemIterator(manager.tree_widget)
+    while it.value():
+        candidate = it.value()
+        if candidate.data(0, 1) == target_id:
+            item = candidate
+            break
+        it += 1
+
+    widget = manager.tree_widget.itemWidget(item, 0)
+    item_rect = manager.tree_widget.visualItemRect(item)
+    widget_rect = widget.geometry()
+
+    assert item_rect.top() == widget_rect.top()
+    assert item_rect.height() == widget_rect.height()
+
+
+def test_merge_node_supports_undo_and_redo(qtbot, monkeypatch):
+    initialize_database()
+    database.add_project("Merge History")
+    project_id = database.get_all_projects()[0]["id"]
+    source_id = database.add_node(project_id, "Source", None, "#111111")
+    target_id = database.add_node(project_id, "Target", None, "#222222")
+    child_id = database.add_node(project_id, "Child", source_id, "#333333")
+    manager = NodeTreeManager(project_id, "English")
+    qtbot.addWidget(manager)
+    history = WorkspaceHistory()
+    manager.set_undo_executor(history.execute)
+
+    class AcceptedMergeDialog:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def exec(self):
+            return node_tree_manager_module.QDialog.DialogCode.Accepted
+
+        def node_ids(self):
+            return source_id, target_id
+
+    monkeypatch.setattr(node_tree_manager_module, "MergeNodeDialog", AcceptedMergeDialog)
+
+    manager.merge_node(source_id)
+    nodes = {node["id"]: node for node in database.get_nodes_for_project(project_id)}
+    assert source_id not in nodes
+    assert nodes[child_id]["parent_id"] == target_id
+
+    history.undo()
+    nodes = {node["id"]: node for node in database.get_nodes_for_project(project_id)}
+    assert source_id in nodes
+    assert nodes[child_id]["parent_id"] == source_id
+
+    history.redo()
+    nodes = {node["id"]: node for node in database.get_nodes_for_project(project_id)}
+    assert source_id not in nodes
+    assert nodes[child_id]["parent_id"] == target_id
+
+
+def test_merge_node_allows_second_merge_after_refresh(qtbot, monkeypatch):
+    initialize_database()
+    database.add_project("Merge Twice")
+    project_id = database.get_all_projects()[0]["id"]
+    first_id = database.add_node(project_id, "First", None, "#111111")
+    second_id = database.add_node(project_id, "Second", None, "#222222")
+    third_id = database.add_node(project_id, "Third", None, "#333333")
+
+    manager = NodeTreeManager(project_id, "English")
+    qtbot.addWidget(manager)
+
+    selections = iter([(first_id, second_id), (second_id, third_id)])
+
+    class AcceptedMergeDialog:
+        def __init__(self, *args, **kwargs):
+            self._selection = next(selections)
+
+        def exec(self):
+            return node_tree_manager_module.QDialog.DialogCode.Accepted
+
+        def node_ids(self):
+            return self._selection
+
+    monkeypatch.setattr(node_tree_manager_module, "MergeNodeDialog", AcceptedMergeDialog)
+
+    manager.merge_node(second_id)
+    manager.merge_node(third_id)
+
+    remaining_ids = {node["id"] for node in database.get_nodes_for_project(project_id)}
+
+    assert remaining_ids == {third_id}
+
+
+def test_merge_node_allows_double_undo_after_two_merges(qtbot, monkeypatch):
+    initialize_database()
+    database.add_project("Merge Undo Twice")
+    project_id = database.get_all_projects()[0]["id"]
+    first_id = database.add_node(project_id, "First", None, "#111111")
+    second_id = database.add_node(project_id, "Second", None, "#222222")
+    third_id = database.add_node(project_id, "Third", None, "#333333")
+
+    manager = NodeTreeManager(project_id, "English")
+    qtbot.addWidget(manager)
+    history = WorkspaceHistory()
+    manager.set_undo_executor(history.execute)
+
+    selections = iter([(first_id, second_id), (second_id, third_id)])
+
+    class AcceptedMergeDialog:
+        def __init__(self, *args, **kwargs):
+            self._selection = next(selections)
+
+        def exec(self):
+            return node_tree_manager_module.QDialog.DialogCode.Accepted
+
+        def node_ids(self):
+            return self._selection
+
+    monkeypatch.setattr(node_tree_manager_module, "MergeNodeDialog", AcceptedMergeDialog)
+
+    manager.merge_node(second_id)
+    manager.merge_node(third_id)
+    history.undo()
+    history.undo()
+
+    remaining_ids = {node["id"] for node in database.get_nodes_for_project(project_id)}
+
+    assert remaining_ids == {first_id, second_id, third_id}
+
+
+def test_merge_dialog_shows_node_path_and_color_in_dropdown(qtbot):
+    initialize_database()
+    database.add_project("Merge Labels")
+    project_id = database.get_all_projects()[0]["id"]
+    parent_id = database.add_node(project_id, "Parent", None, "#111111")
+    current_id = database.add_node(project_id, "Current", None, "#222222")
+    child_id = database.add_node(project_id, "Child", parent_id, "#33AA55")
+    sibling_id = database.add_node(project_id, "Sibling", None, "#AA3355")
+    nodes = database.get_nodes_for_project(project_id)
+    current_node = next(node for node in nodes if node["id"] == current_id)
+
+    dialog = MergeNodeDialog(current_node, nodes, "English")
+    qtbot.addWidget(dialog)
+
+    parent_index = dialog.node_combo.findData(parent_id)
+    option_index = dialog.node_combo.findData(child_id)
+    sibling_index = dialog.node_combo.findData(sibling_id)
+
+    assert parent_index < option_index < sibling_index
+    assert dialog.node_combo.itemText(parent_index) == "1. Parent"
+    assert dialog.node_combo.itemText(option_index) == "    1.1. Child"
+    assert dialog.node_combo.itemData(option_index, node_tree_manager_module.Qt.ItemDataRole.ToolTipRole) == "Parent > Child"
+    assert not dialog.node_combo.itemIcon(option_index).isNull()

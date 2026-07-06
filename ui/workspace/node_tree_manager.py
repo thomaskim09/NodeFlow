@@ -16,9 +16,10 @@ from PySide6.QtWidgets import (
     QDialogButtonBox,
     QFormLayout,
     QSizePolicy,
+    QRadioButton,
 )
 from PySide6.QtCore import Qt, Signal, QTimer, QEvent, QRect, QSize
-from PySide6.QtGui import QDropEvent, QKeyEvent, QColor, QIcon
+from PySide6.QtGui import QDropEvent, QKeyEvent, QColor, QIcon, QPixmap
 from managers.export_manager import (
     export_classification_workbook,
     export_project_to_excel_single_sheet,
@@ -251,6 +252,9 @@ class NodeItemWidget(QWidget):
     def on_delete(self):
         self.parent_manager.delete_node(self.node_id)
 
+    def on_merge(self):
+        self.parent_manager.merge_node(self.node_id)
+
     def show_actions_menu(self):
         menu = QMenu(self.parent_manager)
         menu.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
@@ -268,6 +272,9 @@ class NodeItemWidget(QWidget):
         export_action = menu.addAction(
             get_translation("node_tree.export_tooltip", self.language)
         )
+        merge_action = menu.addAction(
+            get_translation("node_tree.merge_action", self.language)
+        )
         delete_action = menu.addAction(
             get_translation("node_tree.delete_tooltip", self.language)
         )
@@ -280,6 +287,8 @@ class NodeItemWidget(QWidget):
             self.on_filter()
         elif action == export_action:
             self.on_export()
+        elif action == merge_action:
+            self.on_merge()
         elif action == delete_action:
             self.on_delete()
 
@@ -365,6 +374,109 @@ class ExcelExportDialog(QDialog):
 
     def selected_participant_id(self):
         return self.participant_combo.currentData()
+
+
+class MergeNodeDialog(QDialog):
+    def __init__(self, node, nodes, language, parent=None):
+        super().__init__(parent)
+        self.node = node
+        self.language = language
+        self.nodes_by_id = {candidate["id"]: candidate for candidate in nodes}
+        self.setWindowTitle(get_translation("node_tree.merge_title", language))
+        self.setMinimumWidth(420)
+
+        layout = QVBoxLayout(self)
+        self.node_combo = FitPopupComboBox()
+        for candidate, depth, number in self._ordered_nodes():
+            if candidate["id"] != node["id"]:
+                candidate_path = self._node_path(candidate["id"])
+                display_name = f"{'    ' * depth}{number} {candidate['name']}"
+                self.node_combo.addItem(
+                    self._color_icon(candidate["color"]),
+                    display_name,
+                    candidate["id"],
+                )
+                combo_index = self.node_combo.count() - 1
+                self.node_combo.setItemData(combo_index, candidate_path, Qt.ItemDataRole.ToolTipRole)
+
+        self.keep_current = QRadioButton(
+            get_translation("node_tree.merge_keep_current", language, name=node["name"])
+        )
+        self.keep_other = QRadioButton()
+        self.keep_current.setChecked(True)
+        self.summary = QLabel()
+        self.summary.setWordWrap(True)
+
+        form = QFormLayout()
+        form.addRow(get_translation("node_tree.merge_with", language), self.node_combo)
+        layout.addLayout(form)
+        layout.addWidget(self.keep_current)
+        layout.addWidget(self.keep_other)
+        layout.addWidget(self.summary)
+
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        buttons.button(QDialogButtonBox.StandardButton.Ok).setText(
+            get_translation("node_tree.merge_confirm", language)
+        )
+        buttons.button(QDialogButtonBox.StandardButton.Cancel).setText(
+            get_translation("workspace.cancel", language)
+        )
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+        self.node_combo.currentIndexChanged.connect(self._update_labels)
+        self.keep_current.toggled.connect(self._update_labels)
+        self._update_labels()
+
+    def _color_icon(self, color_hex):
+        pixmap = QPixmap(12, 12)
+        pixmap.fill(QColor(color_hex))
+        return QIcon(pixmap)
+
+    def _node_path(self, node_id):
+        path = []
+        current = self.nodes_by_id.get(node_id)
+        while current is not None:
+            path.append(current["name"])
+            current = self.nodes_by_id.get(current["parent_id"])
+        return " > ".join(reversed(path))
+
+    def _ordered_nodes(self):
+        nodes_by_parent = {None: []}
+        for candidate in self.nodes_by_id.values():
+            nodes_by_parent.setdefault(candidate["parent_id"], []).append(candidate)
+        for children in nodes_by_parent.values():
+            children.sort(key=lambda item: item["position"])
+
+        ordered = []
+
+        def visit(parent_id, depth, prefix=""):
+            for index, candidate in enumerate(nodes_by_parent.get(parent_id, []), start=1):
+                number = f"{prefix}{index}."
+                ordered.append((candidate, depth, number))
+                visit(candidate["id"], depth + 1, f"{number}")
+
+        visit(None, 0)
+        return ordered
+
+    def _update_labels(self):
+        other_id = self.node_combo.currentData()
+        other_name = self.nodes_by_id[other_id]["name"] if other_id is not None else ""
+        self.keep_other.setText(
+            get_translation("node_tree.merge_keep_other", self.language, name=other_name)
+        )
+        removed_name = other_name if self.keep_current.isChecked() else self.node["name"]
+        self.summary.setText(
+            get_translation("node_tree.merge_summary", self.language, name=removed_name)
+        )
+
+    def node_ids(self):
+        other_id = self.node_combo.currentData()
+        if self.keep_current.isChecked():
+            return other_id, self.node["id"]
+        return self.node["id"], other_id
 
 
 class NodeTreeManager(QWidget):
@@ -577,7 +689,7 @@ class NodeTreeManager(QWidget):
     def load_nodes(self, node_id_to_reselect=None):
         self.tree_widget.blockSignals(True)
         self.tree_widget.setCurrentItem(None)
-        self.tree_widget.clear()
+        self._clear_tree_items()
         scope = self.scope_combo.currentText()
         total_words = 0
         doc_id_for_stats = None
@@ -698,6 +810,21 @@ class NodeTreeManager(QWidget):
         self.load_nodes(node_id_to_reselect=node_id_to_reselect)
         self.node_updated.emit()
 
+    def _clear_tree_items(self):
+        while self.tree_widget.topLevelItemCount():
+            item = self.tree_widget.takeTopLevelItem(0)
+            self._dispose_tree_item(item)
+
+    def _dispose_tree_item(self, item):
+        while item.childCount():
+            child = item.takeChild(0)
+            self._dispose_tree_item(child)
+        widget = self.tree_widget.itemWidget(item, 0)
+        if widget is not None:
+            self.tree_widget.removeItemWidget(item, 0)
+            widget.deleteLater()
+        del item
+
     def _scroll_node_into_view(self, node_id):
         it = QTreeWidgetItemIterator(self.tree_widget)
         while it.value():
@@ -720,6 +847,8 @@ class NodeTreeManager(QWidget):
                     0, widget.update_wrap_width(self._available_node_item_width(item))
                 )
             it += 1
+        self.tree_widget.doItemsLayout()
+        self.tree_widget.viewport().update()
 
     def _available_node_item_width(self, item):
         depth = 0
@@ -899,6 +1028,53 @@ class NodeTreeManager(QWidget):
                 )
             )
 
+    def merge_node(self, node_id):
+        node = self.nodes_map.get(node_id)
+        if not node or len(self.nodes_map) < 2:
+            QMessageBox.information(
+                self,
+                get_translation("node_tree.merge_title", self.language),
+                get_translation("node_tree.merge_no_candidates", self.language),
+            )
+            return
+
+        dialog = MergeNodeDialog(node, list(self.nodes_map.values()), self.language, self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        source_id, target_id = dialog.node_ids()
+        source_snapshot = workspace_snapshot_repository.get_node_subtree_snapshot(
+            source_id
+        )
+        target_snapshot = workspace_snapshot_repository.get_node_subtree_snapshot(
+            target_id
+        )
+
+        def do():
+            database.merge_nodes(source_id, target_id)
+
+        def undo():
+            database.delete_node_and_children(target_id)
+            workspace_snapshot_repository.restore_node_subtree_snapshot(target_snapshot)
+            workspace_snapshot_repository.restore_node_subtree_snapshot(source_snapshot)
+
+        try:
+            self.execute_workspace_command(
+                WorkspaceCommand(
+                    "Merge Nodes",
+                    do,
+                    undo,
+                    lambda: self.refresh_tree_and_emit_update(
+                        node_id_to_reselect=target_id
+                    ),
+                )
+            )
+        except ValueError as error:
+            QMessageBox.warning(
+                self,
+                get_translation("node_tree.merge_error_title", self.language),
+                str(error),
+            )
+
     def filter_by_single_node(self, node_id):
         self.filter_by_single_node_signal.emit(node_id)
 
@@ -916,6 +1092,9 @@ class NodeTreeManager(QWidget):
         delete_action = menu.addAction(
             get_translation("node_tree.context_delete", self.language)
         )
+        merge_action = menu.addAction(
+            get_translation("node_tree.merge_action", self.language)
+        )
         menu.addSeparator()
         add_child_action = menu.addAction(
             get_translation("node_tree.context_add_child", self.language)
@@ -929,6 +1108,8 @@ class NodeTreeManager(QWidget):
             self.rename_node(node_id)
         elif action == delete_action:
             self.delete_node(node_id)
+        elif action == merge_action:
+            self.merge_node(node_id)
         elif action == add_child_action:
             self.add_node(parent_id=node_id)
         elif action == export_action:

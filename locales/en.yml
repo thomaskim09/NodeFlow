@@ -75,6 +75,15 @@ node_tree:
   scope_tooltip: 'Switch the scope of the percentage calculation'
   context_rename: 'Rename (F2)'
   context_delete: 'Delete (Delete)'
+  merge_action: 'Merge...'
+  merge_title: 'Merge Nodes'
+  merge_with: 'Merge with:'
+  merge_keep_current: "Keep '{name}'"
+  merge_keep_other: "Keep '{name}'"
+  merge_summary: "'{name}' will be removed. Its coded segments and child nodes will be moved to the surviving node."
+  merge_confirm: 'Merge'
+  merge_no_candidates: 'Create another node before merging.'
+  merge_error_title: 'Cannot Merge Nodes'
   context_add_child: 'Add Child Node'
   context_export: 'Export...'
   export_word: 'Export as Word (.docx)'

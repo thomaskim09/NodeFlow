@@ -75,6 +75,15 @@ node_tree:
   scope_tooltip: '切换百分比计算的范围'
   context_rename: '重命名 (F2)'
   context_delete: '删除 (Delete)'
+  merge_action: '合并...'
+  merge_title: '合并节点'
+  merge_with: '合并对象：'
+  merge_keep_current: "保留“{name}”"
+  merge_keep_other: "保留“{name}”"
+  merge_summary: "“{name}”将被删除，其编码片段和子节点将移至保留的节点。"
+  merge_confirm: '合并'
+  merge_no_candidates: '请先创建另一个节点再进行合并。'
+  merge_error_title: '无法合并节点'
   context_add_child: '添加子节点'
   context_export: '导出...'
   export_word: '导出为Word (.docx)'

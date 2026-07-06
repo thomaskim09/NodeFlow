@@ -116,5 +116,61 @@ class NodeRepository:
                 query_ids = child_ids
         return all_descendants
 
+    def merge(self, source_node_id: int, target_node_id: int) -> None:
+        if source_node_id == target_node_id:
+            raise ValueError("A node cannot be merged with itself.")
+
+        with get_connection() as conn:
+            with conn:
+                rows = conn.execute(
+                    "SELECT id, project_id FROM nodes WHERE id IN (?, ?)",
+                    (source_node_id, target_node_id),
+                ).fetchall()
+                nodes = {row["id"]: row for row in rows}
+                if source_node_id not in nodes or target_node_id not in nodes:
+                    raise ValueError("Both nodes must exist.")
+                if nodes[source_node_id]["project_id"] != nodes[target_node_id]["project_id"]:
+                    raise ValueError("Nodes from different projects cannot be merged.")
+
+                descendants = set()
+                pending = [source_node_id, target_node_id]
+                while pending:
+                    parent_id = pending.pop()
+                    child_ids = [
+                        row["id"]
+                        for row in conn.execute(
+                            "SELECT id FROM nodes WHERE parent_id = ?", (parent_id,)
+                        ).fetchall()
+                    ]
+                    descendants.update((parent_id, child_id) for child_id in child_ids)
+                    pending.extend(child_ids)
+                if (source_node_id, target_node_id) in descendants or (
+                    target_node_id,
+                    source_node_id,
+                ) in descendants:
+                    raise ValueError("Ancestor and descendant nodes cannot be merged.")
+
+                next_position = conn.execute(
+                    "SELECT COUNT(*) FROM nodes WHERE parent_id = ?",
+                    (target_node_id,),
+                ).fetchone()[0]
+                children = conn.execute(
+                    "SELECT id FROM nodes WHERE parent_id = ? ORDER BY position, id",
+                    (source_node_id,),
+                ).fetchall()
+                conn.executemany(
+                    "UPDATE nodes SET parent_id = ?, position = ? WHERE id = ?",
+                    [
+                        (target_node_id, next_position + index, child["id"])
+                        for index, child in enumerate(children)
+                    ],
+                )
+                conn.execute(
+                    "UPDATE coded_segments SET node_id = ? WHERE node_id = ?",
+                    (target_node_id, source_node_id),
+                )
+                conn.execute("DELETE FROM nodes WHERE id = ?", (source_node_id,))
+        invalidate_analysis_cache()
+
 
 node_repository = NodeRepository()
