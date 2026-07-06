@@ -12,7 +12,7 @@ from managers.theme_manager import apply_theme
 import database
 from utils.common import get_resource_path
 from services.logging_service import configure_logging
-from utils.app_paths import get_database_path, get_user_data_dir
+from utils.app_paths import get_database_path, prepare_user_data_dir
 
 LOGGER = logging.getLogger(__name__)
 
@@ -72,15 +72,16 @@ class MainWindow(QMainWindow):
 
 
 def main() -> int:
-    log_path = configure_logging()
-    LOGGER.info("Starting NodeFlow")
-    LOGGER.info("User data directory: %s", get_user_data_dir())
-    LOGGER.info("Database path: %s", get_database_path())
-    LOGGER.info("Log path: %s", log_path)
     configure_windows_app_id()
     app = QApplication(sys.argv)
     app.setApplicationName("NodeFlow")
     app.setApplicationDisplayName("NodeFlow")
+    data_dir = prepare_user_data_dir()
+    log_path = configure_logging()
+    LOGGER.info("Starting NodeFlow")
+    LOGGER.info("User data directory: %s", data_dir)
+    LOGGER.info("Database path: %s", get_database_path())
+    LOGGER.info("Log path: %s", log_path)
     app_icon_path = get_app_icon_path()
     if app_icon_path:
         app.setWindowIcon(QIcon(app_icon_path))

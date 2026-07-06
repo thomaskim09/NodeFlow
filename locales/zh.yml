@@ -189,6 +189,10 @@ startup:
   desktop_shortcut_created_message: 'NodeFlow 快捷方式已创建到：\n{path}'
   desktop_shortcut_error_title: '无法创建快捷方式'
   desktop_shortcut_error_message: 'NodeFlow 无法创建桌面快捷方式。\n\n{error}'
+  portable_data_notice_title: '数据文件夹已迁移'
+  portable_data_notice_message: 'NodeFlow 已将您现有的保存数据复制到应用程序旁边的本地 data 文件夹：\n\n{path}\n\n现在您可以直接备份和管理这个文件夹。'
+  portable_data_notice_open: '打开数据文件夹'
+  portable_data_notice_ok: '确定'
 
 export:
   export_successful: '导出成功'

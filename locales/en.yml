@@ -189,6 +189,10 @@ startup:
   desktop_shortcut_created_message: 'NodeFlow shortcut created at:\n{path}'
   desktop_shortcut_error_title: 'Could Not Create Shortcut'
   desktop_shortcut_error_message: 'NodeFlow could not create the desktop shortcut.\n\n{error}'
+  portable_data_notice_title: 'Data Folder Moved'
+  portable_data_notice_message: 'NodeFlow copied your existing saved data into the local data folder beside the app:\n\n{path}\n\nYou can now back up and manage this folder directly.'
+  portable_data_notice_open: 'Open Data Folder'
+  portable_data_notice_ok: 'OK'
 
 export:
   export_successful: 'Export Successful'

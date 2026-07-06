@@ -18,7 +18,9 @@ from PySide6.QtWidgets import QApplication
 
 import database
 from services.desktop_shortcut_service import desktop_shortcut_service
+from services.platform_service import platform_service
 from utils.common import get_resource_path, get_translation
+from utils.app_paths import clear_portable_migration_notice, get_user_data_dir, has_portable_migration_notice
 from ui.workspace.workspace_main_window import WorkspaceMainWindow
 from managers.theme_manager import load_settings, get_effective_theme_mode
 
@@ -187,6 +189,7 @@ class StartupView(QWidget):
         button_layout.addWidget(self.new_button)
         main_layout.addLayout(button_layout)
         self.load_projects()
+        QTimer.singleShot(0, self.maybe_show_portable_data_notice)
         QTimer.singleShot(0, self.maybe_prompt_desktop_shortcut)
 
     def on_selection_changed(self, current_item, previous_item):
@@ -305,6 +308,35 @@ class StartupView(QWidget):
             desktop_shortcut_service.mark_deferred()
         elif clicked == never_button:
             desktop_shortcut_service.mark_never()
+
+    def maybe_show_portable_data_notice(self):
+        if not has_portable_migration_notice():
+            return
+
+        dialog = QMessageBox(self)
+        dialog.setIcon(QMessageBox.Icon.Information)
+        dialog.setWindowTitle(
+            get_translation("startup.portable_data_notice_title", self.language)
+        )
+        dialog.setText(
+            get_translation(
+                "startup.portable_data_notice_message",
+                self.language,
+                path=str(get_user_data_dir()),
+            )
+        )
+        open_button = dialog.addButton(
+            get_translation("startup.portable_data_notice_open", self.language),
+            QMessageBox.ButtonRole.ActionRole,
+        )
+        dialog.addButton(
+            get_translation("startup.portable_data_notice_ok", self.language),
+            QMessageBox.ButtonRole.AcceptRole,
+        )
+        dialog.exec()
+        clear_portable_migration_notice()
+        if dialog.clickedButton() == open_button:
+            platform_service.open_path(get_user_data_dir())
 
     def create_desktop_shortcut(self):
         progress = QProgressDialog(
