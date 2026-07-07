@@ -1,22 +1,45 @@
 import sys
 import logging
 import ctypes
-from PySide6.QtWidgets import QApplication, QMainWindow, QSplashScreen
-from PySide6.QtCore import QSize, Qt
-from PySide6.QtGui import QIcon, QPixmap, QColor
 import os
 
-from ui.startup_view import StartupView
+WINDOWS_APP_ID = "thomaskim09.NodeFlow"
+WINDOWS_MUTEX_NAME = f"{WINDOWS_APP_ID}.SingleInstance"
+ERROR_ALREADY_EXISTS = 183
+_INSTANCE_MUTEX_HANDLE = None
 
-from managers.theme_manager import apply_theme
-import database
-from utils.common import get_resource_path
-from services.logging_service import configure_logging
-from utils.app_paths import get_database_path, prepare_user_data_dir
+
+def acquire_single_instance_lock() -> bool:
+    global _INSTANCE_MUTEX_HANDLE
+    if sys.platform != "win32":
+        return True
+    mutex = ctypes.windll.kernel32.CreateMutexW(None, False, WINDOWS_MUTEX_NAME)
+    if not mutex:
+        return True
+    if ctypes.windll.kernel32.GetLastError() == ERROR_ALREADY_EXISTS:
+        ctypes.windll.kernel32.CloseHandle(mutex)
+        return False
+    _INSTANCE_MUTEX_HANDLE = mutex
+    return True
+
+
+if not acquire_single_instance_lock():
+    sys.exit(0)
+
+# Keep the single-instance guard above slower UI imports.
+from PySide6.QtWidgets import QApplication, QMainWindow, QSplashScreen  # noqa: E402
+from PySide6.QtCore import QSize, Qt  # noqa: E402
+from PySide6.QtGui import QIcon, QPixmap, QColor  # noqa: E402
+
+from ui.startup_view import StartupView  # noqa: E402
+
+from managers.theme_manager import apply_theme  # noqa: E402
+import database  # noqa: E402
+from utils.common import get_resource_path  # noqa: E402
+from services.logging_service import configure_logging  # noqa: E402
+from utils.app_paths import get_database_path, prepare_user_data_dir  # noqa: E402
 
 LOGGER = logging.getLogger(__name__)
-
-WINDOWS_APP_ID = "thomaskim09.NodeFlow"
 
 
 def get_app_icon_path() -> str | None:
