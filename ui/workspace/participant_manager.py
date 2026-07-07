@@ -251,30 +251,7 @@ class ParticipantManager(QWidget):
 
         self.list_widget.clear()
         participants = database.get_participants_for_project(self.project_id)
-
-        scope = self.scope_combo.currentText()
-        total_words = 0
-        all_segments_in_scope = []
-
-        if scope == get_translation("participant.scope_current", self.language):
-            if self.current_document_id:
-                total_words = database.get_document_word_count(self.current_document_id)
-                all_segments_in_scope = database.get_coded_segments_for_document(
-                    self.current_document_id
-                )
-        else:  # Project Total
-            total_words = database.get_project_word_count(self.project_id)
-            all_segments_in_scope = database.get_coded_segments_for_project(
-                self.project_id
-            )
-
-        stats_by_participant = {}
-        for segment in all_segments_in_scope:
-            stats = stats_by_participant.setdefault(
-                segment["participant_id"], {"segments": 0, "words": 0}
-            )
-            stats["segments"] += 1
-            stats["words"] += len(segment["content_preview"].split())
+        total_words, stats_by_participant = self._participant_stats_for_current_scope()
 
         item_to_reselect = None
 
@@ -291,24 +268,7 @@ class ParticipantManager(QWidget):
                 stats = stats_by_participant.get(
                     participant_id, {"segments": 0, "words": 0}
                 )
-                segment_count = stats["segments"]
-                word_count = stats["words"]
-
-                stats_text = ""
-                if segment_count > 0 and total_words > 0:
-                    percentage = (word_count / total_words) * 100
-                    stats_text = get_translation(
-                        "participant.stats_with_percent",
-                        self.language,
-                        percent=f"{percentage:.1f}",
-                        segments=segment_count,
-                    )
-                elif segment_count > 0:
-                    stats_text = get_translation(
-                        "participant.stats_segments_only",
-                        self.language,
-                        segments=segment_count,
-                    )
+                stats_text = self._format_stats_text(stats, total_words)
 
                 list_item = QListWidgetItem(self.list_widget)
                 item_widget = ParticipantItemWidget(
@@ -329,6 +289,62 @@ class ParticipantManager(QWidget):
                     participant_id
                 ),
             )
+
+    def refresh_stats(self):
+        total_words, stats_by_participant = self._participant_stats_for_current_scope()
+        for index in range(self.list_widget.count()):
+            item = self.list_widget.item(index)
+            widget = self.list_widget.itemWidget(item)
+            if isinstance(widget, ParticipantItemWidget):
+                stats = stats_by_participant.get(
+                    widget.participant_id, {"segments": 0, "words": 0}
+                )
+                widget.stats_label.setText(self._format_stats_text(stats, total_words))
+        self.list_widget.viewport().update()
+
+    def _participant_stats_for_current_scope(self):
+        scope = self.scope_combo.currentText()
+        total_words = 0
+        all_segments_in_scope = []
+
+        if scope == get_translation("participant.scope_current", self.language):
+            if self.current_document_id:
+                total_words = database.get_document_word_count(self.current_document_id)
+                all_segments_in_scope = database.get_coded_segments_for_document(
+                    self.current_document_id
+                )
+        else:
+            total_words = database.get_project_word_count(self.project_id)
+            all_segments_in_scope = database.get_coded_segments_for_project(
+                self.project_id
+            )
+
+        stats_by_participant = {}
+        for segment in all_segments_in_scope:
+            stats = stats_by_participant.setdefault(
+                segment["participant_id"], {"segments": 0, "words": 0}
+            )
+            stats["segments"] += 1
+            stats["words"] += len(segment["content_preview"].split())
+        return total_words, stats_by_participant
+
+    def _format_stats_text(self, stats, total_words):
+        segment_count = stats["segments"]
+        if segment_count <= 0:
+            return ""
+        if total_words > 0:
+            percentage = (stats["words"] / total_words) * 100
+            return get_translation(
+                "participant.stats_with_percent",
+                self.language,
+                percent=f"{percentage:.1f}",
+                segments=segment_count,
+            )
+        return get_translation(
+            "participant.stats_segments_only",
+            self.language,
+            segments=segment_count,
+        )
 
     def add_participant(self):
         name, ok = QInputDialog.getText(

@@ -86,6 +86,7 @@ class ContentView(QWidget):
         self.editing_segment_id = None
         self.is_dirty = False
         self._coded_segments_cache = []
+        self._coded_segment_selections = []
         self._pending_deleted_segments = {}
         self._loading_document = False
         self._document_change_connected = False
@@ -631,6 +632,7 @@ class ContentView(QWidget):
         finally:
             self._loading_document = False
         self._coded_segments_cache = new_segments
+        self._rebuild_coded_segment_selections()
         self._pending_deleted_segments = {
             segment_id: {"id": segment_id} for segment_id in deleted_segment_ids
         }
@@ -1167,6 +1169,7 @@ class ContentView(QWidget):
             current_text,
         )
         self._coded_segments_cache = rebased_segments
+        self._rebuild_coded_segment_selections()
         for segment in rebased_segments:
             self._pending_deleted_segments.pop(segment["id"], None)
         for segment_id in deleted_segment_ids:
@@ -1331,6 +1334,7 @@ class ContentView(QWidget):
                 self.current_document_id = None
                 self.current_participant_id = None
                 self._coded_segments_cache = []
+                self._coded_segment_selections = []
                 self.text_edit.setReadOnly(True)
                 self.text_edit.clear()
                 self.import_button.setStyleSheet(
@@ -1487,6 +1491,7 @@ class ContentView(QWidget):
                 self._coded_segments_cache = database.get_coded_segments_for_document(
                     self.current_document_id
                 )
+                self._rebuild_coded_segment_selections()
             self.segment_count_label.setText(
                 f"Coded Segments: {len(self._coded_segments_cache)}"
             )
@@ -1496,6 +1501,42 @@ class ContentView(QWidget):
             cursor.setPosition(original_position)
             self.text_edit.setTextCursor(cursor)
             self.text_edit.blockSignals(False)
+
+    def add_cached_coded_segment(self, segment):
+        if segment["document_id"] != self.current_document_id:
+            return self.apply_all_highlights()
+        self._coded_segments_cache.append(segment)
+        self._coded_segments_cache.sort(key=lambda item: item["segment_start"])
+        self._rebuild_coded_segment_selections()
+        self.segment_count_label.setText(
+            f"Coded Segments: {len(self._coded_segments_cache)}"
+        )
+        self._render_highlights()
+
+    def remove_cached_coded_segment(self, segment_id):
+        before_count = len(self._coded_segments_cache)
+        self._coded_segments_cache = [
+            segment
+            for segment in self._coded_segments_cache
+            if segment["id"] != segment_id
+        ]
+        if len(self._coded_segments_cache) == before_count:
+            return self.apply_all_highlights()
+        self._rebuild_coded_segment_selections()
+        self.segment_count_label.setText(
+            f"Coded Segments: {len(self._coded_segments_cache)}"
+        )
+        self._render_highlights()
+
+    def _rebuild_coded_segment_selections(self):
+        self._coded_segment_selections = [
+            self._create_selection(
+                segment["segment_start"],
+                segment["segment_end"],
+                segment.get("node_color", "#FFFF00"),
+            )
+            for segment in self._coded_segments_cache
+        ]
 
     def _create_selection(self, start, end, color_hex, foreground_hex=None):
         selection = QTextEdit.ExtraSelection()
@@ -1518,12 +1559,7 @@ class ContentView(QWidget):
         return selection
 
     def _render_highlights(self, edit_range=None):
-        selections = [
-            self._create_selection(
-                segment["segment_start"], segment["segment_end"], segment["node_color"]
-            )
-            for segment in self._coded_segments_cache
-        ]
+        selections = list(self._coded_segment_selections)
         selections.extend(self._create_find_match_selections())
         if edit_range is not None:
             selections.append(

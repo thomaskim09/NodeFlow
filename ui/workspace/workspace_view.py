@@ -450,9 +450,14 @@ class WorkspaceView(QWidget):
         self.redo_action.setIcon(self.redo_icon)
         self.export_button.setIcon(self.export_all_icon)
 
-    def on_segment_deleted(self):
-        self.center_pane.apply_all_highlights()
-        self.node_tree_manager.load_nodes()
+    def on_segment_deleted(self, segment_id=None, restored_segment=None):
+        if restored_segment:
+            self.center_pane.add_cached_coded_segment(restored_segment)
+        elif segment_id is not None:
+            self.center_pane.remove_cached_coded_segment(segment_id)
+        else:
+            self.center_pane.apply_all_highlights()
+        self.refresh_coding_stats()
 
     def on_node_data_updated(self):
         """Called when a node is changed. Refreshes text highlights and all views."""
@@ -525,8 +530,12 @@ class WorkspaceView(QWidget):
         """
         doc_id = self.center_pane.current_document_id
         self.bottom_pane.load_segments(doc_id)
-        self.node_tree_manager.load_nodes()
-        self.participant_manager.load_participants()
+        self.center_pane.apply_all_highlights()
+        self.refresh_coding_stats()
+
+    def refresh_coding_stats(self):
+        self.node_tree_manager.refresh_stats()
+        self.participant_manager.refresh_stats()
 
     def code_selection(self, node_id):
         text_edit = self.center_pane.text_edit
@@ -547,12 +556,15 @@ class WorkspaceView(QWidget):
                 return
         segment_id = None
         segment_snapshot = None
+        segment_added = False
 
         def refresh_after_coding():
             self.bottom_pane.reload_view()
-            self.center_pane.apply_all_highlights()
-            self.node_tree_manager.set_current_document_id(doc_id)
-            self.participant_manager.load_participants()
+            if segment_added:
+                self.center_pane.add_cached_coded_segment(segment_snapshot)
+            elif segment_id is not None:
+                self.center_pane.remove_cached_coded_segment(segment_id)
+            self.refresh_coding_stats()
             new_cursor = text_edit.textCursor()
             new_cursor.setPosition(selection_end_pos)
             with QSignalBlocker(text_edit):
@@ -561,7 +573,7 @@ class WorkspaceView(QWidget):
             text_edit.setFocus()
 
         def do():
-            nonlocal segment_id, segment_snapshot
+            nonlocal segment_id, segment_snapshot, segment_added
             if segment_snapshot:
                 workspace_snapshot_repository.restore_segment(segment_snapshot)
             else:
@@ -569,10 +581,16 @@ class WorkspaceView(QWidget):
                     doc_id, node_id, participant_id, start, end, text
                 )
                 segment_snapshot = workspace_snapshot_repository.get_segment(segment_id)
+                segment_snapshot["node_color"] = self.node_tree_manager.nodes_map.get(
+                    node_id, {}
+                ).get("color", "#FFFF00")
+            segment_added = True
 
         def undo():
+            nonlocal segment_added
             if segment_id:
                 database.delete_coded_segment(segment_id)
+            segment_added = False
 
         QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
         try:

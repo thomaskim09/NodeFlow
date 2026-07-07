@@ -99,7 +99,7 @@ class SegmentActionCell(QWidget):
 
 
 class CodedSegmentsView(QWidget):
-    segment_deleted = Signal()
+    segment_deleted = Signal(int, object)
     segment_activated = Signal(int, int, int)  # document_id, start, end
     segment_edit_requested = Signal(int, int, int, int)  # seg_id, doc_id, start, end
 
@@ -308,18 +308,31 @@ class CodedSegmentsView(QWidget):
             if not snapshot:
                 return
 
+            deleted = False
+
             def do():
+                nonlocal deleted
                 database.delete_coded_segment(segment_id)
+                deleted = True
 
             def undo():
+                nonlocal deleted
                 workspace_snapshot_repository.restore_segment(snapshot)
+                deleted = False
+
+            def after_refresh():
+                self.reload_view()
+                self.segment_deleted.emit(
+                    segment_id,
+                    None if deleted else self._segment_with_color(snapshot),
+                )
 
             self.execute_workspace_command(
                 WorkspaceCommand(
                     "Delete Coded Segment",
                     do,
                     undo,
-                    lambda: (self.reload_view(), self.segment_deleted.emit()),
+                    after_refresh,
                 )
             )
 
@@ -348,6 +361,16 @@ class CodedSegmentsView(QWidget):
                 segment_data["segment_start"],
                 segment_data["segment_end"],
             )
+
+    def _segment_with_color(self, segment):
+        enriched = dict(segment)
+        current = next(
+            (item for item in self.all_segments if item["id"] == segment["id"]),
+            None,
+        )
+        if current:
+            enriched["node_color"] = current.get("node_color", "#FFFF00")
+        return enriched
 
     def edit_segment_remark(self, segment_id):
         segment_data = next(

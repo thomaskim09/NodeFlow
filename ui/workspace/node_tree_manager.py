@@ -691,17 +691,6 @@ class NodeTreeManager(QWidget):
         self.tree_widget.blockSignals(True)
         self.tree_widget.setCurrentItem(None)
         self._clear_tree_items()
-        scope = self.scope_combo.currentText()
-        total_words = 0
-        doc_id_for_stats = None
-        if scope == get_translation("node_tree.scope_current", self.language):
-            if self.current_document_id:
-                total_words = database.get_document_word_count(self.current_document_id)
-                doc_id_for_stats = self.current_document_id
-        else:
-            total_words = database.get_project_word_count(self.project_id)
-
-        node_stats = database.get_node_statistics(self.project_id, doc_id_for_stats)
         nodes = database.get_nodes_for_project(self.project_id)
         self.nodes_map = {n["id"]: n for n in nodes}
         self.nodes_by_parent = {n_id: [] for n_id in self.nodes_map}
@@ -710,54 +699,22 @@ class NodeTreeManager(QWidget):
             self.nodes_by_parent.setdefault(node["parent_id"], []).append(node)
         for children_list in self.nodes_by_parent.values():
             children_list.sort(key=lambda x: x["position"])
+        total_words, aggregated_stats = self._node_stats_for_current_scope()
 
         item_to_reselect = None
-        aggregated_stats = {}
-
-        def calculate_aggregated_stats(parent_id):
-            parent_word_count = 0
-            parent_segment_count = 0
-            children = self.nodes_by_parent.get(parent_id, [])
-            for node_data in children:
-                child_word_count, child_segment_count = calculate_aggregated_stats(
-                    node_data["id"]
-                )
-                direct_stats = node_stats.get(
-                    node_data["id"], {"word_count": 0, "segment_count": 0}
-                )
-                total_node_word_count = direct_stats["word_count"] + child_word_count
-                total_node_segment_count = (
-                    direct_stats["segment_count"] + child_segment_count
-                )
-                aggregated_stats[node_data["id"]] = {
-                    "word_count": total_node_word_count,
-                    "segment_count": total_node_segment_count,
-                }
-                parent_word_count += total_node_word_count
-                parent_segment_count += total_node_segment_count
-            return parent_word_count, parent_segment_count
-
-        calculate_aggregated_stats(None)
 
         def add_items_recursively(parent_widget, parent_id, prefix=""):
             nonlocal item_to_reselect
             children = self.nodes_by_parent.get(parent_id, [])
             for i, node_data in enumerate(children):
                 current_prefix = f"{prefix}{i + 1}."
-                stats = aggregated_stats.get(
-                    node_data["id"], {"word_count": 0, "segment_count": 0}
-                )
-                word_count = stats["word_count"]
-                segment_count = stats["segment_count"]
-
                 name_text = f"{current_prefix} {node_data['name']}"
-
-                stats_text = ""
-                if segment_count > 0:
-                    percentage = (
-                        (word_count / total_words * 100) if total_words > 0 else 0
-                    )
-                    stats_text = f"{percentage:.1f}% | {segment_count} Segments"
+                stats_text = self._format_stats_text(
+                    aggregated_stats.get(
+                        node_data["id"], {"word_count": 0, "segment_count": 0}
+                    ),
+                    total_words,
+                )
 
                 tree_item = QTreeWidgetItem(parent_widget)
                 tree_item.setData(0, 1, node_data["id"])
@@ -787,6 +744,72 @@ class NodeTreeManager(QWidget):
                 0,
                 lambda node_id=node_id_to_reselect: self._scroll_node_into_view(node_id),
             )
+
+    def refresh_stats(self):
+        total_words, aggregated_stats = self._node_stats_for_current_scope()
+        it = QTreeWidgetItemIterator(self.tree_widget)
+        while it.value():
+            item = it.value()
+            widget = self.tree_widget.itemWidget(item, 0)
+            if isinstance(widget, NodeItemWidget):
+                stats_text = self._format_stats_text(
+                    aggregated_stats.get(
+                        widget.node_id, {"word_count": 0, "segment_count": 0}
+                    ),
+                    total_words,
+                )
+                widget.stats_label.setText(stats_text)
+                widget.stats_label.setVisible(bool(stats_text))
+            it += 1
+        self.tree_widget.viewport().update()
+
+    def _node_stats_for_current_scope(self):
+        scope = self.scope_combo.currentText()
+        total_words = 0
+        doc_id_for_stats = None
+        if scope == get_translation("node_tree.scope_current", self.language):
+            if self.current_document_id:
+                total_words = database.get_document_word_count(self.current_document_id)
+                doc_id_for_stats = self.current_document_id
+        else:
+            total_words = database.get_project_word_count(self.project_id)
+
+        node_stats = database.get_node_statistics(self.project_id, doc_id_for_stats)
+        aggregated_stats = {}
+
+        def calculate_aggregated_stats(parent_id):
+            parent_word_count = 0
+            parent_segment_count = 0
+            children = self.nodes_by_parent.get(parent_id, [])
+            for node_data in children:
+                child_word_count, child_segment_count = calculate_aggregated_stats(
+                    node_data["id"]
+                )
+                direct_stats = node_stats.get(
+                    node_data["id"], {"word_count": 0, "segment_count": 0}
+                )
+                total_node_word_count = direct_stats["word_count"] + child_word_count
+                total_node_segment_count = (
+                    direct_stats["segment_count"] + child_segment_count
+                )
+                aggregated_stats[node_data["id"]] = {
+                    "word_count": total_node_word_count,
+                    "segment_count": total_node_segment_count,
+                }
+                parent_word_count += total_node_word_count
+                parent_segment_count += total_node_segment_count
+            return parent_word_count, parent_segment_count
+
+        calculate_aggregated_stats(None)
+        return total_words, aggregated_stats
+
+    @staticmethod
+    def _format_stats_text(stats, total_words):
+        segment_count = stats["segment_count"]
+        if segment_count <= 0:
+            return ""
+        percentage = (stats["word_count"] / total_words * 100) if total_words > 0 else 0
+        return f"{percentage:.1f}% | {segment_count} Segments"
 
     def set_current_document_id(self, doc_id):
         self.current_document_id = doc_id

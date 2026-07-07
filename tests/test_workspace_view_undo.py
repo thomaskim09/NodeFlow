@@ -170,7 +170,7 @@ def test_workspace_splitters_keep_minimum_panel_sizes(qtbot):
     assert widget.bottom_pane.minimumHeight() == 180
 
 
-def test_coding_selection_rebuilds_each_view_once(qtbot, monkeypatch):
+def test_coding_selection_updates_segment_view_without_node_reload(qtbot, monkeypatch):
     initialize_database()
     database.add_project("Single Refresh")
     project = database.get_all_projects()[0]
@@ -209,9 +209,25 @@ def test_coding_selection_rebuilds_each_view_once(qtbot, monkeypatch):
 
     widget.code_selection(node_id)
 
-    assert refreshes == {"segments": 1, "nodes": 1}
+    assert refreshes == {"segments": 1, "nodes": 0}
+    assert len(widget.center_pane._coded_segments_cache) == 1
+    assert len(widget.center_pane._coded_segment_selections) == 1
+    node_item = widget.node_tree_manager.tree_widget.topLevelItem(0)
+    node_widget = widget.node_tree_manager.tree_widget.itemWidget(node_item, 0)
+    participant_item = widget.participant_manager.list_widget.item(0)
+    participant_widget = widget.participant_manager.list_widget.itemWidget(
+        participant_item
+    )
+    assert node_widget.stats_label.text() == "50.0% | 1 Segments"
+    assert participant_widget.stats_label.text() == "50.0% | 1 Segments"
     assert wait_cursor_seen == [Qt.CursorShape.WaitCursor]
     assert QApplication.overrideCursor() is None
+
+    widget.undo_workspace_action()
+
+    assert refreshes["nodes"] == 0
+    assert node_widget.stats_label.text() == ""
+    assert participant_widget.stats_label.text() == ""
 
 
 def test_project_open_and_document_switch_refresh_views_once(qtbot, monkeypatch):
