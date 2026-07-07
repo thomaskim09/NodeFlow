@@ -305,28 +305,17 @@ class ParticipantManager(QWidget):
     def _participant_stats_for_current_scope(self):
         scope = self.scope_combo.currentText()
         total_words = 0
-        all_segments_in_scope = []
 
         if scope == get_translation("participant.scope_current", self.language):
             if self.current_document_id:
                 total_words = database.get_document_word_count(self.current_document_id)
-                all_segments_in_scope = database.get_coded_segments_for_document(
-                    self.current_document_id
+                return total_words, database.get_participant_statistics(
+                    self.project_id, self.current_document_id
                 )
         else:
             total_words = database.get_project_word_count(self.project_id)
-            all_segments_in_scope = database.get_coded_segments_for_project(
-                self.project_id
-            )
-
-        stats_by_participant = {}
-        for segment in all_segments_in_scope:
-            stats = stats_by_participant.setdefault(
-                segment["participant_id"], {"segments": 0, "words": 0}
-            )
-            stats["segments"] += 1
-            stats["words"] += len(segment["content_preview"].split())
-        return total_words, stats_by_participant
+            return total_words, database.get_participant_statistics(self.project_id)
+        return total_words, {}
 
     def _format_stats_text(self, stats, total_words):
         segment_count = stats["segments"]

@@ -51,5 +51,9 @@ def get_node_statistics(project_id, document_id=None):
     return segment_repository.get_node_statistics(project_id, document_id)
 
 
+def get_participant_statistics(project_id, document_id=None):
+    return segment_repository.get_participant_statistics(project_id, document_id)
+
+
 def get_word_count_for_participant(project_id, participant_id):
     return segment_repository.get_word_count_for_participant(project_id, participant_id)

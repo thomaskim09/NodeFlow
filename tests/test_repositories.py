@@ -90,6 +90,29 @@ def test_segment_remark_updates_and_survives_range_update():
     assert segment["content_preview"] == "beta gamma"
 
 
+def test_document_segments_use_segment_participant():
+    initialize_database()
+    database.add_project("Segment Participant")
+    project_id = database.get_all_projects()[0]["id"]
+    document_participant_id = database.add_participant(project_id, "Alice")
+    segment_participant_id = database.add_participant(project_id, "Bob")
+    document_id = database.add_document(
+        project_id, "Doc 1", "alpha beta", document_participant_id
+    )
+    node_id = database.add_node(project_id, "Theme", None, "#FFFF00")
+    database.add_coded_segment(
+        document_id, node_id, segment_participant_id, 0, 5, "alpha"
+    )
+
+    segment = database.get_coded_segments_for_document(document_id)[0]
+
+    assert segment["participant_id"] == segment_participant_id
+    assert segment["participant_name"] == "Bob"
+    assert database.get_participant_statistics(project_id) == {
+        segment_participant_id: {"segments": 1, "words": 1}
+    }
+
+
 def test_merge_nodes_preserves_segments_children_and_target_metadata():
     initialize_database()
     database.add_project("Merge")

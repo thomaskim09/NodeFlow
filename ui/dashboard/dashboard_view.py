@@ -1,4 +1,5 @@
 import csv
+import logging
 from PySide6.QtWidgets import (
     QDialog,
     QVBoxLayout,
@@ -33,6 +34,8 @@ from utils.common import get_translation
 from services.dashboard_service import DashboardQuery, dashboard_service
 from services.worker_service import TaskThread
 from ui.combo_box import FitPopupComboBox
+
+LOGGER = logging.getLogger(__name__)
 
 
 class DashboardView(QDialog):
@@ -931,7 +934,7 @@ class DashboardView(QDialog):
                 self.charts_widget.bar_chart_view.setChart(QChart())
                 self.charts_widget.pie_chart_view.setChart(QChart())
             except Exception as e:
-                print(f"Error clearing chart views: {e}")
+                LOGGER.exception("Error clearing chart views: %s", e)
         super().closeEvent(event)
 
     def update_language(self, new_language):

@@ -58,5 +58,6 @@ from .segments_db import (
     update_coded_segment_with_remark,
     update_coded_segment_remark,
     get_node_statistics,
+    get_participant_statistics,
     get_word_count_for_participant,
 )  # noqa: F401
