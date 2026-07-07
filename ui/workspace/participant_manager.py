@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (
     QAbstractItemView,
     QMenu,
 )
-from PySide6.QtCore import Signal, Qt, QTimer
+from PySide6.QtCore import Signal, Qt, QTimer, QSize
 from PySide6.QtGui import QKeyEvent, QColor, QIcon
 from qt_material_icons import MaterialIcon
 from utils.common import get_translation
@@ -68,10 +68,11 @@ class ParticipantItemWidget(QWidget):
         self.participant_id = participant_id
         self.participant_name = participant_name
         self.parent_manager = parent_manager
-        self.setMinimumHeight(32)
+        self._row_height = 30
+        self.setFixedHeight(self._row_height)
 
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(10, 4, 8, 4)
+        layout.setContentsMargins(10, 2, 8, 2)
         layout.setSpacing(8)
         self.name_label = QLabel(participant_name)
         self.name_label.setAlignment(Qt.AlignmentFlag.AlignVCenter)
@@ -95,6 +96,9 @@ class ParticipantItemWidget(QWidget):
         layout.addWidget(self.name_label, 1)
         layout.addWidget(self.stats_label)
         layout.addWidget(self.menu_button)
+
+    def sizeHint(self):
+        return QSize(0, self._row_height)
 
     def set_icons_visible(self, visible):
         self.menu_button.setVisible(True)

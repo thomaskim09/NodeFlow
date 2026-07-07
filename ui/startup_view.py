@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (
     QProgressDialog,
     QMenu,
 )
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt, QTimer, QSize
 from PySide6.QtGui import QFont, QPixmap, QKeyEvent, QColor
 from qt_material_icons import MaterialIcon
 from PySide6.QtWidgets import QApplication
@@ -65,22 +65,27 @@ class ProjectItemWidget(QWidget):
         self.project_name = project_name
         self.parent_view = parent_view
         self.language = load_settings().get("language", "English")
+        self._row_height = 30
+        self.setFixedHeight(self._row_height)
+
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(5, 5, 5, 10)
+        layout.setContentsMargins(10, 2, 8, 2)
+        layout.setSpacing(8)
         self.name_label = QLabel(project_name)
         font = self.name_label.font()
         font.setPointSize(12)
         self.name_label.setFont(font)
+        self.name_label.setAlignment(Qt.AlignmentFlag.AlignVCenter)
         self.menu_button = QPushButton()
         self.menu_icon = MaterialIcon("more_vert")
         self.menu_button.setIcon(self.menu_icon)
-        self.menu_button.setFixedSize(24, 24)
+        self.menu_button.setFixedSize(22, 22)
         self.menu_button.setToolTip(
             get_translation("startup.project_actions", self.language)
         )
         self.menu_button.clicked.connect(self.show_actions_menu)
         self.menu_button.setVisible(False)
-        layout.addWidget(self.name_label)
+        layout.addWidget(self.name_label, 1)
         layout.addStretch()
         layout.addWidget(self.menu_button)
         self.set_selected_style(False)
@@ -101,6 +106,9 @@ class ProjectItemWidget(QWidget):
             self.menu_button.setStyleSheet(f"color: {normal_fg};")
             self.menu_icon.set_color(QColor(normal_fg))
         self.menu_button.setIcon(self.menu_icon)
+
+    def sizeHint(self):
+        return QSize(0, self._row_height)
 
     def show_actions_menu(self):
         menu = QMenu(self.parent_view)
