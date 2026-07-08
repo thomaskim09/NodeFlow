@@ -9,6 +9,7 @@ from utils.app_paths import get_settings_path
 DEFAULT_SETTINGS = {
     "theme": "Default",
     "language": "English",
+    "font_size": 12,
     "undo_depth": 100,
     "autosave_enabled": True,
     "autosave_delay_ms": 1500,

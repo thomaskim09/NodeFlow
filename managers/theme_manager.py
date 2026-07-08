@@ -1,6 +1,6 @@
 # managers/theme_manager.py
 import os
-from PySide6.QtGui import QPalette
+from PySide6.QtGui import QFont, QPalette
 from PySide6.QtWidgets import QApplication
 
 from services.settings_service import settings_service
@@ -682,8 +682,12 @@ def apply_theme(app):
     """Applies the saved theme to the application."""
     settings = load_settings()
     theme_setting = settings.get("theme", "Default")
+    font_size = int(settings.get("font_size", 12))
 
     if theme_setting == "Dark":
         app.setStyleSheet(get_dark_theme_stylesheet())
     else:
         app.setStyleSheet(get_light_theme_stylesheet())
+    app_font = QFont(app.font())
+    app_font.setPointSize(max(8, font_size))
+    app.setFont(app_font)

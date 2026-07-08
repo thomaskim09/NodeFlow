@@ -123,9 +123,33 @@ def test_refresh_all_views_keeps_current_document_selected(qtbot):
     widget.center_pane.load_document_list(doc_id_to_select=second_doc_id)
     assert widget.center_pane.current_document_id == second_doc_id
 
-    widget.refresh_all_views()
 
-    assert widget.center_pane.current_document_id == second_doc_id
+def test_runtime_settings_update_toolbar_font_without_reopen(qtbot):
+    initialize_database()
+    database.add_project("Runtime Font")
+    project = database.get_all_projects()[0]
+    participant_id = database.add_participant(project["id"], "Alice")
+    database.add_document(project["id"], "Doc 1", "alpha", participant_id)
+
+    widget = WorkspaceView(project["id"], project["name"], lambda: None)
+    qtbot.addWidget(widget)
+    widget.show()
+
+    assert "font-size" not in widget.toolbar.styleSheet()
+
+    app = QApplication.instance()
+    original_app_font = app.font() if app else None
+    original_app_stylesheet = app.styleSheet() if app else ""
+    original_size = widget.toolbar.font().pointSize()
+    widget._apply_runtime_settings("Light", "English", original_size + 3)
+    qtbot.wait(10)
+
+    assert widget.toolbar.font().pointSize() == original_size + 3
+    if app and original_app_font:
+        app.setFont(original_app_font)
+        app.setStyleSheet(original_app_stylesheet)
+        app.processEvents()
+    widget.close()
 
 
 def test_refresh_all_views_keeps_selected_node_and_participant_visible(

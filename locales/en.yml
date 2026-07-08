@@ -116,6 +116,7 @@ workspace:
   settings: 'Settings'
   application_theme: 'Application Theme:'
   language: 'Language:'
+  font_size: 'Application font size'
   undo_depth: 'Undo history depth'
   autosave_enabled: 'Autosave document text'
   autosave_delay: 'Autosave delay (ms)'

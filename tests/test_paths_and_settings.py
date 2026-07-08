@@ -74,6 +74,7 @@ def test_settings_round_trip():
         {
             "theme": "Dark",
             "language": "Chinese",
+            "font_size": 14,
             "undo_depth": 150,
             "autosave_enabled": False,
             "autosave_delay_ms": 3000,
@@ -84,6 +85,7 @@ def test_settings_round_trip():
 
     assert saved["theme"] == "Dark"
     assert loaded["language"] == "Chinese"
+    assert loaded["font_size"] == 14
     assert loaded["undo_depth"] == 150
     assert loaded["autosave_enabled"] is False
     assert loaded["autosave_delay_ms"] == 3000
@@ -101,6 +103,7 @@ def test_settings_default_undo_depth_for_older_settings():
     loaded = settings_service.load()
 
     assert loaded["undo_depth"] == 100
+    assert loaded["font_size"] == 12
     assert loaded["autosave_enabled"] is True
     assert loaded["autosave_delay_ms"] == 1500
     assert loaded["find_match_color"] == "#FFF59D"

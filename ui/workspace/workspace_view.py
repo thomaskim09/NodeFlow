@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (
     QColorDialog,
 )
 from PySide6.QtCore import Qt, Signal, QSize, QTimer, QSignalBlocker
-from PySide6.QtGui import QAction, QColor, QIcon, QKeySequence, QShortcut
+from PySide6.QtGui import QAction, QColor, QFont, QIcon, QKeySequence, QShortcut
 
 from ui.combo_box import FitPopupComboBox
 from .participant_manager import ParticipantManager
@@ -36,7 +36,7 @@ from services.workspace_history_service import WorkspaceCommand, WorkspaceHistor
 
 class SettingsDialog(QDialog):
     theme_changed = Signal()
-    settings_applied = Signal(str, str)
+    settings_applied = Signal(str, str, int)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -67,6 +67,13 @@ class SettingsDialog(QDialog):
         form_layout.addRow(
             QLabel(get_translation("workspace.language", self.language)),
             self.language_combo,
+        )
+        self.font_size_spin = QSpinBox()
+        self.font_size_spin.setRange(8, 24)
+        self.font_size_spin.setValue(int(self.settings.get("font_size", 12)))
+        form_layout.addRow(
+            QLabel(get_translation("workspace.font_size", self.language)),
+            self.font_size_spin,
         )
         self.undo_depth_spin = QSpinBox()
         self.undo_depth_spin.setRange(20, 500)
@@ -121,6 +128,7 @@ class SettingsDialog(QDialog):
     def save_and_apply(self):
         self.settings["theme"] = self.theme_combo.currentText()
         self.settings["language"] = self.language_combo.currentText()
+        self.settings["font_size"] = self.font_size_spin.value()
         self.settings["undo_depth"] = self.undo_depth_spin.value()
         self.settings["autosave_enabled"] = self.autosave_checkbox.isChecked()
         self.settings["autosave_delay_ms"] = self.autosave_delay_spin.value()
@@ -132,6 +140,7 @@ class SettingsDialog(QDialog):
         self.settings_applied.emit(
             self.settings["theme"],
             self.settings["language"],
+            self.settings["font_size"],
         )
         self.accept()
 
@@ -172,7 +181,7 @@ class WorkspaceView(QWidget):
         self.toolbar.setStyleSheet(
             "QToolBar { padding: 1px 4px; spacing: 2px; }"
             " QToolBar::separator { width: 1px; margin: 4px 6px; }"
-            " QToolButton { font-size: 12px; font-weight: 600; padding: 3px 8px; margin: 0px; }"
+            " QToolButton { font-weight: 600; padding: 3px 8px; margin: 0px; }"
         )
         self.back_action = QAction(get_translation("toolbar.projects", self.language), self)
         self.back_action.triggered.connect(self.back_to_startup_callback)
@@ -404,7 +413,13 @@ class WorkspaceView(QWidget):
         dialog.settings_applied.connect(self._apply_runtime_settings)
         dialog.exec()
 
-    def _apply_runtime_settings(self, theme, language):
+    def _apply_runtime_settings(self, theme, language, font_size):
+        app = QApplication.instance()
+        if app:
+            apply_theme(app)
+            app_font = QFont(app.font())
+            app_font.setPointSize(max(8, int(font_size)))
+            app.setFont(app_font)
         self.language = language
         self.history.set_max_depth(int(load_settings().get("undo_depth", 100)))
         self.toolbar.setWindowTitle(get_translation("toolbar.projects", self.language))
@@ -435,6 +450,23 @@ class WorkspaceView(QWidget):
         for dialog in list(self._open_dashboards):
             if hasattr(dialog, "update_language"):
                 dialog.update_language(self.language)
+            self._refresh_widget_fonts(dialog)
+        self._refresh_widget_fonts(self.window())
+
+    def _refresh_widget_fonts(self, widget):
+        if widget is None:
+            return
+        style = widget.style()
+        style.unpolish(widget)
+        style.polish(widget)
+        widget.updateGeometry()
+        widget.update()
+        for child in widget.findChildren(QWidget):
+            child_style = child.style()
+            child_style.unpolish(child)
+            child_style.polish(child)
+            child.updateGeometry()
+            child.update()
 
     def _apply_theme_icons(self, theme):
         is_dark = theme == "Dark"

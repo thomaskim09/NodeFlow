@@ -116,6 +116,7 @@ workspace:
   settings: '设置'
   application_theme: '应用主题:'
   language: '语言:'
+  font_size: '应用字体大小'
   undo_depth: '撤销历史深度'
   autosave_enabled: '自动保存文档文本'
   autosave_delay: '自动保存延迟（毫秒）'
