@@ -8,8 +8,9 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QMessageBox,
     QInputDialog,
-    QProgressDialog,
     QMenu,
+    QFileDialog,
+    QProgressDialog,
 )
 from PySide6.QtCore import Qt, QTimer, QSize
 from PySide6.QtGui import QFont, QPixmap, QKeyEvent, QColor
@@ -17,12 +18,10 @@ from qt_material_icons import MaterialIcon
 from PySide6.QtWidgets import QApplication
 
 import database
-from services.desktop_shortcut_service import desktop_shortcut_service
-from services.platform_service import platform_service
+from services.data_import_service import data_import_service
 from utils.common import get_resource_path, get_translation
-from utils.app_paths import clear_portable_migration_notice, get_user_data_dir, has_portable_migration_notice
 from ui.workspace.workspace_main_window import WorkspaceMainWindow
-from managers.theme_manager import load_settings, get_effective_theme_mode
+from managers.theme_manager import apply_theme, load_settings, get_effective_theme_mode
 
 
 class ProjectListWidget(QListWidget):
@@ -186,6 +185,10 @@ class StartupView(QWidget):
             get_translation("startup.create_new", self.language)
         )
         self.new_button.clicked.connect(self.open_new_project_dialog)
+        self.import_data_button = QPushButton(
+            get_translation("startup.import_data", self.language)
+        )
+        self.import_data_button.clicked.connect(self.import_data_folder)
 
         main_layout.addWidget(icon_label)
         main_layout.addWidget(title_label)
@@ -195,10 +198,9 @@ class StartupView(QWidget):
         main_layout.addWidget(self.project_list_widget)
         button_layout.addWidget(self.open_button)
         button_layout.addWidget(self.new_button)
+        button_layout.addWidget(self.import_data_button)
         main_layout.addLayout(button_layout)
         self.load_projects()
-        QTimer.singleShot(0, self.maybe_show_portable_data_notice)
-        QTimer.singleShot(0, self.maybe_prompt_desktop_shortcut)
 
     def on_selection_changed(self, current_item, previous_item):
         if previous_item:
@@ -227,6 +229,7 @@ class StartupView(QWidget):
             )
             self.project_list_widget.setVisible(False)
             self.open_button.setVisible(False)
+            self.import_data_button.setVisible(True)
         else:
             # If projects exist, ensure the UI elements are visible
             self.subtitle_label.setText(
@@ -237,6 +240,7 @@ class StartupView(QWidget):
             )
             self.project_list_widget.setVisible(True)
             self.open_button.setVisible(True)
+            self.import_data_button.setVisible(True)
             for project in sorted(projects, key=lambda p: p["name"]):
                 list_item = QListWidgetItem(self.project_list_widget)
                 item_widget = ProjectItemWidget(project["id"], project["name"], self)
@@ -281,122 +285,6 @@ class StartupView(QWidget):
             loading.close()
             self.window().hide()
             self.workspace_window.show()
-
-    def maybe_prompt_desktop_shortcut(self):
-        settings = load_settings()
-        if not desktop_shortcut_service.should_prompt(settings):
-            return
-
-        dialog = QMessageBox(self)
-        dialog.setIcon(QMessageBox.Icon.Question)
-        dialog.setWindowTitle(
-            get_translation("startup.desktop_shortcut_title", self.language)
-        )
-        dialog.setText(
-            get_translation("startup.desktop_shortcut_message", self.language)
-        )
-        create_button = dialog.addButton(
-            get_translation("startup.desktop_shortcut_create", self.language),
-            QMessageBox.ButtonRole.AcceptRole,
-        )
-        later_button = dialog.addButton(
-            get_translation("startup.desktop_shortcut_later", self.language),
-            QMessageBox.ButtonRole.RejectRole,
-        )
-        never_button = dialog.addButton(
-            get_translation("startup.desktop_shortcut_never", self.language),
-            QMessageBox.ButtonRole.DestructiveRole,
-        )
-        dialog.exec()
-
-        clicked = dialog.clickedButton()
-        if clicked == create_button:
-            self.create_desktop_shortcut()
-        elif clicked == later_button:
-            desktop_shortcut_service.mark_deferred()
-        elif clicked == never_button:
-            desktop_shortcut_service.mark_never()
-
-    def maybe_show_portable_data_notice(self):
-        if not has_portable_migration_notice():
-            return
-
-        dialog = QMessageBox(self)
-        dialog.setIcon(QMessageBox.Icon.Information)
-        dialog.setWindowTitle(
-            get_translation("startup.portable_data_notice_title", self.language)
-        )
-        dialog.setText(
-            get_translation(
-                "startup.portable_data_notice_message",
-                self.language,
-                path=str(get_user_data_dir()),
-            )
-        )
-        open_button = dialog.addButton(
-            get_translation("startup.portable_data_notice_open", self.language),
-            QMessageBox.ButtonRole.ActionRole,
-        )
-        dialog.addButton(
-            get_translation("startup.portable_data_notice_ok", self.language),
-            QMessageBox.ButtonRole.AcceptRole,
-        )
-        dialog.exec()
-        clear_portable_migration_notice()
-        if dialog.clickedButton() == open_button:
-            platform_service.open_path(get_user_data_dir())
-
-    def create_desktop_shortcut(self):
-        progress = QProgressDialog(
-            get_translation("startup.desktop_shortcut_create", self.language),
-            None,
-            0,
-            100,
-            self,
-        )
-        progress.setWindowTitle(
-            get_translation("startup.desktop_shortcut_title", self.language)
-        )
-        progress.setWindowModality(Qt.WindowModality.WindowModal)
-        progress.setCancelButton(None)
-        progress.setMinimumDuration(0)
-        progress.setValue(5)
-        progress.show()
-        QApplication.processEvents()
-        try:
-            shortcut_path = desktop_shortcut_service.create_shortcut(
-                progress_callback=self._update_shortcut_progress(progress)
-            )
-            progress.setValue(100)
-            progress.close()
-            desktop_shortcut_service.mark_created()
-            QMessageBox.information(
-                self,
-                get_translation("startup.desktop_shortcut_created_title", self.language),
-                get_translation(
-                    "startup.desktop_shortcut_created_message",
-                    self.language,
-                    path=str(shortcut_path),
-                ),
-            )
-        except Exception as error:
-            progress.cancel()
-            QMessageBox.warning(
-                self,
-                get_translation("startup.desktop_shortcut_error_title", self.language),
-                get_translation(
-                    "startup.desktop_shortcut_error_message",
-                    self.language,
-                    error=str(error),
-                ),
-            )
-
-    def _update_shortcut_progress(self, progress_dialog: QProgressDialog):
-        def update(value: int):
-            progress_dialog.setValue(value)
-            QApplication.processEvents()
-
-        return update
 
     def rename_project(self, project_id, current_name):
         new_name, ok = QInputDialog.getText(
@@ -464,6 +352,61 @@ class StartupView(QWidget):
                 self,
                 get_translation("startup.error", self.language),
                 get_translation("startup.project_name_empty", self.language),
+            )
+
+    def import_data_folder(self):
+        selected_path = QFileDialog.getExistingDirectory(
+            self,
+            get_translation("startup.import_data_dialog_title", self.language),
+            "",
+        )
+        if not selected_path:
+            return
+
+        reply = QMessageBox.question(
+            self,
+            get_translation("startup.import_data_confirm_title", self.language),
+            get_translation("startup.import_data_confirm_message", self.language),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+
+        try:
+            imported_path, backup_path = data_import_service.import_data_folder(
+                selected_path
+            )
+            app = QApplication.instance()
+            if app:
+                apply_theme(app)
+            self.language = load_settings().get("language", "English")
+            self.load_projects()
+            message = get_translation(
+                "startup.import_data_success_message",
+                self.language,
+                path=str(imported_path),
+            )
+            if backup_path is not None:
+                message += "\n\n" + get_translation(
+                    "startup.import_data_backup_message",
+                    self.language,
+                    path=str(backup_path),
+                )
+            QMessageBox.information(
+                self,
+                get_translation("startup.import_data_success_title", self.language),
+                message,
+            )
+        except Exception as error:
+            QMessageBox.critical(
+                self,
+                get_translation("startup.import_data_error_title", self.language),
+                get_translation(
+                    "startup.import_data_error_message",
+                    self.language,
+                    error=str(error),
+                ),
             )
 
 

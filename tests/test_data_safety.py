@@ -8,6 +8,7 @@ from PySide6.QtWidgets import QMessageBox
 import database
 from repositories.base import SCHEMA_VERSION, get_connection, initialize_database
 from services.dashboard_service import DashboardQuery, dashboard_service
+from services.data_import_service import data_import_service
 from services.import_service import import_service
 from ui.dashboard.crosstab_widget import CrosstabWidget
 from ui.workspace.workspace_view import WorkspaceView
@@ -183,6 +184,52 @@ def test_excel_import_copies_workbook_and_records_source_rows(tmp_path):
     assert {row["source_filename"] for row in rows} == {"batch.xlsx"}
     assert {row["source_kind"] for row in rows} == {"xlsx"}
     assert len({row["source_copy_path"] for row in rows}) == 1
+
+
+def test_data_import_replaces_current_data_and_creates_backup(tmp_path):
+    source = tmp_path / "source_data"
+    source.mkdir()
+    with sqlite3.connect(source / "nodeflow.db") as conn:
+        conn.executescript(
+            """
+            CREATE TABLE projects (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE,
+                description TEXT NOT NULL DEFAULT '',
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+            INSERT INTO projects (name) VALUES ('Imported Project');
+            PRAGMA user_version = 4;
+            """
+        )
+    (source / "settings.json").write_text('{"theme":"Dark"}', encoding="utf-8")
+
+    initialize_database()
+    database.add_project("Current Project")
+    original_db_bytes = get_database_path().read_bytes()
+
+    imported_path, backup_path = data_import_service.import_data_folder(source)
+
+    assert imported_path.exists()
+    assert backup_path is not None
+    assert (imported_path / "settings.json").read_text(encoding="utf-8") == '{"theme":"Dark"}'
+    assert (backup_path / "nodeflow.db").read_bytes() == original_db_bytes
+    assert [project["name"] for project in database.get_all_projects()] == ["Imported Project"]
+
+
+def test_data_import_requires_database_file(tmp_path):
+    source = tmp_path / "source_data"
+    source.mkdir()
+
+    with pytest.raises(ValueError, match="nodeflow.db"):
+        data_import_service.import_data_folder(source)
+
+
+def test_data_import_rejects_current_data_folder():
+    initialize_database()
+
+    with pytest.raises(ValueError, match="already the current NodeFlow data folder"):
+        data_import_service.import_data_folder(get_database_path().parent)
 
 
 def test_invalid_segment_ranges_are_rejected():

@@ -37,7 +37,7 @@ from managers.theme_manager import apply_theme  # noqa: E402
 import database  # noqa: E402
 from utils.common import get_resource_path  # noqa: E402
 from services.logging_service import configure_logging  # noqa: E402
-from utils.app_paths import get_database_path, prepare_user_data_dir  # noqa: E402
+from utils.app_paths import get_database_path, get_user_data_dir  # noqa: E402
 
 LOGGER = logging.getLogger(__name__)
 
@@ -99,7 +99,7 @@ def main() -> int:
     app = QApplication(sys.argv)
     app.setApplicationName("NodeFlow")
     app.setApplicationDisplayName("NodeFlow")
-    data_dir = prepare_user_data_dir()
+    data_dir = get_user_data_dir()
     log_path = configure_logging()
     LOGGER.info("Starting NodeFlow")
     LOGGER.info("User data directory: %s", data_dir)
