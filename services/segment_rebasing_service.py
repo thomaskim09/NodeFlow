@@ -1,6 +1,36 @@
 from __future__ import annotations
 
 
+def calculate_text_edit_delta(old_text: str, new_text: str) -> tuple[int, int, int]:
+    if old_text == new_text:
+        return 0, 0, 0
+
+    prefix_length = 0
+    shortest_length = min(len(old_text), len(new_text))
+    while (
+        prefix_length < shortest_length
+        and old_text[prefix_length] == new_text[prefix_length]
+    ):
+        prefix_length += 1
+
+    suffix_length = 0
+    old_remaining = len(old_text) - prefix_length
+    new_remaining = len(new_text) - prefix_length
+    while (
+        suffix_length < old_remaining
+        and suffix_length < new_remaining
+        and old_text[len(old_text) - 1 - suffix_length]
+        == new_text[len(new_text) - 1 - suffix_length]
+    ):
+        suffix_length += 1
+
+    return (
+        prefix_length,
+        len(old_text) - prefix_length - suffix_length,
+        len(new_text) - prefix_length - suffix_length,
+    )
+
+
 def replace_all_and_rebase_segments(
     text: str, segments: list[dict], search_text: str, replacement: str
 ) -> tuple[str, list[dict], list[int], int]:

@@ -197,42 +197,7 @@ def test_invalid_segment_ranges_are_rejected():
         database.add_coded_segment(document_id, node_id, participant_id, 0, 99, "bad")
 
 
-def test_autosave_does_not_delete_invalidated_segments(qtbot):
-    fixture = _workspace_with_segment()
-    widget = fixture["widget"]
-    qtbot.addWidget(widget)
-    document_id = fixture["document_id"]
-
-    _delete_text_range(widget.center_pane, 6, 10)
-    widget.center_pane.autosave_document()
-
-    content, _ = database.get_document_content(document_id)
-    segments = database.get_coded_segments_for_document(document_id)
-    assert content == "alpha beta"
-    assert len(segments) == 1
-    assert widget.center_pane.is_dirty
-
-
-def test_manual_save_cancel_keeps_invalidated_segments(qtbot, monkeypatch):
-    fixture = _workspace_with_segment()
-    widget = fixture["widget"]
-    qtbot.addWidget(widget)
-    document_id = fixture["document_id"]
-    monkeypatch.setattr(
-        QMessageBox, "warning", lambda *args, **kwargs: QMessageBox.StandardButton.No
-    )
-
-    _delete_text_range(widget.center_pane, 6, 10)
-    saved = widget.center_pane.save_document(show_success_prompt=False)
-
-    content, _ = database.get_document_content(document_id)
-    assert saved is False
-    assert content == "alpha beta"
-    assert len(database.get_coded_segments_for_document(document_id)) == 1
-    assert widget.center_pane.is_dirty
-
-
-def test_manual_save_confirmation_deletes_invalidated_segments(qtbot, monkeypatch):
+def test_confirmed_segment_deletion_autosaves(qtbot, monkeypatch):
     fixture = _workspace_with_segment()
     widget = fixture["widget"]
     qtbot.addWidget(widget)
@@ -242,12 +207,66 @@ def test_manual_save_confirmation_deletes_invalidated_segments(qtbot, monkeypatc
     )
 
     _delete_text_range(widget.center_pane, 6, 10)
+    widget.center_pane.autosave_document()
+
+    content, _ = database.get_document_content(document_id)
+    assert content == "alpha "
+    assert database.get_coded_segments_for_document(document_id) == []
+    assert not widget.center_pane.is_dirty
+
+
+def test_canceling_segment_deletion_restores_text_and_segment(qtbot, monkeypatch):
+    fixture = _workspace_with_segment()
+    widget = fixture["widget"]
+    qtbot.addWidget(widget)
+    document_id = fixture["document_id"]
+    monkeypatch.setattr(
+        QMessageBox, "warning", lambda *args, **kwargs: QMessageBox.StandardButton.No
+    )
+
+    _delete_text_range(widget.center_pane, 6, 10)
+
+    content, _ = database.get_document_content(document_id)
+    assert widget.center_pane.text_edit.toPlainText() == "alpha beta"
+    assert content == "alpha beta"
+    segment = widget.center_pane._coded_segments_cache[0]
+    assert segment["segment_start"] == 6
+    assert segment["segment_end"] == 10
+    assert [
+        (
+            selection.cursor.selectionStart(),
+            selection.cursor.selectionEnd(),
+        )
+        for selection in widget.center_pane.text_edit.extraSelections()
+    ] == [(6, 10)]
+    assert len(database.get_coded_segments_for_document(document_id)) == 1
+    assert not widget.center_pane.is_dirty
+
+
+def test_deleting_part_of_segment_adjusts_without_prompt(qtbot, monkeypatch):
+    fixture = _workspace_with_segment()
+    widget = fixture["widget"]
+    qtbot.addWidget(widget)
+    document_id = fixture["document_id"]
+
+    def fail_if_prompted(*args, **kwargs):
+        raise AssertionError("Partial segment edits should not prompt.")
+
+    monkeypatch.setattr(QMessageBox, "warning", fail_if_prompted)
+
+    _delete_text_range(widget.center_pane, 7, 9)
+    segment = widget.center_pane._coded_segments_cache[0]
     saved = widget.center_pane.save_document(show_success_prompt=False)
 
     content, _ = database.get_document_content(document_id)
     assert saved is True
-    assert content == "alpha "
-    assert database.get_coded_segments_for_document(document_id) == []
+    assert content == "alpha ba"
+    assert segment["segment_start"] == 6
+    assert segment["segment_end"] == 8
+    assert segment["content_preview"] == "ba"
+    segments = database.get_coded_segments_for_document(document_id)
+    assert len(segments) == 1
+    assert segments[0]["content_preview"] == "ba"
     assert not widget.center_pane.is_dirty
 
 

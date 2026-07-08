@@ -1,4 +1,5 @@
 from services.segment_rebasing_service import (
+    calculate_text_edit_delta,
     rebase_segments_for_edit,
     replace_all_and_rebase_segments,
 )
@@ -14,6 +15,29 @@ def _segment(start, end, segment_id=1):
         "segment_end": end,
         "content_preview": "",
     }
+
+
+def test_calculate_text_edit_delta_for_middle_insert():
+    assert calculate_text_edit_delta("alpha beta", "alpha Xbeta") == (6, 0, 1)
+
+
+def test_calculate_text_edit_delta_for_middle_delete():
+    assert calculate_text_edit_delta("alpha Xbeta", "alpha beta") == (6, 1, 0)
+
+
+def test_calculate_text_edit_delta_for_same_length_replace():
+    assert calculate_text_edit_delta("alpha beta", "alpha zeta") == (6, 1, 1)
+
+
+def test_calculate_text_edit_delta_for_wide_qt_event_equivalent():
+    old_text = "alpha beta gamma"
+    new_text = "alpha beXta gamma"
+
+    assert calculate_text_edit_delta(old_text, new_text) == (8, 0, 1)
+
+
+def test_calculate_text_edit_delta_for_no_plain_text_change():
+    assert calculate_text_edit_delta("alpha beta", "alpha beta") == (0, 0, 0)
 
 
 def test_insert_before_segment_shifts_range():

@@ -1,7 +1,7 @@
 import database
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication
-from PySide6.QtGui import QTextCursor
+from PySide6.QtGui import QColor, QTextCharFormat, QTextCursor
 from repositories.base import initialize_database
 from ui.workspace.workspace_view import WorkspaceView
 from ui.workspace import node_tree_manager as node_tree_manager_module
@@ -66,6 +66,43 @@ def test_replace_all_records_restorable_document_snapshot(qtbot):
     assert segments[0]["segment_start"] == 3
     assert segments[0]["segment_end"] == 16
     assert segments[0]["content_preview"] == "alpha of beta"
+
+
+def test_format_change_does_not_expand_coded_segment(qtbot):
+    initialize_database()
+    database.add_project("Format Signal")
+    project = database.get_all_projects()[0]
+    participant_id = database.add_participant(project["id"], "Alice")
+    document_id = database.add_document(
+        project["id"], "Doc 1", "alpha beta gamma", participant_id
+    )
+    node_id = database.add_node(project["id"], "Theme", None, "#FFFF00")
+    database.add_coded_segment(document_id, node_id, participant_id, 6, 10, "beta")
+
+    widget = WorkspaceView(project["id"], project["name"], lambda: None)
+    qtbot.addWidget(widget)
+    widget.show()
+
+    cursor = widget.center_pane.text_edit.textCursor()
+    cursor.setPosition(0)
+    cursor.setPosition(len("alpha beta gamma"), QTextCursor.MoveMode.KeepAnchor)
+    fmt = QTextCharFormat()
+    fmt.setBackground(QColor("#B03000"))
+    cursor.mergeCharFormat(fmt)
+
+    segment = widget.center_pane._coded_segments_cache[0]
+    assert segment["segment_start"] == 6
+    assert segment["segment_end"] == 10
+
+    cursor = widget.center_pane.text_edit.textCursor()
+    cursor.setPosition(8)
+    widget.center_pane.text_edit.setTextCursor(cursor)
+    widget.center_pane.text_edit.insertPlainText("X")
+
+    segment = widget.center_pane._coded_segments_cache[0]
+    assert segment["segment_start"] == 6
+    assert segment["segment_end"] == 11
+    assert segment["content_preview"] == "beXta"
 
 
 def test_refresh_all_views_keeps_current_document_selected(qtbot):

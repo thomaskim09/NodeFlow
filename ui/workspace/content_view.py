@@ -40,6 +40,7 @@ from qt_material_icons import MaterialIcon
 from utils.common import get_translation
 from services.import_service import import_service
 from services.segment_rebasing_service import (
+    calculate_text_edit_delta,
     rebase_segments_for_edit,
     replace_all_and_rebase_segments,
 )
@@ -91,6 +92,9 @@ class ContentView(QWidget):
         self._loading_document = False
         self._document_change_connected = False
         self._pending_highlight = None
+        self._last_text_for_rebase = ""
+        self._confirmed_deleted_segment_ids = set()
+        self._suppress_next_text_changed = False
         self._import_thread = None
         self._excel_import_before_ids = None
         self.undo_executor = None
@@ -1143,6 +1147,11 @@ class ContentView(QWidget):
             )
 
     def on_text_changed(self):
+        if self._loading_document:
+            return
+        if self._suppress_next_text_changed:
+            self._suppress_next_text_changed = False
+            return
         if not self.text_edit.isReadOnly():
             self.is_dirty = True
             self.save_button.setEnabled(True)
@@ -1154,6 +1163,9 @@ class ContentView(QWidget):
         if self._loading_document or not self.current_document_id:
             return
         current_text = self.text_edit.toPlainText()
+        previous_text = self._last_text_for_rebase
+        if current_text == previous_text:
+            return
         segments_before = {
             segment["id"]: dict(segment)
             for segment in [
@@ -1161,6 +1173,15 @@ class ContentView(QWidget):
                 *self._pending_deleted_segments.values(),
             ]
         }
+        pending_deleted_before = {
+            segment_id: dict(segment)
+            for segment_id, segment in self._pending_deleted_segments.items()
+        }
+        confirmed_before = set(self._confirmed_deleted_segment_ids)
+        was_dirty = self.is_dirty
+        position, chars_removed, chars_added = calculate_text_edit_delta(
+            previous_text, current_text
+        )
         rebased_segments, deleted_segment_ids = rebase_segments_for_edit(
             list(segments_before.values()),
             position,
@@ -1173,12 +1194,42 @@ class ContentView(QWidget):
         for segment in rebased_segments:
             self._pending_deleted_segments.pop(segment["id"], None)
         for segment_id in deleted_segment_ids:
-            segment = segments_before.get(segment_id)
-            if segment:
+            if segment_id in segments_before:
+                segment = dict(segments_before[segment_id])
                 tombstone_position = max(0, min(position, len(current_text)))
                 segment["segment_start"] = tombstone_position
                 segment["segment_end"] = tombstone_position
                 self._pending_deleted_segments[segment_id] = segment
+        newly_deleted_ids = [
+            segment_id
+            for segment_id in deleted_segment_ids
+            if segment_id not in pending_deleted_before
+        ]
+        if newly_deleted_ids:
+            self.autosave_timer.stop()
+            if self._confirm_pending_segment_deletions(newly_deleted_ids):
+                self._confirmed_deleted_segment_ids.update(newly_deleted_ids)
+            else:
+                self._loading_document = True
+                try:
+                    self.text_edit.undo()
+                finally:
+                    self._loading_document = False
+                self._coded_segments_cache = [
+                    segment
+                    for segment in segments_before.values()
+                    if segment["id"] not in pending_deleted_before
+                ]
+                self._pending_deleted_segments = pending_deleted_before
+                self._confirmed_deleted_segment_ids = confirmed_before
+                self._last_text_for_rebase = previous_text
+                self.is_dirty = was_dirty
+                self.save_button.setEnabled(was_dirty)
+                self._suppress_next_text_changed = True
+                self._rebuild_coded_segment_selections()
+                self._render_highlights()
+                return
+        self._last_text_for_rebase = current_text
         self._render_highlights()
 
     def save_document(
@@ -1196,10 +1247,15 @@ class ContentView(QWidget):
         old_snapshot = workspace_snapshot_repository.get_document_snapshot(document_id)
         new_segments = [dict(segment) for segment in self._coded_segments_cache]
         deleted_segment_ids = sorted(self._pending_deleted_segments)
-        if deleted_segment_ids and not allow_segment_deletion:
+        unconfirmed_deleted_ids = [
+            segment_id
+            for segment_id in deleted_segment_ids
+            if segment_id not in self._confirmed_deleted_segment_ids
+        ]
+        if unconfirmed_deleted_ids and not allow_segment_deletion:
             if not record_history:
                 return False
-            if not self._confirm_pending_segment_deletions(deleted_segment_ids):
+            if not self._confirm_pending_segment_deletions(unconfirmed_deleted_ids):
                 return False
 
         def do():
@@ -1219,6 +1275,7 @@ class ContentView(QWidget):
                 self.load_document_content()
             else:
                 self._pending_deleted_segments = {}
+                self._confirmed_deleted_segment_ids = set()
             self.segments_changed.emit()
             self.is_dirty = False
             self.save_button.setEnabled(False)
@@ -1329,12 +1386,14 @@ class ContentView(QWidget):
             self.text_edit.setDocument(QTextDocument(self))
             self.is_dirty = False
             self._pending_deleted_segments = {}
+            self._confirmed_deleted_segment_ids = set()
             self.save_button.setEnabled(False)
             if not selected_display_text:
                 self.current_document_id = None
                 self.current_participant_id = None
                 self._coded_segments_cache = []
                 self._coded_segment_selections = []
+                self._last_text_for_rebase = ""
                 self.text_edit.setReadOnly(True)
                 self.text_edit.clear()
                 self.import_button.setStyleSheet(
@@ -1351,6 +1410,7 @@ class ContentView(QWidget):
                 )
                 self.current_participant_id = participant_id
                 self.text_edit.setPlainText(content)
+                self._last_text_for_rebase = content
                 self.apply_all_highlights()
                 word_count = len(content.split())
                 self.update_counts(word_count, len(self._coded_segments_cache))
