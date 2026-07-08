@@ -493,6 +493,8 @@ class NodeTreeManager(QWidget):
         self.undo_executor = None
         self.setAcceptDrops(True)
         self._is_selection_mode = False
+        self._active_filter_node_id = None
+        self._selection_changed_before_click = False
         self.current_document_id = None
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(0, 0, 0, 0)
@@ -829,6 +831,12 @@ class NodeTreeManager(QWidget):
             if node_id is not None:
                 self.node_selected_for_coding.emit(node_id)
             self.tree_widget.blockSignals(False)
+            return
+        if self._selection_changed_before_click:
+            self._selection_changed_before_click = False
+            return
+        if item and item.data(0, 1) == self._active_filter_node_id:
+            self.clear_all_filters()
 
     def refresh_tree_and_emit_update(self, node_id_to_reselect=None):
         self.load_nodes(node_id_to_reselect=node_id_to_reselect)
@@ -895,13 +903,22 @@ class NodeTreeManager(QWidget):
         return super().eventFilter(watched, event)
 
     def clear_all_filters(self):
+        previous_item = self.tree_widget.currentItem()
+        if previous_item:
+            widget = self.tree_widget.itemWidget(previous_item, 0)
+            if widget:
+                widget.set_selected_style(False)
+        self._active_filter_node_id = None
+        self.tree_widget.blockSignals(True)
         self.tree_widget.clearSelection()
         self.tree_widget.setCurrentItem(None)
+        self.tree_widget.blockSignals(False)
         self.filter_by_node_family_signal.emit([])
 
     def on_selection_changed(
         self, current_item: QTreeWidgetItem, previous_item: QTreeWidgetItem
     ):
+        self._selection_changed_before_click = True
         if previous_item:
             widget = self.tree_widget.itemWidget(previous_item, 0)
             if widget:
@@ -913,9 +930,11 @@ class NodeTreeManager(QWidget):
                 widget.set_selected_style(True)
 
             node_id = current_item.data(0, 1)
+            self._active_filter_node_id = node_id
             descendants = self.get_all_descendant_ids(node_id)
             self.filter_by_node_family_signal.emit([node_id] + descendants)
         else:
+            self._active_filter_node_id = None
             self.filter_by_node_family_signal.emit([])
 
     def get_all_descendant_ids(self, node_id):

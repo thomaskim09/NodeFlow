@@ -1,5 +1,6 @@
 import database
 from repositories.base import initialize_database
+from ui.workspace.participant_manager import ParticipantManager
 from ui.workspace import node_tree_manager as node_tree_manager_module
 from ui.workspace.node_tree_manager import MergeNodeDialog, NodeTreeManager
 from services.workspace_history_service import WorkspaceHistory
@@ -86,6 +87,50 @@ def test_load_nodes_scrolls_reselected_node_into_view(qtbot, monkeypatch):
     assert calls
     assert calls[-1][0] == target_node_id
     assert calls[-1][1] == node_tree_manager_module.QAbstractItemView.ScrollHint.PositionAtCenter
+
+
+def test_clicking_selected_node_clears_filter_and_selection(qtbot):
+    initialize_database()
+    database.add_project("Toggle Node")
+    project_id = database.get_all_projects()[0]["id"]
+    node_id = database.add_node(project_id, "Theme", None, "#111111")
+
+    manager = NodeTreeManager(project_id, "English")
+    qtbot.addWidget(manager)
+    item = manager.tree_widget.topLevelItem(0)
+    emitted_filters = []
+    manager.filter_by_node_family_signal.connect(emitted_filters.append)
+
+    manager.tree_widget.setCurrentItem(item)
+    manager.on_item_clicked(item, 0)
+    assert manager.get_selected_node_id() == node_id
+    assert emitted_filters[-1] == [node_id]
+
+    manager.on_item_clicked(item, 0)
+    assert manager.get_selected_node_id() is None
+    assert emitted_filters[-1] == []
+
+
+def test_clicking_selected_participant_clears_filter_and_selection(qtbot):
+    initialize_database()
+    database.add_project("Toggle Participant")
+    project_id = database.get_all_projects()[0]["id"]
+    participant_id = database.add_participant(project_id, "Alice")
+
+    manager = ParticipantManager(project_id, "English")
+    qtbot.addWidget(manager)
+    item = manager.list_widget.item(0)
+    emitted_filters = []
+    manager.participant_selected.connect(emitted_filters.append)
+
+    manager.list_widget.setCurrentItem(item)
+    manager.on_item_clicked(item)
+    assert manager.get_selected_participant_id() == participant_id
+    assert emitted_filters[-1] == participant_id
+
+    manager.on_item_clicked(item)
+    assert manager.get_selected_participant_id() is None
+    assert emitted_filters[-1] == 0
 
 
 def test_long_node_names_wrap_instead_of_truncating(qtbot):

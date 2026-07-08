@@ -156,6 +156,8 @@ class ParticipantManager(QWidget):
         self.language = language or "English"
         self.current_document_id = None
         self.undo_executor = None
+        self._active_filter_participant_id = None
+        self._selection_changed_before_click = False
 
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(0, 0, 0, 0)
@@ -210,6 +212,7 @@ class ParticipantManager(QWidget):
 
         self.list_widget = RenamableListWidget(self)
         self.list_widget.currentItemChanged.connect(self.on_selection_changed)
+        self.list_widget.itemClicked.connect(self.on_item_clicked)
         main_layout.addWidget(self.list_widget)
 
         self.scope_combo.currentTextChanged.connect(self.load_participants)
@@ -235,6 +238,7 @@ class ParticipantManager(QWidget):
             self.load_participants()
 
     def on_selection_changed(self, current_item, previous_item):
+        self._selection_changed_before_click = True
         if previous_item:
             widget = self.list_widget.itemWidget(previous_item)
             if widget:
@@ -244,9 +248,19 @@ class ParticipantManager(QWidget):
             widget = self.list_widget.itemWidget(current_item)
             if widget:
                 widget.set_selected_style(True)
+                self._active_filter_participant_id = widget.participant_id
                 self.participant_selected.emit(widget.participant_id)
         else:
+            self._active_filter_participant_id = None
             self.participant_selected.emit(0)
+
+    def on_item_clicked(self, item):
+        if self._selection_changed_before_click:
+            self._selection_changed_before_click = False
+            return
+        widget = self.list_widget.itemWidget(item)
+        if widget and widget.participant_id == self._active_filter_participant_id:
+            self.clear_selection()
 
     def load_participants(self, participant_id_to_select=None):
         # Safely disconnect to prevent warnings
@@ -442,8 +456,17 @@ class ParticipantManager(QWidget):
 
     def clear_selection(self):
         """Clears the current selection in the list widget."""
+        previous_item = self.list_widget.currentItem()
+        if previous_item:
+            widget = self.list_widget.itemWidget(previous_item)
+            if widget:
+                widget.set_selected_style(False)
+        self._active_filter_participant_id = None
+        self.list_widget.blockSignals(True)
         self.list_widget.clearSelection()
         self.list_widget.setCurrentItem(None)
+        self.list_widget.blockSignals(False)
+        self.participant_selected.emit(0)
 
     def highlight_participant_by_id(self, participant_id: int):
         """

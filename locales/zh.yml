@@ -271,6 +271,11 @@ coded_segments:
   col_remark: '备注'
   search_all: '全部'
   search_placeholder: '搜索编码片段...'
+  filter_status_all: '筛选：全部片段'
+  filter_status_node: '筛选：节点：{value}'
+  filter_status_node_family: '筛选：节点家族：{value}'
+  filter_status_participant: '筛选：参与者：{value}'
+  filter_status_search: "筛选：搜索 {scope}：'{value}'"
   edit_segment_tooltip: '编辑此编码片段的边界'
   edit_remark_tooltip: '编辑此编码片段的备注'
   edit_remark_dialog_title: '编辑片段备注'

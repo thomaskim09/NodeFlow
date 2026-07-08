@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
     QTextEdit,
+    QSizePolicy,
 )
 from PySide6.QtCore import Qt, Signal, QSignalBlocker
 from PySide6.QtGui import QKeyEvent, QColor, QIcon
@@ -98,6 +99,40 @@ class SegmentActionCell(QWidget):
         self.menu_button.setIcon(self.menu_icon)
 
 
+class ElidedLabel(QLabel):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._full_text = ""
+        self.setMinimumWidth(0)
+        self.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Preferred,
+        )
+
+    def setText(self, text: str):
+        self._full_text = text
+        self._apply_elided_text()
+
+    def text(self) -> str:
+        return self._full_text
+
+    def display_text(self) -> str:
+        return super().text()
+
+    def resizeEvent(self, event):
+        self._apply_elided_text()
+        super().resizeEvent(event)
+
+    def _apply_elided_text(self):
+        available_width = max(0, self.contentsRect().width())
+        display_text = self.fontMetrics().elidedText(
+            self._full_text,
+            Qt.TextElideMode.ElideRight,
+            available_width,
+        )
+        super().setText(display_text)
+
+
 class CodedSegmentsView(QWidget):
     segment_deleted = Signal(int, object)
     segment_activated = Signal(int, int, int)  # document_id, start, end
@@ -111,6 +146,9 @@ class CodedSegmentsView(QWidget):
         self.segments = []
         self.all_segments = []
         self._last_active_node_filter = None
+        self._last_active_participant_filter = 0
+        self._active_filter_type = "none"
+        self._active_filter_value = None
         self.undo_executor = None
         self.color_column = 0
         self.preview_column = 1
@@ -125,6 +163,7 @@ class CodedSegmentsView(QWidget):
         font = self.header_label.font()
         font.setBold(True)
         self.header_label.setFont(font)
+        self.filter_status_label = ElidedLabel()
 
         self.scope_combo = FitPopupComboBox()
         self.scope_combo.addItems(
@@ -151,15 +190,17 @@ class CodedSegmentsView(QWidget):
         search_layout.addWidget(self.search_input)
         search_container = QWidget()
         search_container.setLayout(search_layout)
+        search_container.setFixedWidth(270)
 
         self.search_scope_combo = FitPopupComboBox()
         self.search_scope_combo.setToolTip(
             get_translation("coded_segments.search_scope_tooltip", self.language)
         )
+        self.search_scope_combo.setFixedWidth(140)
 
         controls_layout.addWidget(self.header_label)
         controls_layout.addWidget(self.scope_combo)
-        controls_layout.addStretch()
+        controls_layout.addWidget(self.filter_status_label, 1)
         controls_layout.addWidget(search_container)
         controls_layout.addWidget(self.search_scope_combo)
         main_layout.addLayout(controls_layout)
@@ -188,6 +229,63 @@ class CodedSegmentsView(QWidget):
         self.update_theme(load_settings().get("theme", "Light"))
         if not defer_load:
             self.reload_view()
+
+    def _set_active_filter(self, filter_type: str, value):
+        self._active_filter_type = filter_type
+        self._active_filter_value = value
+        self._update_filter_status()
+
+    def _update_filter_status(self):
+        if self._active_filter_type == "single_node" and self._active_filter_value:
+            node_name = self._node_name_for_id(self._active_filter_value)
+            status = get_translation(
+                "coded_segments.filter_status_node",
+                self.language,
+                value=node_name,
+            )
+        elif self._active_filter_type == "node_family" and self._active_filter_value:
+            root_node_id = self._active_filter_value[0]
+            node_name = self._node_name_for_id(root_node_id)
+            status = get_translation(
+                "coded_segments.filter_status_node_family",
+                self.language,
+                value=node_name,
+            )
+        elif (
+            self._active_filter_type == "participant"
+            and self._active_filter_value not in (None, 0)
+        ):
+            participant_name = self._participant_name_for_id(self._active_filter_value)
+            status = get_translation(
+                "coded_segments.filter_status_participant",
+                self.language,
+                value=participant_name,
+            )
+        elif self._active_filter_type == "search" and self._active_filter_value:
+            search_scope = self.search_scope_combo.currentText() or get_translation(
+                "coded_segments.search_all", self.language
+            )
+            status = get_translation(
+                "coded_segments.filter_status_search",
+                self.language,
+                scope=search_scope,
+                value=self._active_filter_value,
+            )
+        else:
+            status = get_translation("coded_segments.filter_status_all", self.language)
+        self.filter_status_label.setText(status)
+
+    def _node_name_for_id(self, node_id: int) -> str:
+        for node in database.get_nodes_for_project(self.project_id):
+            if node["id"] == node_id:
+                return node["name"]
+        return f"#{node_id}"
+
+    def _participant_name_for_id(self, participant_id: int) -> str:
+        for participant in database.get_participants_for_project(self.project_id):
+            if participant["id"] == participant_id:
+                return participant["name"]
+        return f"#{participant_id}"
 
     def set_undo_executor(self, undo_executor):
         self.undo_executor = undo_executor
@@ -229,6 +327,8 @@ class CodedSegmentsView(QWidget):
 
         # Clear node filter
         self._last_active_node_filter = None
+        self._last_active_participant_filter = 0
+        self._set_active_filter("none", None)
         with QSignalBlocker(self.search_input):
             self.search_input.clear()
         self.filter_tree()
@@ -479,6 +579,8 @@ class CodedSegmentsView(QWidget):
 
         if self._last_active_node_filter is not None:
             self.filter_by_node_family(self._last_active_node_filter)
+        elif self._last_active_participant_filter:
+            self.filter_segments_by_participant(self._last_active_participant_filter)
         else:
             self.filter_tree()
 
@@ -557,6 +659,7 @@ class CodedSegmentsView(QWidget):
 
     def filter_tree(self):
         self._last_active_node_filter = None
+        self._last_active_participant_filter = 0
         search_text = self.search_input.text().lower()
         scope_display = self.search_scope_combo.currentText()
         view_scope_display = self.scope_combo.currentText()
@@ -595,8 +698,10 @@ class CodedSegmentsView(QWidget):
         self.tree_widget.clear()
 
         if not search_text:
+            self._set_active_filter("none", None)
             self.populate_tree(self.all_segments)
         else:
+            self._set_active_filter("search", self.search_input.text())
             filtered_segments = [
                 seg
                 for seg in self.all_segments
@@ -635,8 +740,10 @@ class CodedSegmentsView(QWidget):
         return False
 
     def filter_by_node_family(self, node_ids: list):
-        self.search_input.clear()
+        with QSignalBlocker(self.search_input):
+            self.search_input.clear()
         self._last_active_node_filter = node_ids
+        self._last_active_participant_filter = 0
 
         self.tree_widget.blockSignals(True)
         self.tree_widget.setCurrentItem(None)
@@ -644,8 +751,10 @@ class CodedSegmentsView(QWidget):
         self.tree_widget.clear()
 
         if not node_ids:
+            self._set_active_filter("none", None)
             self.populate_tree(self.all_segments)
         else:
+            self._set_active_filter("node_family", node_ids)
             node_filtered_segments = [
                 seg for seg in self.all_segments if seg["node_id"] in node_ids
             ]
@@ -654,8 +763,10 @@ class CodedSegmentsView(QWidget):
         self.tree_widget.blockSignals(False)
 
     def filter_by_single_node(self, node_id: int):
-        self.search_input.clear()
+        with QSignalBlocker(self.search_input):
+            self.search_input.clear()
         self._last_active_node_filter = [node_id]
+        self._last_active_participant_filter = 0
 
         self.tree_widget.blockSignals(True)
         self.tree_widget.setCurrentItem(None)
@@ -663,8 +774,11 @@ class CodedSegmentsView(QWidget):
         self.tree_widget.clear()
 
         if not node_id:
+            self._last_active_node_filter = None
+            self._set_active_filter("none", None)
             self.populate_tree(self.all_segments)
         else:
+            self._set_active_filter("single_node", node_id)
             node_filtered_segments = [
                 seg for seg in self.all_segments if seg["node_id"] == node_id
             ]
@@ -673,14 +787,18 @@ class CodedSegmentsView(QWidget):
         self.tree_widget.blockSignals(False)
 
     def filter_segments_by_participant(self, participant_id: int):
-        if not self.all_segments:
-            return
+        self._last_active_node_filter = None
+        self._last_active_participant_filter = participant_id
+        with QSignalBlocker(self.search_input):
+            self.search_input.clear()
         self.tree_widget.blockSignals(True)
         self.tree_widget.setCurrentItem(None)
         self.tree_widget.clear()
         if participant_id == 0:
+            self._set_active_filter("none", None)
             target_segments = self.all_segments
         else:
+            self._set_active_filter("participant", participant_id)
             target_segments = [
                 seg
                 for seg in self.all_segments
@@ -712,6 +830,7 @@ class CodedSegmentsView(QWidget):
         self.search_scope_combo.setToolTip(
             get_translation("coded_segments.search_scope_tooltip", self.language)
         )
+        self._update_filter_status()
         self.update_theme(load_settings().get("theme", "Light"))
         self.reload_view()
 

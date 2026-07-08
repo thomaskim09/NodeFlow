@@ -191,6 +191,66 @@ def test_refresh_all_views_keeps_selected_node_and_participant_visible(
     )
 
 
+def test_coded_segments_view_shows_current_filter_status(qtbot):
+    initialize_database()
+    database.add_project("Filter Status")
+    project = database.get_all_projects()[0]
+    participant_one = database.add_participant(project["id"], "Alice")
+    participant_two = database.add_participant(project["id"], "Bob")
+    document_id = database.add_document(
+        project["id"], "Doc 1", "alpha beta gamma", participant_one
+    )
+    node_one = database.add_node(project["id"], "Theme 1", None, "#111111")
+    node_two = database.add_node(project["id"], "Theme 2", None, "#222222")
+    database.add_coded_segment(document_id, node_one, participant_one, 0, 5, "alpha")
+    database.add_coded_segment(document_id, node_two, participant_two, 6, 10, "beta")
+
+    widget = WorkspaceView(project["id"], project["name"], lambda: None)
+    qtbot.addWidget(widget)
+    widget.show()
+
+    assert widget.bottom_pane.filter_status_label.text() == "Filter: All segments"
+
+    widget.bottom_pane.filter_by_single_node(node_one)
+    assert widget.bottom_pane.filter_status_label.text() == "Filter: Node: Theme 1"
+
+    widget.bottom_pane.filter_segments_by_participant(participant_two)
+    assert widget.bottom_pane.filter_status_label.text() == "Filter: Participant: Bob"
+
+    widget.bottom_pane.filter_segments_by_participant(0)
+    assert widget.bottom_pane.filter_status_label.text() == "Filter: All segments"
+
+
+def test_coded_segments_filter_status_elides_without_losing_full_text(qtbot):
+    initialize_database()
+    database.add_project("Filter Status Elide")
+    project = database.get_all_projects()[0]
+    participant_id = database.add_participant(project["id"], "Alice")
+    document_id = database.add_document(
+        project["id"], "Doc 1", "alpha beta", participant_id
+    )
+    node_id = database.add_node(
+        project["id"],
+        "A very long node name that should not push the search controls away",
+        None,
+        "#111111",
+    )
+    database.add_coded_segment(document_id, node_id, participant_id, 0, 5, "alpha")
+
+    widget = WorkspaceView(project["id"], project["name"], lambda: None)
+    qtbot.addWidget(widget)
+    widget.show()
+
+    widget.bottom_pane.filter_by_single_node(node_id)
+    full_text = widget.bottom_pane.filter_status_label.text()
+    widget.bottom_pane.filter_status_label.resize(80, widget.bottom_pane.filter_status_label.height())
+    qtbot.wait(10)
+
+    assert full_text.startswith("Filter: Node: ")
+    assert widget.bottom_pane.filter_status_label.text() == full_text
+    assert widget.bottom_pane.filter_status_label.display_text() != full_text
+
+
 def test_workspace_splitters_keep_minimum_panel_sizes(qtbot):
     initialize_database()
     database.add_project("Splitter Minimums")

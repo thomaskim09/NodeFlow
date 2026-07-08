@@ -271,6 +271,11 @@ coded_segments:
   col_remark: 'Remark'
   search_all: 'All'
   search_placeholder: 'Search coded segments...'
+  filter_status_all: 'Filter: All segments'
+  filter_status_node: 'Filter: Node: {value}'
+  filter_status_node_family: 'Filter: Node family: {value}'
+  filter_status_participant: 'Filter: Participant: {value}'
+  filter_status_search: "Filter: Search {scope}: '{value}'"
   edit_segment_tooltip: "Edit this coded segment's boundaries"
   edit_remark_tooltip: 'Edit this coded segment remark'
   edit_remark_dialog_title: 'Edit Segment Remark'
