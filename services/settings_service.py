@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from copy import deepcopy
 from typing import Any
 
@@ -14,6 +15,10 @@ DEFAULT_SETTINGS = {
     "autosave_enabled": True,
     "autosave_delay_ms": 1500,
     "find_match_color": "#FFF59D",
+    "ai_provider": "gemini",
+    "ai_api_key": "",
+    "ai_model": "gemini-flash-lite-latest",
+    "ai_api_url": "",
 }
 
 
@@ -39,6 +44,8 @@ class SettingsService:
         path = get_settings_path()
         with path.open("w", encoding="utf-8") as handle:
             json.dump(merged, handle, indent=2, ensure_ascii=False)
+        if os.name != "nt":
+            path.chmod(0o600)
         return merged
 
 

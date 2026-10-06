@@ -1,11 +1,48 @@
+import os
+
 import database
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication
 from PySide6.QtGui import QColor, QTextCharFormat, QTextCursor
 from repositories.base import initialize_database
-from ui.workspace.workspace_view import WorkspaceView
+from services.settings_service import settings_service
+from ui.workspace.workspace_view import SettingsDialog, WorkspaceView
 from ui.workspace import node_tree_manager as node_tree_manager_module
 from ui.workspace import participant_manager as participant_manager_module
+from utils import app_paths
+
+
+def test_settings_dialog_saves_ai_configuration(qtbot, monkeypatch, tmp_path):
+    monkeypatch.setenv("NODEFLOW_USER_DATA_DIR", str(tmp_path))
+    app_paths.get_user_data_dir.cache_clear()
+    dialog = None
+    try:
+        dialog = SettingsDialog()
+        qtbot.addWidget(dialog)
+        assert dialog.settings_tabs.count() == 2
+        assert dialog.ai_api_key_edit.minimumWidth() >= 400
+        dialog.ai_provider_combo.setCurrentIndex(
+            dialog.ai_provider_combo.findData("gemini")
+        )
+        dialog.ai_api_key_edit.setText("saved-key")
+        dialog.ai_model_edit.setText("saved-model")
+        dialog.ai_api_url_edit.setText(
+            "https://example.test/models/{model}:generateContent"
+        )
+
+        dialog.save_and_apply()
+        saved = settings_service.load()
+
+        assert saved["ai_provider"] == "gemini"
+        assert saved["ai_api_key"] == "saved-key"
+        assert saved["ai_model"] == "saved-model"
+        assert saved["ai_api_url"].endswith("{model}:generateContent")
+        if os.name != "nt":
+            assert app_paths.get_settings_path().stat().st_mode & 0o077 == 0
+    finally:
+        if dialog is not None:
+            dialog.close()
+        app_paths.get_user_data_dir.cache_clear()
 
 
 def test_workspace_undo_prefers_text_history_after_autosave(qtbot):
@@ -161,7 +198,7 @@ def test_refresh_all_views_keeps_selected_node_and_participant_visible(
     participant_one = database.add_participant(project["id"], "Alice")
     participant_two = database.add_participant(project["id"], "Bob")
     database.add_document(project["id"], "Doc 1", "alpha", participant_one)
-    first_node_id = database.add_node(project["id"], "Theme 1", None, "#111111")
+    database.add_node(project["id"], "Theme 1", None, "#111111")
     second_node_id = database.add_node(project["id"], "Theme 2", None, "#222222")
 
     widget = WorkspaceView(project["id"], project["name"], lambda: None)

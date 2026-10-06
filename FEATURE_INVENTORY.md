@@ -112,6 +112,9 @@ NodeFlow is a desktop qualitative analysis application built with Python and PyS
 
 - Select text in the document editor.
 - Click a node in the node tree to code the selected text.
+- Optionally request temporary AI suggestions from the editor toolbar after explicit privacy confirmation.
+- Enable the AI Suggestions button only when non-empty text is selected.
+- Limit AI suggestions to existing nodes; AI cannot create nodes or autonomously modify coding data.
 - Store coded segment start/end positions, text preview, node, document, and participant.
 - Highlight coded text using the assigned node color.
 - Use readable foreground color based on highlight brightness.
@@ -325,6 +328,8 @@ NodeFlow is a desktop qualitative analysis application built with Python and PyS
 - Enable or disable autosave.
 - Configure autosave delay in milliseconds.
 - Configure find-match highlight color.
+- Configure the AI provider, masked API key, model, and optional endpoint.
+- Save AI settings locally for reuse on the next startup; environment values override them.
 - Apply settings at runtime to the workspace, dashboard, participant list, node tree, document view, and coded segments view.
 
 ## Localization

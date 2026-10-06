@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, Signal, QSize, QPoint, QTimer
 from PySide6.QtGui import (
     QAction,
+    QCursor,
     QTextCursor,
     QColor,
     QTextDocument,
@@ -54,7 +55,7 @@ from ui.combo_box import FitPopupComboBox
 class InstantToolTipButton(QPushButton):
     def enterEvent(self, event):
         if self.toolTip():
-            anchor = self.mapToGlobal(self.rect().center()) + QPoint(0, 12)
+            anchor = QCursor.pos() + QPoint(12, 16)
             QToolTip.showText(anchor, self.toolTip(), self, self.rect())
         super().enterEvent(event)
 
@@ -126,6 +127,18 @@ class ContentView(QWidget):
         self.save_button.setFixedSize(28, 28)
         self.save_button.setIconSize(QSize(16, 16))
         self.save_button.setEnabled(False)
+        self.ai_suggestions_button = InstantToolTipButton()
+        self.ai_suggestions_icon = MaterialIcon("psychology")
+        self.ai_suggestions_button.setIcon(self.ai_suggestions_icon)
+        self.ai_suggestions_button.setToolTip(
+            get_translation("content_view.ai_suggestions_tooltip", self.language)
+        )
+        self.ai_suggestions_button.setAccessibleName(
+            get_translation("toolbar.ai_suggestions", self.language)
+        )
+        self.ai_suggestions_button.setFixedSize(28, 28)
+        self.ai_suggestions_button.setIconSize(QSize(16, 16))
+        self.ai_suggestions_button.setEnabled(False)
         self.undo_button = InstantToolTipButton()
         self.undo_icon = MaterialIcon("undo")
         self.undo_button.setIcon(self.undo_icon)
@@ -313,6 +326,7 @@ class ContentView(QWidget):
         top_bar_layout.addWidget(self.undo_button)
         top_bar_layout.addWidget(self.redo_button)
         top_bar_layout.addWidget(self.find_button)
+        top_bar_layout.addWidget(self.ai_suggestions_button)
         top_bar_layout.addWidget(self.save_button)
         top_bar_layout.addWidget(self.document_menu_button)
 
@@ -1715,6 +1729,12 @@ class ContentView(QWidget):
         self.save_button.setToolTip(
             get_translation("content_view.save_tooltip", self.language)
         )
+        self.ai_suggestions_button.setToolTip(
+            get_translation("content_view.ai_suggestions_tooltip", self.language)
+        )
+        self.ai_suggestions_button.setAccessibleName(
+            get_translation("toolbar.ai_suggestions", self.language)
+        )
         self.delete_button.setToolTip(
             get_translation("content_view.delete_tooltip", self.language)
         )
@@ -1784,6 +1804,7 @@ class ContentView(QWidget):
             (self.find_previous_icon, self.find_previous_button),
             (self.find_next_icon, self.find_next_button),
             (self.save_icon, self.save_button),
+            (self.ai_suggestions_icon, self.ai_suggestions_button),
             (self.export_annotated_icon, self.export_annotated_button),
             (self.delete_icon, self.delete_button),
             (self.document_menu_icon, self.document_menu_button),
@@ -1791,6 +1812,11 @@ class ContentView(QWidget):
             icon.set_color(fg, QIcon.Mode.Normal)
             icon.set_color(disabled_fg, QIcon.Mode.Disabled)
             button.setIcon(icon)
+        self.ai_suggestions_icon.set_color(
+            QColor("#C4B5FD" if is_dark else "#7C3AED"),
+            QIcon.Mode.Normal,
+        )
+        self.ai_suggestions_button.setIcon(self.ai_suggestions_icon)
         self.import_action.setIcon(self.import_icon)
         self.export_annotated_action.setIcon(self.export_annotated_icon)
         self.delete_document_action.setIcon(self.delete_icon)

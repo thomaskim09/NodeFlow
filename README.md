@@ -19,6 +19,10 @@ NodeFlow is a user-friendly desktop application designed to assist researchers a
     * Right-click on any selected text to bring up a dynamic, nested context menu of all your nodes.
     * Assign a code with a single click.
     * View all coded segments, their corresponding node, and the participant in a clear summary table.
+* **Optional AI-Assisted Suggestions**:
+    * Request temporary coding suggestions for selected text after explicit privacy confirmation.
+    * Suggestions are limited to existing nodes; review, edit, accept, or reject each one.
+    * AI never creates nodes or changes coding data autonomously.
 * **Powerful Data Export**:
     * Export your coded data to a structured **JSON** file, perfect for backups or further processing with other tools and AI.
     * Export a clean, formatted **Word Document** report, with your nodes as headings and the coded text listed beneath them.
@@ -37,6 +41,26 @@ NodeFlow is a user-friendly desktop application designed to assist researchers a
   get_translation('app.view.dashboard.welcome_message', language, title='NodeFlow')
   ```
 - To add a new language, create a new YAML file in `locales/` with the same key structure.
+
+## AI-Assisted Suggestions
+
+AI suggestions are optional and require explicit researcher approval before any
+node or coded segment is persisted. Selected text and the minimum existing node
+context may be sent to an external AI provider after confirmation. Suggestions
+are temporary and can be edited or rejected; NodeFlow does not claim that AI
+suggestions are accurate or complete. Suggestions are limited to existing
+nodes; AI never creates nodes. The editor toolbar button is enabled only when
+non-empty text is selected.
+
+Configure the provider, API key, model, and optional endpoint in the workspace
+Settings dialog. The password-masked key is saved locally in
+`data/settings.json`, so the startup script can use it on the next launch.
+Environment variables such as `NODEFLOW_AI_API_KEY` override saved settings.
+Gemini is the default provider and uses `gemini-flash-lite-latest`; optionally
+set `NODEFLOW_AI_MODEL` to choose another Gemini model, including
+`gemini-flash-latest`. To use an OpenAI-compatible provider instead, set
+`NODEFLOW_AI_PROVIDER=openai_compatible` and `NODEFLOW_AI_API_URL`. The key is
+not stored in SQLite or exported project files.
 
 ## macOS: Step-by-Step (Run from Source)
 

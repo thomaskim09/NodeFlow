@@ -11,18 +11,31 @@ from PySide6.QtWidgets import (
     QFormLayout,
     QLabel,
     QDialogButtonBox,
+    QLineEdit,
     QSpinBox,
     QCheckBox,
     QColorDialog,
+    QMessageBox,
+    QProgressDialog,
+    QTabWidget,
 )
 from PySide6.QtCore import Qt, Signal, QSize, QTimer, QSignalBlocker
-from PySide6.QtGui import QAction, QColor, QFont, QIcon, QKeySequence, QShortcut
+from PySide6.QtGui import (
+    QAction,
+    QColor,
+    QFont,
+    QIcon,
+    QKeySequence,
+    QShortcut,
+    QTextCursor,
+)
 
 from ui.combo_box import FitPopupComboBox
 from .participant_manager import ParticipantManager
 from .node_tree_manager import NodeTreeManager
 from .content_view import ContentView
 from .coded_segments_view import CodedSegmentsView
+from .ai_suggestion_dialog import AISuggestionDialog
 from ui.dashboard.dashboard_view import DashboardView
 
 from managers.export_manager import export_to_word, export_to_json, export_to_excel
@@ -32,6 +45,14 @@ from qt_material_icons import MaterialIcon
 from utils.common import get_translation
 from repositories.workspace_snapshot_repository import workspace_snapshot_repository
 from services.workspace_history_service import WorkspaceCommand, WorkspaceHistory
+from services.ai_suggestion_service import (
+    AIConfigurationError,
+    AISuggestion,
+    AISuggestionError,
+    AISuggestionService,
+    DEFAULT_GEMINI_MODEL,
+)
+from services.worker_service import TaskThread
 
 
 class SettingsDialog(QDialog):
@@ -43,9 +64,16 @@ class SettingsDialog(QDialog):
         self.settings = load_settings()
         self.language = self.settings.get("language", "English")
         self.setWindowTitle(get_translation("workspace.settings", self.language))
-        self.setMinimumWidth(300)
+        self.setMinimumSize(680, 500)
+        self.resize(760, 540)
         layout = QVBoxLayout(self)
-        form_layout = QFormLayout()
+        layout.setContentsMargins(20, 20, 20, 16)
+        self.settings_tabs = QTabWidget()
+
+        general_page = QWidget()
+        form_layout = QFormLayout(general_page)
+        form_layout.setVerticalSpacing(14)
+        form_layout.setHorizontalSpacing(18)
         self.theme_combo = FitPopupComboBox()
         self.theme_combo.addItems(["Light", "Dark"])
         saved_theme = self.settings.get("theme", "Light")
@@ -109,7 +137,72 @@ class SettingsDialog(QDialog):
             QLabel(get_translation("workspace.find_match_color", self.language)),
             self.find_match_color_button,
         )
-        layout.addLayout(form_layout)
+
+        ai_page = QWidget()
+        ai_form_layout = QFormLayout(ai_page)
+        ai_form_layout.setVerticalSpacing(14)
+        ai_form_layout.setHorizontalSpacing(18)
+        ai_note = QLabel(
+            get_translation("workspace.ai_settings_note", self.language)
+        )
+        ai_note.setWordWrap(True)
+        ai_form_layout.addRow(ai_note)
+        self.ai_provider_combo = FitPopupComboBox()
+        self.ai_provider_combo.addItem(
+            get_translation("workspace.ai_provider_gemini", self.language), "gemini"
+        )
+        self.ai_provider_combo.addItem(
+            get_translation("workspace.ai_provider_openai", self.language),
+            "openai_compatible",
+        )
+        saved_provider = self.settings.get("ai_provider", "gemini")
+        provider_index = self.ai_provider_combo.findData(saved_provider)
+        self.ai_provider_combo.setCurrentIndex(max(0, provider_index))
+        self.ai_provider_combo.setMinimumWidth(240)
+        ai_form_layout.addRow(
+            QLabel(get_translation("workspace.ai_provider", self.language)),
+            self.ai_provider_combo,
+        )
+        self.ai_api_key_edit = QLineEdit(
+            str(self.settings.get("ai_api_key") or "")
+        )
+        self.ai_api_key_edit.setEchoMode(QLineEdit.EchoMode.Password)
+        self.ai_api_key_edit.setMinimumWidth(460)
+        self.ai_api_key_edit.setPlaceholderText(
+            get_translation("workspace.ai_api_key_placeholder", self.language)
+        )
+        ai_form_layout.addRow(
+            QLabel(get_translation("workspace.ai_api_key", self.language)),
+            self.ai_api_key_edit,
+        )
+        self.ai_model_edit = QLineEdit(
+            str(self.settings.get("ai_model") or DEFAULT_GEMINI_MODEL)
+        )
+        self.ai_model_edit.setMinimumWidth(460)
+        ai_form_layout.addRow(
+            QLabel(get_translation("workspace.ai_model", self.language)),
+            self.ai_model_edit,
+        )
+        self.ai_api_url_edit = QLineEdit(
+            str(self.settings.get("ai_api_url") or "")
+        )
+        self.ai_api_url_edit.setMinimumWidth(460)
+        self.ai_api_url_edit.setPlaceholderText(
+            get_translation("workspace.ai_api_url_placeholder", self.language)
+        )
+        ai_form_layout.addRow(
+            QLabel(get_translation("workspace.ai_api_url", self.language)),
+            self.ai_api_url_edit,
+        )
+        self.settings_tabs.addTab(
+            general_page,
+            get_translation("workspace.general_category", self.language),
+        )
+        self.settings_tabs.addTab(
+            ai_page,
+            get_translation("workspace.ai_category", self.language),
+        )
+        layout.addWidget(self.settings_tabs, 1)
         button_box = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Save
             | QDialogButtonBox.StandardButton.Cancel
@@ -133,6 +226,10 @@ class SettingsDialog(QDialog):
         self.settings["autosave_enabled"] = self.autosave_checkbox.isChecked()
         self.settings["autosave_delay_ms"] = self.autosave_delay_spin.value()
         self.settings["find_match_color"] = self.find_match_color
+        self.settings["ai_provider"] = self.ai_provider_combo.currentData()
+        self.settings["ai_api_key"] = self.ai_api_key_edit.text().strip()
+        self.settings["ai_model"] = self.ai_model_edit.text().strip()
+        self.settings["ai_api_url"] = self.ai_api_url_edit.text().strip()
         save_settings(self.settings)
         app = QApplication.instance()
         if app:
@@ -168,6 +265,9 @@ class WorkspaceView(QWidget):
         self._last_added_doc_id = None
         self._in_edit_mode = False
         self._open_dashboards = []
+        self._ai_thread = None
+        self._ai_request_active = False
+        self._ai_progress_dialog = None
         self.history = WorkspaceHistory(int(load_settings().get("undo_depth", 100)))
         self.history.add_changed_callback(self.update_undo_redo_actions)
         main_layout = QVBoxLayout(self)
@@ -216,6 +316,9 @@ class WorkspaceView(QWidget):
         self.left_pane.setMinimumWidth(280)
         self.left_pane_layout = QVBoxLayout(self.left_pane)
         self.center_pane = ContentView(self.project_id, self.language)
+        self.center_pane.ai_suggestions_button.clicked.connect(
+            self.request_ai_suggestions
+        )
         self.center_pane.setMinimumWidth(420)
         self.center_pane.setMinimumHeight(260)
         self.bottom_pane = CodedSegmentsView(
@@ -442,6 +545,7 @@ class WorkspaceView(QWidget):
             self.center_pane.update_theme(theme)
         if hasattr(self.center_pane, "apply_autosave_settings"):
             self.center_pane.apply_autosave_settings()
+        self._update_ai_suggestions_button()
         self._apply_theme_icons(theme)
         if hasattr(self.bottom_pane, "update_language"):
             self.bottom_pane.update_language(self.language)
@@ -554,6 +658,7 @@ class WorkspaceView(QWidget):
 
         finally:
             QApplication.restoreOverrideCursor()
+        self._update_ai_suggestions_button()
 
     def on_segments_changed(self):
         """
@@ -569,23 +674,254 @@ class WorkspaceView(QWidget):
         self.node_tree_manager.refresh_stats()
         self.participant_manager.refresh_stats()
 
-    def code_selection(self, node_id):
+    def _capture_ai_selection(self):
+        if self._in_edit_mode or not self.center_pane.current_document_id:
+            return None
         text_edit = self.center_pane.text_edit
         cursor = text_edit.textCursor()
         if not cursor.hasSelection():
+            return None
+        start, end = cursor.selectionStart(), cursor.selectionEnd()
+        document_text = text_edit.toPlainText()
+        if not 0 <= start < end <= len(document_text):
+            return None
+        selected_text = document_text[start:end]
+        if not selected_text.strip():
+            return None
+        return {
+            "document_id": self.center_pane.current_document_id,
+            "participant_id": self.center_pane.current_participant_id,
+            "start": start,
+            "end": end,
+            "text": selected_text,
+        }
+
+    def _get_ai_node_context(self):
+        nodes = database.get_nodes_for_project(self.project_id)
+        context = [
+            {"id": node["id"], "name": node["name"], "parent_id": node["parent_id"]}
+            for node in nodes
+        ]
+        node_details = {
+            node["id"]: {
+                "name": node["name"],
+                "color": node.get("color") or "#9CA3AF",
+            }
+            for node in nodes
+        }
+        return context, node_details
+
+    def request_ai_suggestions(self):
+        if self._ai_request_active or (
+            self._ai_thread is not None and self._ai_thread.isRunning()
+        ):
             return
-        selection_end_pos = cursor.selectionEnd()
+        selection = self._capture_ai_selection()
+        if selection is None:
+            self._update_ai_suggestions_button()
+            return
+
+        privacy_reply = QMessageBox.question(
+            self,
+            get_translation("ai_suggestions.privacy_title", self.language),
+            get_translation("ai_suggestions.privacy_message", self.language),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if privacy_reply != QMessageBox.StandardButton.Yes:
+            return
+
+        node_context, node_details = self._get_ai_node_context()
+        service = AISuggestionService()
+        self._ai_request_active = True
+        self._update_ai_suggestions_button()
+        self._show_ai_progress_dialog()
+        self.center_pane.ai_suggestions_button.setToolTip(
+            get_translation("ai_suggestions.loading", self.language)
+        )
+        thread = TaskThread(service.suggest, selection["text"], node_context)
+        thread.setParent(self)
+        self._ai_thread = thread
+        thread.succeeded.connect(
+            lambda suggestions: self._on_ai_suggestions_ready(
+                suggestions, selection, node_details
+            )
+        )
+        thread.failed.connect(self._on_ai_suggestions_failed)
+        thread.finished.connect(self._on_ai_thread_finished)
+        thread.start()
+
+    def _on_ai_suggestions_ready(self, suggestions, selection, node_details):
+        self._close_ai_progress_dialog()
+        if not isinstance(suggestions, list):
+            return
+        if not suggestions:
+            QMessageBox.information(
+                self,
+                get_translation("ai_suggestions.title", self.language),
+                get_translation("ai_suggestions.no_suggestions", self.language),
+            )
+            return
+        dialog = AISuggestionDialog(
+            suggestions,
+            lambda suggestion: self._accept_ai_existing_suggestion(
+                suggestion, selection
+            ),
+            node_details,
+            language=self.language,
+            parent=self,
+        )
+        dialog.exec()
+
+    def _on_ai_suggestions_failed(self, failure):
+        self._close_ai_progress_dialog()
+        error = failure[1] if isinstance(failure, tuple) and len(failure) > 1 else failure
+        if isinstance(error, AIConfigurationError):
+            message = get_translation("ai_suggestions.missing_api_key", self.language)
+        elif isinstance(error, AISuggestionError):
+            message = get_translation("ai_suggestions.request_failed", self.language)
+        else:
+            message = get_translation("ai_suggestions.request_failed", self.language)
+        message_box = QMessageBox(
+            QMessageBox.Icon.Warning,
+            get_translation("ai_suggestions.error_title", self.language),
+            message,
+            QMessageBox.StandardButton.Ok,
+            self,
+        )
+        settings_button = None
+        if isinstance(error, AIConfigurationError):
+            settings_button = message_box.addButton(
+                get_translation("ai_suggestions.open_settings", self.language),
+                QMessageBox.ButtonRole.ActionRole,
+            )
+        message_box.exec()
+        if settings_button is not None and message_box.clickedButton() is settings_button:
+            self.open_settings()
+
+    def _on_ai_thread_finished(self):
+        self._close_ai_progress_dialog()
+        self._ai_request_active = False
+        self._update_ai_suggestions_button()
+        thread = self._ai_thread
+        self._ai_thread = None
+        if thread is not None:
+            thread.deleteLater()
+
+    def _show_ai_progress_dialog(self):
+        self._close_ai_progress_dialog()
+        dialog = QProgressDialog(
+            get_translation("ai_suggestions.loading", self.language),
+            None,
+            0,
+            0,
+            self,
+        )
+        dialog.setWindowTitle(get_translation("ai_suggestions.title", self.language))
+        dialog.setWindowModality(Qt.WindowModality.WindowModal)
+        dialog.setMinimumDuration(0)
+        dialog.setAutoClose(False)
+        dialog.setAutoReset(False)
+        dialog.setCancelButton(None)
+        self._ai_progress_dialog = dialog
+        dialog.show()
+
+    def _close_ai_progress_dialog(self):
+        dialog = self._ai_progress_dialog
+        self._ai_progress_dialog = None
+        if dialog is not None:
+            dialog.close()
+            dialog.deleteLater()
+
+    def _update_ai_suggestions_button(self, selection_enabled=None):
+        if selection_enabled is None:
+            selection_enabled = self._capture_ai_selection() is not None
+        enabled = (
+            bool(selection_enabled)
+            and not self._in_edit_mode
+            and not self._ai_request_active
+            and bool(self.center_pane.current_document_id)
+        )
+        self.center_pane.ai_suggestions_button.setEnabled(enabled)
+        if not self._ai_request_active:
+            self.center_pane.ai_suggestions_button.setToolTip(
+                get_translation("content_view.ai_suggestions_tooltip", self.language)
+            )
+
+    def _validate_ai_selection(self, selection):
+        if self.center_pane.current_document_id != selection["document_id"]:
+            self._show_stale_ai_selection_message()
+            return False
+        document_text = self.center_pane.text_edit.toPlainText()
+        start, end = selection["start"], selection["end"]
+        if not 0 <= start < end <= len(document_text):
+            self._show_stale_ai_selection_message()
+            return False
+        if document_text[start:end] != selection["text"]:
+            self._show_stale_ai_selection_message()
+            return False
+        return True
+
+    def _show_stale_ai_selection_message(self):
+        QMessageBox.warning(
+            self,
+            get_translation("ai_suggestions.error_title", self.language),
+            get_translation("ai_suggestions.selection_changed", self.language),
+        )
+
+    def _accept_ai_existing_suggestion(self, suggestion: AISuggestion, selection):
+        if (
+            isinstance(suggestion.existing_node_id, bool)
+            or not isinstance(suggestion.existing_node_id, int)
+            or not self._validate_ai_selection(selection)
+        ):
+            return False
+        node_ids = {node["id"] for node in database.get_nodes_for_project(self.project_id)}
+        if suggestion.existing_node_id not in node_ids:
+            QMessageBox.warning(
+                self,
+                get_translation("ai_suggestions.error_title", self.language),
+                get_translation("ai_suggestions.node_missing", self.language),
+            )
+            return False
+        try:
+            return self.code_selection(suggestion.existing_node_id, selection)
+        except Exception:
+            QMessageBox.warning(
+                self,
+                get_translation("ai_suggestions.error_title", self.language),
+                get_translation("ai_suggestions.apply_failed", self.language),
+            )
+            return False
+
+    def code_selection(self, node_id, selection=None):
+        text_edit = self.center_pane.text_edit
+        cursor = text_edit.textCursor()
+        if selection is not None:
+            start = int(selection["start"])
+            end = int(selection["end"])
+            document_text = text_edit.toPlainText()
+            if not 0 <= start < end <= len(document_text):
+                return False
+            cursor.setPosition(start)
+            cursor.setPosition(end, QTextCursor.MoveMode.KeepAnchor)
+            text_edit.setTextCursor(cursor)
+            text = document_text[start:end]
+        else:
+            if not cursor.hasSelection():
+                return False
+            start, end = cursor.selectionStart(), cursor.selectionEnd()
+            text = cursor.selectedText()
+        selection_end_pos = end
         scrollbar = text_edit.verticalScrollBar()
         original_scroll_value = scrollbar.value()
-        start, end = cursor.selectionStart(), cursor.selectionEnd()
-        text = cursor.selectedText()
         doc_id = self.center_pane.current_document_id
         participant_id = self.center_pane.current_participant_id
         if not doc_id:
-            return
+            return False
         if self.center_pane.is_dirty:
             if not self.center_pane.save_document(show_success_prompt=False):
-                return
+                return False
         segment_id = None
         segment_snapshot = None
         segment_added = False
@@ -631,6 +967,7 @@ class WorkspaceView(QWidget):
             )
         finally:
             QApplication.restoreOverrideCursor()
+        return True
 
     def handle_text_selection_changed(self, enabled):
         # Only allow selection mode if not in edit segment mode
@@ -638,12 +975,14 @@ class WorkspaceView(QWidget):
             self.node_tree_manager.set_selection_mode(enabled)
         else:
             self.node_tree_manager.set_selection_mode(False)
+        self._update_ai_suggestions_button()
 
     def handle_edit_mode_changed(self, in_edit_mode):
         self._in_edit_mode = in_edit_mode
         # Always disable selection mode when entering edit mode
         if in_edit_mode:
             self.node_tree_manager.set_selection_mode(False)
+        self._update_ai_suggestions_button()
 
 
 def center_on_screen(window):
