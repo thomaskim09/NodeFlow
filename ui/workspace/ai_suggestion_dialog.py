@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QInputDialog,
+    QLineEdit,
     QLabel,
     QPushButton,
     QScrollArea,
@@ -29,11 +30,13 @@ class AISuggestionDialog(QDialog):
         node_details: dict[int, dict[str, str]],
         language: str = "English",
         parent=None,
+        create_new_callback: Callable[[AISuggestion, str], bool] | None = None,
     ) -> None:
         super().__init__(parent)
         self.language = language
         self.suggestions = list(suggestions)
         self.accept_existing_callback = accept_existing_callback
+        self.create_new_callback = create_new_callback or (lambda suggestion, name: False)
         self.node_details = node_details
         self.setWindowTitle(get_translation("ai_suggestions.title", language))
         self.setMinimumSize(720, 520)
@@ -101,28 +104,37 @@ class AISuggestionDialog(QDialog):
         layout.setContentsMargins(14, 12, 14, 12)
         layout.setSpacing(8)
 
-        details = self.node_details.get(suggestion.existing_node_id, {})
-        node_name = details.get("name", str(suggestion.existing_node_id))
-        node_color = self._safe_color(details.get("color"))
-
         heading = QHBoxLayout()
         heading.setSpacing(10)
-        color_swatch = QLabel()
-        color_swatch.setFixedSize(16, 16)
-        color_swatch.setStyleSheet(
-            f"background-color: {node_color}; border: 1px solid #777; "
-            "border-radius: 8px;"
-        )
-        color_swatch.setToolTip(node_name)
-        heading.addWidget(color_swatch)
-
-        name_label = QLabel(suggestion.name)
-        name_font = name_label.font()
-        name_font.setBold(True)
-        name_font.setPointSize(name_font.pointSize() + 1)
-        name_label.setFont(name_font)
-        name_label.setWordWrap(True)
-        heading.addWidget(name_label, 1)
+        if suggestion.existing_node_id is None:
+            heading.addWidget(
+                QLabel(get_translation("ai_suggestions.new_code_suggestion", self.language))
+            )
+            name_editor = QLineEdit(suggestion.name)
+            name_editor.setAccessibleName("Suggested new code name")
+            heading.addWidget(name_editor, 1)
+        else:
+            details = self.node_details.get(suggestion.existing_node_id, {})
+            node_name = details.get("name", str(suggestion.existing_node_id))
+            node_color = self._safe_color(details.get("color"))
+            color_swatch = QLabel()
+            color_swatch.setFixedSize(16, 16)
+            color_swatch.setStyleSheet(
+                f"background-color: {node_color}; border: 1px solid #777; "
+                "border-radius: 8px;"
+            )
+            color_swatch.setToolTip(node_name)
+            heading.addWidget(color_swatch)
+            heading.addWidget(
+                QLabel(get_translation("ai_suggestions.existing_code", self.language))
+            )
+            name_label = QLabel(suggestion.name)
+            name_font = name_label.font()
+            name_font.setBold(True)
+            name_font.setPointSize(name_font.pointSize() + 1)
+            name_label.setFont(name_font)
+            name_label.setWordWrap(True)
+            heading.addWidget(name_label, 1)
         layout.addLayout(heading)
 
         reason_label = QLabel(
@@ -135,34 +147,48 @@ class AISuggestionDialog(QDialog):
         reason_label.setWordWrap(True)
         layout.addWidget(reason_label)
 
-        match_label = QLabel(
-            get_translation(
-                "ai_suggestions.existing_node_match",
-                self.language,
-                name=node_name,
+        if suggestion.existing_node_id is not None:
+            match_label = QLabel(
+                get_translation(
+                    "ai_suggestions.existing_node_match",
+                    self.language,
+                    name=node_name,
+                )
             )
-        )
-        match_label.setWordWrap(True)
-        layout.addWidget(match_label)
+            match_label.setWordWrap(True)
+            layout.addWidget(match_label)
 
         buttons = QHBoxLayout()
         buttons.setSpacing(6)
-        accept_button = self._icon_button(
-            "check",
-            get_translation("ai_suggestions.accept_tooltip", self.language),
-            "#15803D",
-        )
-        accept_button.clicked.connect(
-            lambda checked=False: self._apply_suggestion(suggestion)
-        )
-        edit_button = self._icon_button(
-            "edit",
-            get_translation("ai_suggestions.edit_tooltip", self.language),
-            "#2563EB",
-        )
-        edit_button.clicked.connect(
-            lambda checked=False: self._edit_suggestion(suggestion)
-        )
+        if suggestion.existing_node_id is None:
+            create_button = QPushButton(
+                get_translation("ai_suggestions.create_and_code", self.language)
+            )
+            create_button.clicked.connect(
+                lambda checked=False, editor=name_editor: self._create_new_suggestion(
+                    suggestion, editor.text()
+                )
+            )
+            buttons.addWidget(create_button)
+        else:
+            accept_button = self._icon_button(
+                "check",
+                get_translation("ai_suggestions.accept_tooltip", self.language),
+                "#15803D",
+            )
+            accept_button.clicked.connect(
+                lambda checked=False: self._apply_suggestion(suggestion)
+            )
+            edit_button = self._icon_button(
+                "edit",
+                get_translation("ai_suggestions.edit_tooltip", self.language),
+                "#2563EB",
+            )
+            edit_button.clicked.connect(
+                lambda checked=False: self._edit_suggestion(suggestion)
+            )
+            buttons.addWidget(accept_button)
+            buttons.addWidget(edit_button)
         reject_button = self._icon_button(
             "close",
             get_translation("ai_suggestions.reject_tooltip", self.language),
@@ -171,8 +197,6 @@ class AISuggestionDialog(QDialog):
         reject_button.clicked.connect(
             lambda checked=False: self._reject_suggestion(suggestion)
         )
-        buttons.addWidget(accept_button)
-        buttons.addWidget(edit_button)
         buttons.addWidget(reject_button)
         buttons.addStretch()
         layout.addLayout(buttons)
@@ -217,6 +241,11 @@ class AISuggestionDialog(QDialog):
             existing_node_id=suggestion.existing_node_id,
         )
         self._render_suggestions()
+
+    def _create_new_suggestion(self, suggestion: AISuggestion, name: str) -> None:
+        if self.create_new_callback(suggestion, name) is not False:
+            self.suggestions.remove(suggestion)
+            self._render_suggestions()
 
     def _reject_suggestion(self, suggestion: AISuggestion) -> None:
         self.suggestions.remove(suggestion)

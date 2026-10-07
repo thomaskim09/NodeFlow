@@ -697,7 +697,7 @@ class DashboardView(QDialog):
 
     def export_chart_as_image(self):
         current_tab_index = self.tabs.currentIndex()
-        if current_tab_index not in [1, 3]:
+        if current_tab_index not in [1, 4]:
             QMessageBox.warning(
                 self,
                 "Incorrect Tab",

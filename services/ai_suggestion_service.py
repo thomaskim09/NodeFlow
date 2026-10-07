@@ -18,11 +18,15 @@ DEFAULT_GEMINI_API_URL = (
 DEFAULT_GEMINI_MODEL = "gemini-flash-lite-latest"
 DEFAULT_TIMEOUT_SECONDS = 30
 SUGGESTION_SYSTEM_PROMPT = (
-    "Suggest approximately 3 to 5 coding assignments from the supplied "
-    "existing NodeFlow nodes for the selected research text. Return only "
-    "a JSON object with a suggestions array. Each item must contain name, "
-    "reason, and an existing_node_id that is one of the supplied node IDs. "
-    "Never invent a node, propose a new node, or return a null ID."
+    "You are assisting with qualitative coding. Propose approximately 3 to 5 "
+    "concise, useful coding suggestions grounded only in the selected research "
+    "text. Suggestions are proposals for researcher review, not final truth. "
+    "Reuse a supplied existing NodeFlow node when it fits semantically; only "
+    "propose a new code when the existing nodes do not adequately represent "
+    "the selected meaning. Do not invent unsupported interpretations. Return "
+    "only a JSON object with a suggestions array. Each item must contain name, "
+    "reason, and existing_node_id, where existing_node_id is one supplied node "
+    "ID or null for a proposed new code."
 )
 
 
@@ -46,7 +50,7 @@ class AIResponseError(AISuggestionError):
 class AISuggestion:
     name: str
     reason: str
-    existing_node_id: int
+    existing_node_id: int | None
 
 
 Transport = Callable[[Request, float], bytes | str | dict[str, Any]]
@@ -316,6 +320,7 @@ class AISuggestionService:
             raise AIResponseError("The AI provider response is missing suggestions.")
 
         suggestions = []
+        seen: set[tuple[str, int | None]] = set()
         for item in content["suggestions"]:
             if not isinstance(item, dict):
                 raise AIResponseError("The AI provider returned an invalid suggestion.")
@@ -328,12 +333,21 @@ class AISuggestionService:
                 raise AIResponseError("The AI provider returned an invalid suggestion reason.")
             if (
                 isinstance(existing_node_id, bool)
-                or not isinstance(existing_node_id, int)
-                or existing_node_id not in valid_node_ids
+                or (
+                    existing_node_id is not None
+                    and (
+                        not isinstance(existing_node_id, int)
+                        or existing_node_id not in valid_node_ids
+                    )
+                )
             ):
                 raise AIResponseError(
-                    "AI suggestions must match existing nodes."
+                    "AI suggestions must reference an existing node or null."
                 )
+            dedupe_key = (name.strip().casefold(), existing_node_id)
+            if dedupe_key in seen:
+                continue
+            seen.add(dedupe_key)
             suggestions.append(
                 AISuggestion(
                     name=name.strip(),

@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QProgressDialog,
 )
-from PySide6.QtCore import Qt, QTimer, QSize
+from PySide6.QtCore import Qt, QSize
 from PySide6.QtGui import QFont, QPixmap, QKeyEvent, QColor
 from qt_material_icons import MaterialIcon
 from PySide6.QtWidgets import QApplication

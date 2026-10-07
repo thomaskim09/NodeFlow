@@ -21,8 +21,8 @@ NodeFlow is a user-friendly desktop application designed to assist researchers a
     * View all coded segments, their corresponding node, and the participant in a clear summary table.
 * **Optional AI-Assisted Suggestions**:
     * Request temporary coding suggestions for selected text after explicit privacy confirmation.
-    * Suggestions are limited to existing nodes; review, edit, accept, or reject each one.
-    * AI never creates nodes or changes coding data autonomously.
+    * Suggestions may match existing nodes or propose a new qualitative code; review, edit, accept, or reject each one.
+    * New nodes are created and coded only after the researcher explicitly chooses **Create & Code**. AI never creates nodes or changes coding data autonomously.
 * **Powerful Data Export**:
     * Export your coded data to a structured **JSON** file, perfect for backups or further processing with other tools and AI.
     * Export a clean, formatted **Word Document** report, with your nodes as headings and the coded text listed beneath them.
@@ -48,9 +48,11 @@ AI suggestions are optional and require explicit researcher approval before any
 node or coded segment is persisted. Selected text and the minimum existing node
 context may be sent to an external AI provider after confirmation. Suggestions
 are temporary and can be edited or rejected; NodeFlow does not claim that AI
-suggestions are accurate or complete. Suggestions are limited to existing
-nodes; AI never creates nodes. The editor toolbar button is enabled only when
-non-empty text is selected.
+suggestions are accurate or complete. A suggestion may match an existing node
+or propose a new root code. New nodes are never created automatically: the
+researcher must explicitly choose Create & Code, or confirm Use Existing & Code
+when a matching node already exists. The editor toolbar button is enabled only
+when non-empty text is selected.
 
 Configure the provider, API key, model, and optional endpoint in the workspace
 Settings dialog. The password-masked key is saved locally in

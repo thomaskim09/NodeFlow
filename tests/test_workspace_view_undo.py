@@ -464,6 +464,9 @@ def test_refresh_all_views_keeps_document_cursor_and_scroll(qtbot):
     widget = WorkspaceView(project["id"], project["name"], lambda: None)
     qtbot.addWidget(widget)
     widget.show()
+    widget.activateWindow()
+    widget.raise_()
+    qtbot.wait(10)
 
     cursor = widget.center_pane.text_edit.textCursor()
     cursor.setPosition(900)

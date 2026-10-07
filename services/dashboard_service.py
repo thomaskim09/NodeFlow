@@ -34,15 +34,17 @@ class DashboardService:
             "nodes_by_parent": nodes_by_parent,
         }
         if query.node_id != -1:
-            all_project_segments = database.get_coded_segments_for_project(query.project_id)
-            node_stats, _ = self.calculate_direct_stats(all_project_segments)
+            _, scoped_segments = self.get_scoped_data(
+                query.project_id, query.doc_id, query.part_id
+            )
+            node_stats, _ = self.calculate_direct_stats(scoped_segments)
             results.update(
                 {
                     "node_id": query.node_id,
                     "aggregated_stats": self.calculate_aggregated_stats(
                         nodes_by_parent, node_stats
                     ),
-                    "all_project_segments": all_project_segments,
+                    "all_project_segments": scoped_segments,
                 }
             )
         else:
@@ -92,7 +94,7 @@ class DashboardService:
                     segments = [
                         segment
                         for segment in segments
-                        if segment["participant_name"] == participant
+                        if segment.get("participant_id") == part_id
                     ]
             return total_words, segments
 

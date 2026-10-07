@@ -32,7 +32,7 @@ from PySide6.QtGui import (
 
 from ui.combo_box import FitPopupComboBox
 from .participant_manager import ParticipantManager
-from .node_tree_manager import NodeTreeManager
+from .node_tree_manager import NodeTreeManager, PRESET_COLORS
 from .content_view import ContentView
 from .coded_segments_view import CodedSegmentsView
 from .ai_suggestion_dialog import AISuggestionDialog
@@ -378,7 +378,7 @@ class WorkspaceView(QWidget):
         )
         self.center_pane.document_added.connect(self.on_document_added)
         self.center_pane.document_deleted.connect(self.on_document_deleted)
-        self.center_pane.bulk_documents_added.connect(self.on_document_deleted)
+        self.center_pane.bulk_documents_added.connect(self.on_bulk_documents_added)
         self.center_pane.segment_clicked.connect(
             self.bottom_pane.highlight_segment_by_id
         )
@@ -610,6 +610,11 @@ class WorkspaceView(QWidget):
         self._last_added_doc_id = None
         self.refresh_all_views()
 
+    def on_bulk_documents_added(self):
+        """Refreshes the workspace after a bulk document import."""
+        self._last_added_doc_id = None
+        self.refresh_all_views()
+
     def refresh_all_views(self):
         """A single, reliable method to refresh the entire workspace."""
         previous_doc_id = self.center_pane.current_document_id
@@ -770,6 +775,9 @@ class WorkspaceView(QWidget):
             node_details,
             language=self.language,
             parent=self,
+            create_new_callback=lambda suggestion, name: self._create_ai_new_suggestion(
+                suggestion, name, selection
+            ),
         )
         dialog.exec()
 
@@ -852,6 +860,13 @@ class WorkspaceView(QWidget):
         if self.center_pane.current_document_id != selection["document_id"]:
             self._show_stale_ai_selection_message()
             return False
+        if self.center_pane.current_participant_id != selection["participant_id"]:
+            QMessageBox.warning(
+                self,
+                get_translation("ai_suggestions.error_title", self.language),
+                get_translation("ai_suggestions.participant_changed", self.language),
+            )
+            return False
         document_text = self.center_pane.text_edit.toPlainText()
         start, end = selection["start"], selection["end"]
         if not 0 <= start < end <= len(document_text):
@@ -893,6 +908,124 @@ class WorkspaceView(QWidget):
                 get_translation("ai_suggestions.apply_failed", self.language),
             )
             return False
+
+    def _create_ai_new_suggestion(self, suggestion, proposed_name, selection):
+        if not self._validate_ai_selection(selection):
+            return False
+        name = proposed_name.strip()
+        if not name:
+            QMessageBox.warning(
+                self,
+                get_translation("ai_suggestions.error_title", self.language),
+                get_translation("ai_suggestions.invalid_new_name", self.language),
+            )
+            return False
+
+        nodes = database.get_nodes_for_project(self.project_id)
+        normalized_name = name.casefold()
+        existing_node = next(
+            (
+                node
+                for node in nodes
+                if str(node.get("name", "")).strip().casefold() == normalized_name
+            ),
+            None,
+        )
+        if existing_node is not None:
+            if not self._confirm_use_existing_node(existing_node["name"]):
+                return False
+            return self._accept_ai_existing_suggestion(
+                AISuggestion(
+                    name=name,
+                    reason=suggestion.reason,
+                    existing_node_id=existing_node["id"],
+                ),
+                selection,
+            )
+
+        if self.center_pane.is_dirty and not self.center_pane.save_document(
+            show_success_prompt=False
+        ):
+            return False
+
+        existing_colors = {node.get("color") for node in nodes}
+        new_color = next(
+            (color for color in PRESET_COLORS if color not in existing_colors),
+            PRESET_COLORS[0],
+        )
+        document_id = selection["document_id"]
+        participant_id = selection["participant_id"]
+        start, end, text = selection["start"], selection["end"], selection["text"]
+        node_id = None
+        snapshot = None
+
+        def do():
+            nonlocal node_id, snapshot
+            if snapshot is not None:
+                workspace_snapshot_repository.restore_node_subtree_snapshot(snapshot)
+                return
+            try:
+                node_id = database.add_node(
+                    self.project_id, name, None, new_color
+                )
+                database.add_coded_segment(
+                    document_id, node_id, participant_id, start, end, text
+                )
+                snapshot = workspace_snapshot_repository.get_node_subtree_snapshot(
+                    node_id
+                )
+                if not snapshot or not snapshot.get("segments"):
+                    raise RuntimeError("Created AI node snapshot is incomplete.")
+            except Exception:
+                if node_id is not None:
+                    database.delete_node_and_children(node_id)
+                    node_id = None
+                raise
+
+        def undo():
+            if node_id is not None:
+                database.delete_node_and_children(node_id)
+
+        try:
+            self.execute_workspace_command(
+                WorkspaceCommand(
+                    "Create Node and Code Selection",
+                    do,
+                    undo,
+                    self.refresh_all_views,
+                )
+            )
+        except Exception:
+            self.refresh_all_views()
+            QMessageBox.warning(
+                self,
+                get_translation("ai_suggestions.error_title", self.language),
+                get_translation("ai_suggestions.new_node_failed", self.language),
+            )
+            return False
+        return True
+
+    def _confirm_use_existing_node(self, node_name):
+        message_box = QMessageBox(
+            QMessageBox.Icon.Question,
+            get_translation("ai_suggestions.duplicate_title", self.language),
+            get_translation(
+                "ai_suggestions.duplicate_message",
+                self.language,
+                name=node_name,
+            ),
+            parent=self,
+        )
+        use_button = message_box.addButton(
+            get_translation("ai_suggestions.use_existing", self.language),
+            QMessageBox.ButtonRole.AcceptRole,
+        )
+        message_box.addButton(
+            get_translation("workspace.cancel", self.language),
+            QMessageBox.ButtonRole.RejectRole,
+        )
+        message_box.exec()
+        return message_box.clickedButton() is use_button
 
     def code_selection(self, node_id, selection=None):
         text_edit = self.center_pane.text_edit

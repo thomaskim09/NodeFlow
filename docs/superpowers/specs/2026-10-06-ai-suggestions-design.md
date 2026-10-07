@@ -3,13 +3,15 @@
 ## Intent
 
 Add an optional, researcher-controlled workflow that proposes coding nodes for
-the currently selected document text. The AI may suggest names and reasons, but
-it never writes coding data or creates nodes. SQLite changes occur only after an
-explicit researcher action.
+the currently selected document text. The AI may suggest existing codes or
+propose names and reasons for new root codes, but it never writes coding data
+or creates nodes automatically. SQLite changes occur only after an explicit
+researcher action.
 
 Success means that a researcher can select text, opt in to an external request,
-review temporary suggestions matched to existing nodes, accept an existing
-node, edit a suggestion name, or reject it. AI suggestions never create nodes.
+review temporary suggestions matched to existing nodes or proposed new root
+codes, accept an existing node, create and code a new node, edit a suggestion
+name, or reject it. AI suggestions never create nodes automatically.
 Existing coding, undo/redo, refresh, highlighting, statistics, localization,
 and database behavior remain intact.
 
@@ -22,8 +24,8 @@ and database behavior remain intact.
   environment variable taking precedence.
 - When saved through Settings, protect the local settings file from group and
   other-user access; never include the key in project exports.
-- Every AI suggestion must reference one supplied existing node ID; null,
-  invented, or new-node suggestions are rejected.
+- Every AI suggestion must reference one supplied existing node ID or use null
+  for a proposed new code; invented non-null IDs are rejected.
 - Never log API keys, authorization headers, selected text, or full prompts.
 - Keep suggestions in memory; do not add suggestion-history tables.
 - Do not add authentication, a backend, embeddings, RAG, agents, batch coding,
@@ -78,12 +80,12 @@ The response must contain:
 }
 ```
 
-Validation rules:
+For a proposed new code, `existing_node_id` is `null`. Validation rules:
 
 - `suggestions` exists and is a list.
 - Every `name` is a non-empty string after trimming.
 - Every `reason` is a string.
-- `existing_node_id` is an integer in the supplied node ID set.
+- `existing_node_id` is null or an integer in the supplied node ID set.
 - Malformed JSON, missing fields, invalid IDs, and provider failures raise a
   user-safe service error without touching the database.
 - The request asks for approximately three to five suggestions but does not
@@ -103,10 +105,12 @@ Validation rules:
    shown until the worker succeeds or fails.
 6. On success, `AISuggestionDialog` displays each temporary suggestion with its
    name, reason, and whether it matches an existing NodeFlow node.
-7. `Edit` changes the suggested node name in memory. `Reject` removes the card
+7. `Edit` changes the suggested name in memory. `Reject` removes the card
    without persistence.
 8. `Accept` validates the captured selection and uses the existing coded-segment
-   command path for the matched existing node.
+   command path for a matched existing node.
+9. `Create & Code` validates the selection, checks for a same-name node, and
+   creates a new root node plus coded segment as one researcher-approved action.
 
 ## Selection safety and persistence
 
@@ -115,6 +119,7 @@ Before any accept action, verify that:
 - the active document ID is unchanged;
 - the captured offsets satisfy `0 <= start < end <= current_text_length`;
 - the current text at the captured range exactly matches the captured text.
+- the captured participant assignment is unchanged.
 
 If validation fails, show a clear stale-selection message and make no database
 change. Dirty document text is saved only through the existing coding path after
@@ -124,8 +129,10 @@ Existing-node acceptance reuses the current `WorkspaceView.code_selection()`
 command, including segment snapshots, undo/redo, highlight refresh, segment
 refresh, and statistics refresh.
 
-No suggestion action creates a node. Rejected suggestions and cancelled dialogs
-perform no writes.
+No suggestion is persisted merely by being displayed or edited. Rejected
+suggestions and cancelled dialogs perform no writes. New-node creation rolls
+back if coded-segment creation fails, and same-name nodes require explicit
+researcher confirmation before reuse.
 
 ## Privacy and error handling
 

@@ -13,6 +13,7 @@ from services.ai_suggestion_service import (
     DEFAULT_GEMINI_MODEL,
     GeminiProvider,
     OpenAICompatibleProvider,
+    SUGGESTION_SYSTEM_PROMPT,
 )
 from services.settings_service import settings_service
 from utils import app_paths
@@ -100,13 +101,39 @@ def test_invalid_existing_node_id_fails_safely():
         _service(response).suggest("selected text", NODE_CONTEXT)
 
 
-def test_missing_existing_node_id_fails_safely():
+def test_null_existing_node_id_is_allowed_for_new_code():
     response = {
         "suggestions": [{"name": "Code", "reason": "reason", "existing_node_id": None}]
     }
 
-    with pytest.raises(AIResponseError):
-        _service(response).suggest("selected text", NODE_CONTEXT)
+    suggestions = _service(response).suggest("selected text", NODE_CONTEXT)
+
+    assert suggestions[0].existing_node_id is None
+
+
+def test_duplicate_suggestions_are_deduplicated():
+    response = {
+        "suggestions": [
+            {"name": " Code ", "reason": "first", "existing_node_id": None},
+            {"name": "code", "reason": "duplicate", "existing_node_id": None},
+            {"name": "Trust", "reason": "existing", "existing_node_id": 7},
+        ]
+    }
+
+    suggestions = _service(response).suggest("selected text", NODE_CONTEXT)
+
+    assert [(item.name, item.existing_node_id) for item in suggestions] == [
+        ("Code", None),
+        ("Trust", 7),
+    ]
+
+
+def test_prompt_preserves_researcher_control_and_grounding():
+    assert "qualitative coding" in SUGGESTION_SYSTEM_PROMPT
+    assert "selected research text" in SUGGESTION_SYSTEM_PROMPT
+    assert "not final truth" in SUGGESTION_SYSTEM_PROMPT
+    assert "existing_node_id" in SUGGESTION_SYSTEM_PROMPT
+    assert "null" in SUGGESTION_SYSTEM_PROMPT
 
 
 def test_missing_api_key_does_not_call_provider(monkeypatch):
